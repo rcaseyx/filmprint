@@ -8,8 +8,8 @@ def expand_candidates(
     ratings: list[float],
     seen_ids: set[int],
     min_rating: float = 4.0,
-    max_seeds: int = 10,
-    max_candidates: int = 100,
+    max_seeds: int = 15,
+    max_candidates: int = 300,
 ) -> list[dict]:
     """
     Seed from top-rated films, fetch similar + recommended from TMDB,
