@@ -103,4 +103,4 @@ def main():
     print("Ranking candidates against your taste profile...")
     ranked = rank_watchlist(profile_vec, all_candidates, keyword_vocab, affinity)
 
-    cli.run(rated_movies, ratings, ranked, summary, watchlist_ids)
+    cli.run(rated_movies, ratings, ranked, summary, watchlist_ids, keyword_vocab, affinity)
