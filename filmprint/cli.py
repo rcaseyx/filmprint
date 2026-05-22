@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 from rich.console import Console
 from filmprint.features import GENRES
+from filmprint.recommender import diversify
 
 console = Console()
 
@@ -223,13 +224,24 @@ Do NOT reference taste profile labels. Do NOT infer or invent preferences they d
     )
 
 
-def run(rated_movies, ratings, ranked, taste_summary, watchlist_ids):
+def run(rated_movies, ratings, ranked, taste_summary, watchlist_ids, keyword_vocab=None, affinity=None):
     client = anthropic.Anthropic()
 
     console.print("\n[bold]Let's figure out what to watch tonight.[/bold]")
     mood_summary, filters = gather_mood_context(client, taste_summary)
     filtered_ranked = apply_mood_filters(ranked, filters)
+    diverse_ranked = diversify(filtered_ranked, ranked, keyword_vocab, affinity)
+
+    def _genre_summary(candidates):
+        from collections import Counter
+        counts = Counter(
+            g for m, _ in candidates[:20] for g in _genre_names(m)
+        )
+        return ", ".join(f"{g}({n})" for g, n in counts.most_common(6))
+
+    console.print(f"[dim]Before MMR: {_genre_summary(filtered_ranked)}[/dim]")
+    console.print(f"[dim]After MMR:  {_genre_summary(diverse_ranked)}[/dim]")
 
     console.print("\n[bold]Finding your best picks...[/bold]\n")
-    explanation = explain_recommendations(client, filtered_ranked, mood_summary, taste_summary, watchlist_ids)
+    explanation = explain_recommendations(client, diverse_ranked, mood_summary, taste_summary, watchlist_ids)
     console.print(explanation)
