@@ -12,8 +12,10 @@ from filmprint.db import (
     is_profile_stale, upsert_movie, update_feature_vector, log_recommendation,
 )
 from filmprint.sync import sync_ratings_csv, sync_watchlist_csv, sync_watched_csv
-from filmprint.tmdb import enrich_movie, get_similar, get_recommendations, get_movie_details
-from filmprint.features import build_feature_vector, feature_labels
+from filmprint.features import (
+    build_feature_vector, feature_labels,
+    build_keyword_vocab, build_affinity_scores,
+)
 from filmprint.profile import build_taste_profile
 from filmprint.recommender import rank_watchlist
 from filmprint.discovery import expand_candidates
@@ -21,17 +23,16 @@ from filmprint import cli
 
 import numpy as np
 
-DATA_DIR = Path(__file__).parent / "data"
+DATA_DIR = Path(__file__).parent.parent / "data"
 
 
-def taste_summary(profile: np.ndarray) -> str:
-    labels = feature_labels()
+def taste_summary(profile: np.ndarray, keyword_vocab: list[str] | None = None) -> str:
+    labels = feature_labels(keyword_vocab)
     top = sorted(zip(labels, profile), key=lambda x: x[1], reverse=True)[:8]
     return ", ".join(f"{label} ({score:.2f})" for label, score in top)
 
 
 def ensure_feature_vectors(movies: list[dict]) -> list[dict]:
-    """Build and store feature vectors for any movies that don't have one yet."""
     updated = []
     for m in movies:
         if not m.get("feature_vector"):
@@ -44,11 +45,9 @@ def ensure_feature_vectors(movies: list[dict]) -> list[dict]:
 
 
 def main():
-    # --- init DB and user ---
     init_db()
     user_id, username = get_or_prompt_user()
 
-    # --- sync CSVs if present ---
     ratings_path = DATA_DIR / "ratings.csv"
     watchlist_path = DATA_DIR / "watchlist.csv"
     watched_path = DATA_DIR / "watched.csv"
@@ -63,27 +62,32 @@ def main():
     if watched_path.exists():
         sync_watched_csv(user_id, str(watched_path))
 
-    # --- load from DB ---
     rated_rows = get_user_ratings(user_id)
-    rated_movies = ensure_feature_vectors([r for r in rated_rows])
+    rated_movies = ensure_feature_vectors(list(rated_rows))
     ratings = [r["letterboxd_rating"] for r in rated_rows]
 
-    # --- taste profile ---
+    print("Building taste vectors...")
+    keyword_vocab = build_keyword_vocab(rated_movies)
+    affinity = build_affinity_scores(rated_movies, ratings)
+
     if is_profile_stale(user_id):
         print("Rebuilding taste profile...")
-        raw_tmdb_movies = [m.get("raw_tmdb") or m for m in rated_movies]
-        profile_vec = build_taste_profile(raw_tmdb_movies, ratings)
+        profile_vec = build_taste_profile(rated_movies, ratings, keyword_vocab, affinity)
         save_taste_profile(user_id, profile_vec.tolist(), len(ratings))
     else:
         print("Taste profile up to date.")
         profile_vec = np.array(get_taste_profile(user_id)["vector"])
+        # Profile was built with richer dims — rebuild if vector length changed
+        expected_len = 32 + len(keyword_vocab) + 2
+        if len(profile_vec) != expected_len:
+            print("  Vector dimensions changed, rebuilding...")
+            profile_vec = build_taste_profile(rated_movies, ratings, keyword_vocab, affinity)
+            save_taste_profile(user_id, profile_vec.tolist(), len(ratings))
 
-    summary = taste_summary(profile_vec)
+    summary = taste_summary(profile_vec, keyword_vocab)
 
-    # --- candidates: watchlist + discovered ---
     seen_ids = get_seen_movie_ids(user_id)
-    watchlist = get_user_watchlist(user_id)
-    watchlist = ensure_feature_vectors(watchlist)
+    watchlist = ensure_feature_vectors(get_user_watchlist(user_id))
     watchlist_ids = {m["id"] for m in watchlist}
 
     print("Discovering similar films from your top-rated movies...")
@@ -96,14 +100,7 @@ def main():
     all_candidates = watchlist + [d for d in discovered if d["id"] not in watchlist_ids]
     print(f"  {len(watchlist)} watchlist + {len(discovered)} discovered = {len(all_candidates)} total candidates")
 
-    # --- rank ---
     print("Ranking candidates against your taste profile...")
-    vectors = [np.array(m["feature_vector"]) for m in all_candidates]
-    ranked = rank_watchlist(profile_vec, all_candidates)
+    ranked = rank_watchlist(profile_vec, all_candidates, keyword_vocab, affinity)
 
-    # --- recommend ---
     cli.run(rated_movies, ratings, ranked, summary, watchlist_ids)
-
-
-if __name__ == "__main__":
-    main()
