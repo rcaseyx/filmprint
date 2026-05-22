@@ -22,6 +22,13 @@ def load_watchlist_csv(path: str) -> pd.DataFrame:
     return df[["title", "year"]]
 
 
+def load_watched_csv(path: str) -> pd.DataFrame:
+    """Load a Letterboxd watched CSV export into a DataFrame."""
+    df = pd.read_csv(path)
+    df = df.rename(columns={"Name": "title", "Year": "year"})
+    return df[["title", "year"]]
+
+
 def fetch_rss_ratings(username: str) -> list[dict]:
     """Fetch recent diary entries (with ratings) from Letterboxd RSS."""
     url = f"https://letterboxd.com/{username}/rss/"

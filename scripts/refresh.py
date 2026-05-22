@@ -1,35 +1,32 @@
 """
-Refresh Letterboxd data from RSS and merge with local CSV seed.
-Run periodically (cron or manually) to keep ratings up to date.
+Refresh Letterboxd data from RSS and sync into the database.
+Run periodically to pick up new ratings and watchlist additions.
 """
 
-import json
 import os
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from filmprint.letterboxd import fetch_rss_ratings, fetch_rss_watchlist
-
-DATA_DIR = Path(__file__).parent.parent / "data"
-RATINGS_CACHE = DATA_DIR / "ratings_rss.json"
-WATCHLIST_CACHE = DATA_DIR / "watchlist_rss.json"
+from filmprint.db import init_db, get_or_prompt_user, get_all_users
+from filmprint.sync import sync_rss
 
 
 def refresh():
-    username = os.environ["LETTERBOXD_USERNAME"]
-
-    ratings = fetch_rss_ratings(username)
-    watchlist = fetch_rss_watchlist(username)
-
-    RATINGS_CACHE.write_text(json.dumps(ratings, indent=2))
-    WATCHLIST_CACHE.write_text(json.dumps(watchlist, indent=2))
-
-    print(f"Refreshed {len(ratings)} ratings and {len(watchlist)} watchlist entries.")
+    init_db()
+    users = get_all_users()
+    if not users:
+        print("No users found. Run main.py first to set up your account.")
+        return
+    for user in users:
+        print(f"Refreshing {user['letterboxd_username']}...")
+        ratings_added, watchlist_added = sync_rss(user["id"], user["letterboxd_username"])
+        print(f"  {ratings_added} ratings, {watchlist_added} watchlist entries added.")
+    print(f"RSS sync complete: {ratings_added} ratings, {watchlist_added} watchlist entries.")
 
 
 if __name__ == "__main__":
