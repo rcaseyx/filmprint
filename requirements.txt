@@ -1,0 +1,8 @@
+anthropic
+feedparser
+numpy
+pandas
+python-dotenv
+requests
+rich
+scikit-learn
