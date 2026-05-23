@@ -5,6 +5,7 @@ feedparser
 numpy
 pandas
 python-dotenv
+python-multipart
 requests
 rich
 scikit-learn

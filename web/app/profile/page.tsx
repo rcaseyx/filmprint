@@ -1,6 +1,7 @@
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { SyncButton } from "@/components/SyncButton"
+import { ImportFlow } from "@/components/ImportFlow"
 
 interface Genre {
   name: string
@@ -94,6 +95,8 @@ export default async function ProfilePage() {
         </div>
         <p className="text-xs text-neutral-600 mt-3">Bar = taste weight · Count = films rated</p>
       </section>
+
+      <ImportFlow />
 
       {/* Coming soon */}
       <section className="space-y-3">

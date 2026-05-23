@@ -9,11 +9,13 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 import json
+import tempfile
+import zipfile
 
 import anthropic
 import numpy as np
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -426,6 +428,55 @@ def sync():
 
     sync_scrape(user_id, username)
     _rebuild_state(user_id, username)
+
+    return {
+        "ratings_added": len(_state.get("ratings") or []) - ratings_before,
+        "watchlist_added": len(_state.get("watchlist_ids") or []) - watchlist_before,
+        "ratings_count": len(_state.get("ratings") or []),
+        "watchlist_count": len(_state.get("watchlist_ids") or []),
+        "candidates_count": len(_state.get("ranked") or []),
+    }
+
+
+@app.post("/api/import")
+async def import_csv(file: UploadFile = File(...)):
+    """Accept a Letterboxd data export (.zip or individual CSV) and ingest it."""
+    if not _state:
+        raise HTTPException(status_code=503, detail="Pipeline not initialized")
+    user_id = _state["user_id"]
+
+    ratings_before = len(_state.get("ratings") or [])
+    watchlist_before = len(_state.get("watchlist_ids") or [])
+
+    content = await file.read()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+
+        if file.filename and file.filename.endswith(".zip"):
+            zip_path = tmp_path / "export.zip"
+            zip_path.write_bytes(content)
+            with zipfile.ZipFile(zip_path) as zf:
+                zf.extractall(tmp_path)
+        else:
+            # Single CSV — write using the uploaded filename
+            (tmp_path / (file.filename or "ratings.csv")).write_bytes(content)
+
+        ratings_csv = next(tmp_path.rglob("ratings.csv"), None)
+        watchlist_csv = next(tmp_path.rglob("watchlist.csv"), None)
+        watched_csv = next(tmp_path.rglob("watched.csv"), None)
+
+        if not any([ratings_csv, watchlist_csv, watched_csv]):
+            raise HTTPException(status_code=422, detail="No ratings.csv, watchlist.csv, or watched.csv found in upload")
+
+        if ratings_csv:
+            sync_ratings_csv(user_id, str(ratings_csv))
+        if watchlist_csv:
+            sync_watchlist_csv(user_id, str(watchlist_csv))
+        if watched_csv:
+            sync_watched_csv(user_id, str(watched_csv))
+
+    _rebuild_state(user_id, _state["username"])
 
     return {
         "ratings_added": len(_state.get("ratings") or []) - ratings_before,
