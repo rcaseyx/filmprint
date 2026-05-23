@@ -66,16 +66,39 @@ def _popularity_vector(movie: dict) -> list[float]:
     return [pop / 1000.0]
 
 
+def _movie_keywords(movie: dict) -> set[str]:
+    """Extract keyword set from a movie dict, handling all storage formats."""
+    raw = _raw(movie)
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            raw = {}
+    kw_data = (raw.get("keywords") if isinstance(raw, dict) else None) or movie.get("keywords") or []
+    if isinstance(kw_data, str):
+        try:
+            kw_data = json.loads(kw_data)
+        except (json.JSONDecodeError, TypeError):
+            return set()
+    if isinstance(kw_data, dict):
+        kw_list = kw_data.get("keywords", [])
+        return {k["name"] if isinstance(k, dict) else k for k in kw_list}
+    if isinstance(kw_data, list):
+        return {k["name"] if isinstance(k, dict) else k for k in kw_data}
+    return set()
+
+
 def _keyword_vector(movie: dict, vocab: list[str]) -> list[float]:
     if not vocab:
         return []
-    raw = _raw(movie)
-    kw_data = raw.get("keywords", {})
-    if isinstance(kw_data, str):
-        kw_data = json.loads(kw_data)
-    kw_list = kw_data.get("keywords", []) if isinstance(kw_data, dict) else []
-    kw_names = {k["name"] if isinstance(k, dict) else k for k in kw_list}
+    kw_names = _movie_keywords(movie)
     return [1.0 if kw in kw_names else 0.0 for kw in vocab]
+
+
+def _axis_vector(movie: dict, axes: dict[str, list[str]]) -> list[float]:
+    """Score a single movie against keyword axes (fraction of each axis's keywords matched)."""
+    kw_names = _movie_keywords(movie)
+    return [sum(1 for kw in keywords if kw in kw_names) / len(keywords) for keywords in axes.values()]
 
 
 def _critic_scores_vector(movie: dict) -> list[float]:
@@ -172,6 +195,8 @@ def build_feature_vector(
         + _critic_scores_vector(movie)
         + _keyword_vector(movie, keyword_vocab or [])
         + _affinity_vector(movie, affinity or {})
+        + _axis_vector(movie, SUBGENRE_AXES)
+        + _axis_vector(movie, TONE_AXES)
     )
     arr = np.array(vec, dtype=float)
     norm = np.linalg.norm(arr)
@@ -186,6 +211,103 @@ def feature_labels(keyword_vocab: list[str] | None = None) -> list[str]:
         + ["score", "popularity", "critic:imdb", "critic:rt", "critic:metacritic"]
         + [f"keyword:{k}" for k in (keyword_vocab or [])]
         + ["affinity:director", "affinity:actor"]
+        + [f"subgenre:{ax}" for ax in SUBGENRE_AXES]
+        + [f"tone:{ax}" for ax in TONE_AXES]
+    )
+
+
+TONE_AXES: dict[str, list[str]] = {
+    "Dark": [
+        "neo-noir", "gore", "serial killer", "psychopath", "supernatural horror",
+        "paranoia", "prison", "murder", "nihilism", "bleak", "trauma",
+        "psychological horror",
+    ],
+    "Warm": [
+        "hilarious", "amused", "excited", "christmas", "family", "friendship",
+        "coming of age", "wholesome", "heartwarming", "uplifting", "romantic comedy",
+    ],
+    "Intense": [
+        "suspenseful", "intense", "aggressive", "survival", "martial arts",
+        "shootout", "revenge", "action hero", "chase", "battle", "heist",
+    ],
+    "Cerebral": [
+        "psychological thriller", "whodunit", "investigation", "obsession",
+        "ambiguous", "detective", "absurd", "surrealism", "dreams",
+        "philosophical", "unreliable narrator",
+    ],
+    "Fantastical": [
+        "supernatural", "alien", "magic", "time travel", "super power",
+        "dystopia", "ghost", "demon", "monster", "space opera",
+        "post-apocalyptic future", "wizard",
+    ],
+}
+
+SUBGENRE_AXES: dict[str, list[str]] = {
+    "Neo-noir": [
+        "neo-noir", "detective", "whodunit", "film noir", "femme fatale",
+        "hardboiled", "conspiracy",
+    ],
+    "Heist": [
+        "heist", "robbery", "con artist", "caper", "bank robbery",
+    ],
+    "Survival": [
+        "survival", "survival horror", "isolation", "escape",
+    ],
+    "Mind Bending": [
+        "surrealism", "hallucination", "dreams", "amnesia",
+        "psychological thriller", "unreliable narrator",
+    ],
+    "Espionage": [
+        "spy", "espionage", "hitman", "assassin", "secret identity",
+    ],
+    "Occult": [
+        "possession", "lovecraftian", "haunted house", "witch",
+        "body horror", "occult", "exorcism",
+    ],
+    "Coming of Age": [
+        "coming of age", "high school", "teenager", "teenage girl",
+        "adolescence",
+    ],
+    "Revenge": [
+        "revenge", "vigilante", "vengeance",
+    ],
+}
+
+
+def compute_axis_scores(
+    rated_movies: list[dict],
+    ratings: list[float],
+    axes: dict[str, list[str]],
+) -> list[dict]:
+    """Score rated films against keyword axes, weighted by rating.
+
+    Returns [{name, weight}] sorted by weight descending, normalized to max=1.0.
+    """
+    from collections import defaultdict
+    axis_totals: dict[str, float] = defaultdict(float)
+    weight_sum = 0.0
+
+    for movie, rating in zip(rated_movies, ratings):
+        kw_names = _movie_keywords(movie)
+
+        weight = rating / 5.0
+        weight_sum += weight
+
+        for axis, keywords in axes.items():
+            hits = sum(1 for kw in keywords if kw in kw_names)
+            if hits:
+                axis_totals[axis] += weight * hits / len(keywords)
+
+    if weight_sum == 0:
+        return [{"name": axis, "weight": 0.0} for axis in axes]
+
+    raw_scores = {axis: axis_totals[axis] / weight_sum for axis in axes}
+    max_score = max(raw_scores.values(), default=0.01) or 0.01
+
+    return sorted(
+        [{"name": axis, "weight": round(score / max_score, 4)} for axis, score in raw_scores.items()],
+        key=lambda x: x["weight"],
+        reverse=True,
     )
 
 

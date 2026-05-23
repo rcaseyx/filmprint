@@ -12,14 +12,8 @@ interface Genre {
   weight: number
 }
 
-interface Decade {
+interface ToneAxis {
   name: string
-  weight: number
-}
-
-interface Director {
-  name: string
-  shortName: string
   weight: number
 }
 
@@ -29,8 +23,8 @@ interface ProfileData {
   avg_rating: number
   summary: string
   genres: Genre[]
-  decades: Decade[]
-  directors: Director[]
+  tone: ToneAxis[]
+  subgenres: ToneAxis[]
   critic_alignment: number
   quality_floor: number
   neutral: number
@@ -84,7 +78,7 @@ export default async function ProfilePage() {
   }
 
   const topGenres = profile.genres.slice(0, 8)
-  const maxWeight = Math.max(...topGenres.map((g) => g.weight), 0.01)
+  const maxGenreWeight = Math.max(...topGenres.map((g) => g.weight), 0.01)
 
   const a = profile.critic_alignment
   const stars = Math.abs(a) / 2
@@ -100,9 +94,6 @@ export default async function ProfilePage() {
     stars < 0.15
       ? "Your ratings closely match critics"
       : `~${stars.toFixed(1)}★ ${a > 0 ? "above" : "below"} critics on average`
-
-  const hasDecades = profile.decades?.some((d) => Math.abs(d.weight) > 0.001)
-  const hasDirectors = (profile.directors?.length ?? 0) >= 3
 
   return (
     <div className="py-12 space-y-10">
@@ -128,15 +119,10 @@ export default async function ProfilePage() {
       </div>
 
       {/* Radars: wider section */}
-      <div className="max-w-4xl mx-auto px-12">
-        <div className="grid grid-cols-3 gap-10">
+      <div className="max-w-3xl mx-auto px-8">
+        <div className="grid grid-cols-2 gap-8">
           <GenreRadar data={topGenres} label="Genre" />
-          {hasDecades
-            ? <GenreRadar data={profile.decades} label="Era" />
-            : <div />}
-          {hasDirectors
-            ? <GenreRadar data={profile.directors} label="Directors" />
-            : <div />}
+          <GenreRadar data={profile.subgenres} label="Sub-genre" />
         </div>
       </div>
 
@@ -154,7 +140,7 @@ export default async function ProfilePage() {
                 <div className="flex-1 bg-neutral-800 rounded-full h-1.5">
                   <div
                     className="bg-amber-400 h-1.5 rounded-full genre-bar"
-                    style={{ width: `${(g.weight / maxWeight) * 100}%` }}
+                    style={{ width: `${(g.weight / maxGenreWeight) * 100}%` }}
                   />
                 </div>
                 <span className="text-xs text-neutral-600 w-8 text-right">{g.count}</span>

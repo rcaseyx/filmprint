@@ -70,7 +70,7 @@ def build_critic_profile(rated_movies: list[dict], ratings: list[float]) -> dict
     return {"alignment": alignment, "quality_floor": adjusted_floor, "neutral": neutral}
 
 # Bump this any time the profile algorithm changes to force a rebuild.
-PROFILE_VERSION = "5.0"
+PROFILE_VERSION = "6.0"
 
 
 def build_taste_profile(
