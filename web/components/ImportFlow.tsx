@@ -59,24 +59,6 @@ export function ImportFlow() {
 
   return (
     <section className="space-y-4">
-      <div>
-        <h2 className="text-sm font-medium text-neutral-400 uppercase tracking-wider">
-          Import from Letterboxd
-        </h2>
-        <p className="text-xs text-neutral-500 mt-1">
-          Go to{" "}
-          <a
-            href="https://letterboxd.com/settings/data"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-neutral-400 underline underline-offset-2 hover:text-neutral-200"
-          >
-            letterboxd.com/settings/data
-          </a>
-          , click <span className="text-neutral-300">Export your data</span>, then upload the zip here.
-        </p>
-      </div>
-
       {status !== "done" && (
         <div
           onDragOver={(e) => { e.preventDefault(); setDragging(true) }}

@@ -395,10 +395,13 @@ def get_profile():
         reverse=True,
     )[:8]
 
+    ratings = _state.get("ratings") or []
+    avg_rating = round(sum(ratings) / len(ratings), 1) if ratings else 0.0
+
     return {
-        "ratings_count": len(_state.get("ratings") or []),
+        "ratings_count": len(ratings),
         "watchlist_count": len(_state.get("watchlist_ids") or []),
-        "candidates_count": len(_state.get("ranked") or []),
+        "avg_rating": avg_rating,
         "summary": _state.get("summary"),
         "genres": genres,
         "decades": decades,
