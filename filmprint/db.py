@@ -372,3 +372,14 @@ def log_recommendation(user_id: int, movie_id: int, score: float, mood_context: 
             INSERT INTO recommendations (user_id, movie_id, score, mood_context)
             VALUES (?, ?, ?, ?)
         """, (user_id, movie_id, score, json.dumps(mood_context)))
+
+
+def get_recent_recommendation_ids(user_id: int, days: int = 14) -> set[int]:
+    """Return movie IDs recommended to this user in the last N days."""
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT DISTINCT movie_id FROM recommendations
+            WHERE user_id = ?
+              AND recommended_at >= datetime('now', ? || ' days')
+        """, (user_id, f"-{days}")).fetchall()
+    return {row["movie_id"] for row in rows}

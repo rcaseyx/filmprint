@@ -10,6 +10,7 @@ from filmprint.db import (
     init_db, get_or_prompt_user, get_user_ratings, get_user_watchlist,
     get_seen_movie_ids, get_taste_profile, save_taste_profile,
     is_profile_stale, upsert_movie, update_feature_vector, log_recommendation,
+    get_recent_recommendation_ids,
 )
 from filmprint.sync import sync_ratings_csv, sync_watchlist_csv, sync_watched_csv
 from filmprint.features import (
@@ -101,7 +102,13 @@ def main():
     all_candidates = watchlist + [d for d in discovered if d["id"] not in watchlist_ids]
     print(f"  {len(watchlist)} watchlist + {len(discovered)} discovered = {len(all_candidates)} total candidates")
 
+    recent_ids = get_recent_recommendation_ids(user_id)
+    if recent_ids:
+        before = len(all_candidates)
+        all_candidates = [c for c in all_candidates if c["id"] not in recent_ids]
+        print(f"  Excluding {before - len(all_candidates)} recently recommended films ({len(all_candidates)} remaining)")
+
     print("Ranking candidates against your taste profile...")
     ranked = rank_watchlist(profile_vec, all_candidates, keyword_vocab, affinity)
 
-    cli.run(rated_movies, ratings, ranked, summary, watchlist_ids, keyword_vocab, affinity, clusters)
+    cli.run(rated_movies, ratings, ranked, summary, watchlist_ids, keyword_vocab, affinity, clusters, user_id)

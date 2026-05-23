@@ -52,7 +52,7 @@ _OPENING_ANGLES = [
 
 
 def gather_mood_context(client: anthropic.Anthropic, taste_summary: str) -> tuple[str, dict]:
-    MAX_QUESTIONS = 8   # hard cap on total questions asked
+    MAX_QUESTIONS = 6   # hard cap on total questions asked
     MIN_MEANINGFUL = 2  # real answers needed before Claude can conclude
     opening_angle = random.choice(_OPENING_ANGLES)
 
@@ -66,20 +66,23 @@ Your job: ask multiple-choice questions (up to {MAX_QUESTIONS} total) to underst
 If asking a question:
 {{"done": false, "question": "...", "options": ["...", "...", "..."]}}
 
-If you have enough context (exit as early as you can — 2-3 good answers is usually plenty):
+After 2-3 real answers (not "None of these"), conclude. 2 good answers is usually enough — do not keep asking:
 {{"done": true, "summary": "...", "required_genres": [], "exclude_genres": [], "max_runtime": null}}
 
 Rules:
 - Exactly 3 options per question
+- Ask 2-3 questions then conclude. Never ask more than 4.
 - Make questions specific to their taste — reference genres or styles they actually like
+- Do NOT reference or quote taste profile labels in your questions (do not say things like "2010s is a sweet spot for you" or mention runtime buckets)
 - Each follow-up should drill deeper into their previous answer, not jump to a new topic
 - Your first question must focus on: {opening_angle}
 - The summary should capture: mood/tone, anything to avoid
 - For required_genres and exclude_genres, use exact names from this list only: {", ".join(GENRES)}
+- For required_genres: only include genres clearly implied by their answers. If answers point to mood/intensity rather than a specific genre, leave required_genres empty — do not list broad genres like Drama that would barely filter anything
 - For required_genres, map adjacent concepts: espionage → Thriller, space/sci-fi → Science Fiction, heist → Crime
-- For exclude_genres, ONLY include genres the user explicitly named (e.g. "no horror", "nothing scary"). NEVER infer genre exclusions from pacing or tone — "nothing slow" does NOT mean exclude Horror or Drama
+- For exclude_genres, ONLY include genres the user explicitly named. NEVER infer genre exclusions from pacing or tone
 - max_runtime: integer minutes if they explicitly said they want something short, null otherwise
-- If the user chose "None of these" for a question, your next question must take a completely different angle — different genre territory, different framing entirely. Do not rephrase the same options
+- If the user chose "None of these", your next question must take a completely different angle — different genre territory, different framing entirely
 - Output ONLY valid JSON, no commentary"""
 
     messages = [{"role": "user", "content": "What should I watch tonight?"}]
@@ -100,7 +103,11 @@ Rules:
         try:
             parsed = json.loads(reply)
         except json.JSONDecodeError:
-            return reply.strip(), _EMPTY_FILTERS
+            stripped = reply.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+            try:
+                parsed = json.loads(stripped)
+            except json.JSONDecodeError:
+                return reply.strip(), _EMPTY_FILTERS
 
         if parsed.get("done"):
             if meaningful_count >= MIN_MEANINGFUL:
@@ -111,7 +118,7 @@ Rules:
                 }
                 return parsed["summary"], filters
             # Not enough real answers yet — push Claude to keep going
-            messages.append({"role": "user", "content": "Keep going — ask another question."})
+            messages.append({"role": "user", "content": "You need at least 2 real answers before concluding. Ask another question now using the question JSON format."})
             continue
 
         question = parsed["question"]
@@ -176,14 +183,28 @@ def select_cluster(
     return max(clusters, key=lambda c: sum(c[i] for i in genre_indices))
 
 
+# Genres that are structurally incompatible with serious/adult film moods.
+# Excluded automatically when required_genres contains any "serious" genre,
+# unless the user explicitly requested them.
+_LIGHTWEIGHT_GENRES = {"Animation", "Family", "Documentary", "Music", "Western", "Romance"}
+_SERIOUS_GENRES = {"Thriller", "Crime", "Drama", "Horror", "Mystery", "War", "History", "Science Fiction", "Action", "Adventure"}
+
+
 def apply_mood_filters(
     ranked: list[tuple[dict, float]],
     filters: dict,
 ) -> list[tuple[dict, float]]:
     """Hard-filter ranked candidates by mood constraints before Claude reasoning."""
     required = filters.get("required_genres") or []
-    excluded = filters.get("exclude_genres") or []
+    excluded = set(filters.get("exclude_genres") or [])
     max_runtime = filters.get("max_runtime")
+
+    # Auto-exclude genres that are structurally incompatible with the requested mood.
+    # Only kicks in when at least one serious genre is required and the user hasn't
+    # explicitly asked for any lightweight genres.
+    if any(g in _SERIOUS_GENRES for g in required):
+        implicit_excludes = _LIGHTWEIGHT_GENRES - set(required) - excluded
+        excluded = excluded | implicit_excludes
 
     def passes(movie: dict) -> bool:
         genres = _genre_names(movie)
@@ -201,7 +222,7 @@ def apply_mood_filters(
     if required:
         active.append(f"genres: {', '.join(required)}")
     if excluded:
-        active.append(f"exclude: {', '.join(excluded)}")
+        active.append(f"exclude: {', '.join(sorted(excluded))}")
     if max_runtime:
         active.append(f"max runtime: {max_runtime}min")
     if active:
@@ -223,13 +244,18 @@ def explain_recommendations(
     client: anthropic.Anthropic,
     top_movies: list[tuple[dict, float]],
     mood_summary: str,
-    taste_summary: str,
+    active_taste_summary: str,
     watchlist_ids: set[int],
-) -> str:
-    """Ask Claude to reason over the top candidates and pick tonight's best films."""
+) -> list[dict]:
+    """
+    Ask Claude to pick tonight's best films and return structured picks.
+    Each pick: {id, title, year, source, reason}
+    """
+    candidates = top_movies[:20]
     movie_list = "\n".join(
-        "{source} {title} ({year}) — taste score: {score:.2f} | genres: {genres} | runtime: {runtime}min | TMDB rating: {rating}".format(
-            source="[watchlist]" if m["id"] in watchlist_ids else "[discovered]",
+        "[{idx}] {source} {title} ({year}) — taste score: {score:.2f} | genres: {genres} | runtime: {runtime}min | TMDB rating: {rating}".format(
+            idx=i,
+            source="watchlist" if m["id"] in watchlist_ids else "discovered",
             title=m["title"],
             year=m.get("year") or (m.get("release_date", "") or "")[:4],
             score=score,
@@ -237,45 +263,71 @@ def explain_recommendations(
             runtime=m.get("runtime") or "?",
             rating=m.get("vote_average", "?"),
         )
-        for m, score in top_movies[:20]
+        for i, (m, score) in enumerate(candidates)
     )
 
-    prompt = f"""You are a knowledgeable film friend — someone who watches a lot of movies and gives honest, specific recommendations based on what you actually know about the person's taste.
+    prompt = f"""You are a knowledgeable film friend giving honest, specific recommendations based on what you know about the person's taste.
 
 The user's taste profile (used for ranking only — do not quote these labels or treat them as stated preferences):
-{taste_summary}
+{active_taste_summary}
 
 What they actually said tonight:
 {mood_summary}
 
-Top candidates ranked by taste-profile match. [watchlist] = films they already wanted to see, [discovered] = surfaced based on similarity to films they've loved:
+Candidates (indexed for your response):
 {movie_list}
 
-Pick the 3-5 best films for tonight. Don't just list the highest-scored ones — use real judgment. A discovered film that perfectly fits tonight's mood might beat a watchlist film with a slightly higher score.
+Pick the 3-5 best films for tonight. Use real judgment — a discovered film that perfectly fits tonight's mood might beat a higher-scored watchlist film.
 
-For each pick, your reason must be grounded in:
-1. What you actually know about the film (genre, tone, style, themes)
-2. What they explicitly said tonight
+Return ONLY a JSON array, no other text:
+[
+  {{"idx": 0, "reason": "one or two sentences — specific to this film and tonight's mood"}},
+  ...
+]
 
-Do NOT reference taste profile labels. Do NOT infer or invent preferences they didn't mention (e.g. runtime, decade). Be concise and direct — like a friend texting a recommendation, not writing a review."""
+For each reason:
+- Ground it in what you actually know about the film (genre, tone, style, themes)
+- Reference what they explicitly said tonight
+- Do NOT reference taste profile labels or invent preferences they didn't mention"""
 
-    return _call_claude(
+    reply = _call_claude(
         client,
         model="claude-sonnet-4-6",
         max_tokens=1024,
         messages=[{"role": "user", "content": prompt}],
     )
 
+    try:
+        raw = json.loads(reply)
+    except json.JSONDecodeError:
+        # Strip markdown code fences if present
+        stripped = reply.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        raw = json.loads(stripped)
+
+    picks = []
+    for item in raw:
+        idx = item["idx"]
+        if idx >= len(candidates):
+            continue
+        movie, score = candidates[idx]
+        picks.append({
+            "id": movie["id"],
+            "title": movie["title"],
+            "year": movie.get("year") or (movie.get("release_date", "") or "")[:4],
+            "source": "watchlist" if movie["id"] in watchlist_ids else "discovered",
+            "score": score,
+            "reason": item["reason"],
+        })
+    return picks
+
 
 def run(rated_movies, ratings, ranked, blended_summary, watchlist_ids,
-        keyword_vocab=None, affinity=None, clusters=None):
+        keyword_vocab=None, affinity=None, clusters=None, user_id=None):
     client = anthropic.Anthropic()
 
     console.print("\n[bold]Let's figure out what to watch tonight.[/bold]")
     mood_summary, filters = gather_mood_context(client, blended_summary)
 
-    # Select the cluster whose genre profile best matches tonight's mood.
-    # If no clear genre preference, fall back to the blended profile ranking.
     cluster = select_cluster(clusters or [], filters)
     if cluster is not None:
         console.print("[dim]Using mood-matched taste cluster for ranking[/dim]")
@@ -289,5 +341,17 @@ def run(rated_movies, ratings, ranked, blended_summary, watchlist_ids,
     diverse_ranked = diversify(filtered_ranked, ranked, keyword_vocab, affinity)
 
     console.print("\n[bold]Finding your best picks...[/bold]\n")
-    explanation = explain_recommendations(client, diverse_ranked, mood_summary, active_summary, watchlist_ids)
-    console.print(explanation)
+    picks = explain_recommendations(client, diverse_ranked, mood_summary, active_summary, watchlist_ids)
+
+    # Render picks
+    for pick in picks:
+        source_tag = r"[dim]\[watchlist][/dim]" if pick["source"] == "watchlist" else r"[dim]\[discovered][/dim]"
+        console.print(f"[bold]{pick['title']}[/bold] ({pick['year']}) {source_tag}")
+        console.print(f"{pick['reason']}\n")
+
+    # Log to recommendation history
+    if user_id is not None:
+        from filmprint.db import log_recommendation
+        mood_context = {"summary": mood_summary, "filters": filters}
+        for pick in picks:
+            log_recommendation(user_id, pick["id"], pick["score"], mood_context)
