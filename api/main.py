@@ -27,6 +27,7 @@ from filmprint.db import (
     is_profile_stale, upsert_movie, update_feature_vector,
     log_recommendation, get_recent_recommendation_ids,
     get_recent_ratings, get_recommendation_history,
+    resolve_recommendation_outcomes, get_recommendation_boosts,
 )
 from filmprint.features import (
     build_feature_vector, taste_summary, build_keyword_vocab,
@@ -48,6 +49,9 @@ _state: dict[str, Any] = {}
 
 def _rebuild_state(user_id: int, username: str) -> None:
     """Rebuild profile and ranking from whatever is currently in the DB. No sync."""
+    resolve_recommendation_outcomes(user_id)
+    outcome_boosts = get_recommendation_boosts(user_id)
+
     rated_rows = get_user_ratings(user_id)
     rated_movies = ensure_feature_vectors(list(rated_rows))
     ratings = [r["letterboxd_rating"] for r in rated_rows]
@@ -56,8 +60,8 @@ def _rebuild_state(user_id: int, username: str) -> None:
     affinity = build_affinity_scores(rated_movies, ratings)
 
     if is_profile_stale(user_id, PROFILE_VERSION):
-        profile_vec = build_taste_profile(rated_movies, ratings, keyword_vocab, affinity)
-        clusters = build_taste_clusters(rated_movies, ratings, keyword_vocab, affinity)
+        profile_vec = build_taste_profile(rated_movies, ratings, keyword_vocab, affinity, outcome_boosts)
+        clusters = build_taste_clusters(rated_movies, ratings, keyword_vocab, affinity, outcome_boosts)
         save_taste_profile(user_id, profile_vec.tolist(), len(ratings), PROFILE_VERSION,
                            [c.tolist() for c in clusters])
     else:

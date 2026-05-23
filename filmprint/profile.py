@@ -78,6 +78,7 @@ def build_taste_profile(
     ratings: list[float],
     keyword_vocab: list[str] | None = None,
     affinity: dict | None = None,
+    outcome_boosts: dict[int, float] | None = None,
 ) -> np.ndarray:
     """
     Build a taste profile using signed exponential weights around a personal neutral.
@@ -86,12 +87,15 @@ def build_taste_profile(
     who rate generously (3★ = liked it) still have those films pull the profile
     positively rather than being excluded as neutral.
 
-    Weight formula: sign(r - neutral) * (r - neutral)^2
+    Weight formula: sign(r - neutral) * (r - neutral)^2 * outcome_boost
+    outcome_boost > 1.0 for films that were recommended and confirmed enjoyed/disliked,
+    amplifying the signal from validated recommendations.
     """
     if not rated_movies:
         raise ValueError("No rated movies to build a profile from.")
 
     neutral = personal_neutral(ratings)
+    boosts = outcome_boosts or {}
     vectors = []
     signed_weights = []
 
@@ -99,7 +103,7 @@ def build_taste_profile(
         delta = rating - neutral
         if abs(delta) < 0.01:
             continue
-        w = (1 if delta > 0 else -1) * delta ** 2
+        w = (1 if delta > 0 else -1) * delta ** 2 * boosts.get(movie["id"], 1.0)
         vec = build_feature_vector(movie, keyword_vocab, affinity)
         vectors.append(vec)
         signed_weights.append(w)
@@ -120,6 +124,7 @@ def build_taste_clusters(
     ratings: list[float],
     keyword_vocab: list[str] | None = None,
     affinity: dict | None = None,
+    outcome_boosts: dict[int, float] | None = None,
     n_clusters: int = 3,
 ) -> list[np.ndarray]:
     """
@@ -151,7 +156,7 @@ def build_taste_clusters(
         c_ratings = [r for r, l in zip(rtgs, labels) if l == c]
         if len(c_movies) >= 3:
             try:
-                profile = build_taste_profile(c_movies, c_ratings, keyword_vocab, affinity)
+                profile = build_taste_profile(c_movies, c_ratings, keyword_vocab, affinity, outcome_boosts)
                 clusters.append(profile)
             except ValueError:
                 pass
