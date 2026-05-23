@@ -2,10 +2,24 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { SyncButton } from "@/components/SyncButton"
 import { ImportFlow } from "@/components/ImportFlow"
+import { GenreRadar } from "@/components/GenreRadar"
+import { RecentRatings } from "@/components/RecentRatings"
+import { RecommendationHistory } from "@/components/RecommendationHistory"
 
 interface Genre {
   name: string
   count: number
+  weight: number
+}
+
+interface Decade {
+  name: string
+  weight: number
+}
+
+interface Director {
+  name: string
+  shortName: string
   weight: number
 }
 
@@ -15,23 +29,50 @@ interface ProfileData {
   candidates_count: number
   summary: string
   genres: Genre[]
+  decades: Decade[]
+  directors: Director[]
+  critic_alignment: number
+  quality_floor: number
+  neutral: number
 }
+
+const API = process.env.NEXT_PUBLIC_API_URL
 
 async function getProfile(): Promise<ProfileData | null> {
   try {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/profile`, {
-      cache: "no-store",
-    })
+    const res = await fetch(`${API}/api/profile`, { cache: "no-store" })
     return res.json()
   } catch {
     return null
   }
 }
 
+async function getRecentRatings() {
+  try {
+    const res = await fetch(`${API}/api/ratings/recent`, { cache: "no-store" })
+    const data = await res.json()
+    return data.ratings ?? []
+  } catch {
+    return []
+  }
+}
+
+async function getHistory() {
+  try {
+    const res = await fetch(`${API}/api/recommendations/history`, { cache: "no-store" })
+    const data = await res.json()
+    return data.history ?? []
+  } catch {
+    return []
+  }
+}
+
 export default async function ProfilePage() {
-  const [session, profile] = await Promise.all([
+  const [session, profile, recentRatings, history] = await Promise.all([
     getServerSession(authOptions),
     getProfile(),
+    getRecentRatings(),
+    getHistory(),
   ])
 
   if (!profile) {
@@ -43,75 +84,130 @@ export default async function ProfilePage() {
   }
 
   const topGenres = profile.genres.slice(0, 8)
-  const maxWeight = Math.max(...topGenres.map((g) => g.weight))
+  const maxWeight = Math.max(...topGenres.map((g) => g.weight), 0.01)
+
+  const a = profile.critic_alignment
+  const stars = Math.abs(a) / 2
+  const alignmentLabel =
+    a > 2.0 ? "Much more generous than critics" :
+    a > 0.75 ? "More generous than critics" :
+    a > 0.25 ? "Slightly more generous" :
+    a > -0.25 ? "In sync with critics" :
+    a > -0.75 ? "Slightly tougher" :
+    a > -2.0 ? "Tougher than critics" :
+    "Much tougher than critics"
+  const alignmentDesc =
+    stars < 0.15
+      ? "Your ratings closely match critics"
+      : `~${stars.toFixed(1)}★ ${a > 0 ? "above" : "below"} critics on average`
+
+  const hasDecades = profile.decades?.some((d) => Math.abs(d.weight) > 0.001)
+  const hasDirectors = (profile.directors?.length ?? 0) >= 3
 
   return (
-    <div className="max-w-2xl mx-auto px-6 py-12 space-y-10">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {session?.user?.name ?? "Your"} taste profile
-          </h1>
-          <p className="text-neutral-400 text-sm mt-1">
-            Built from {profile.ratings_count} Letterboxd ratings
-          </p>
-        </div>
-        <SyncButton />
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
-        {[
-          { label: "Ratings", value: profile.ratings_count },
-          { label: "Watchlist", value: profile.watchlist_count },
-          { label: "Candidates", value: profile.candidates_count },
-        ].map(({ label, value }) => (
-          <div key={label} className="bg-neutral-900 rounded-xl p-4 text-center border border-neutral-800">
-            <div className="text-2xl font-semibold">{value}</div>
-            <div className="text-xs text-neutral-500 mt-1 uppercase tracking-wider">{label}</div>
+    <div className="py-12 space-y-10">
+      {/* Header + Stats: narrow */}
+      <div className="max-w-2xl mx-auto px-6 space-y-8">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              {session?.user?.name ?? "Your"} taste profile
+            </h1>
+            <p className="text-neutral-400 text-sm mt-1">
+              Built from {profile.ratings_count} Letterboxd ratings
+            </p>
           </div>
-        ))}
-      </div>
+          <SyncButton />
+        </div>
 
-      {/* Genre breakdown */}
-      <section>
-        <h2 className="text-sm font-medium text-neutral-400 uppercase tracking-wider mb-4">
-          Genre affinity
-        </h2>
-        <div className="space-y-2">
-          {topGenres.map((g) => (
-            <div key={g.name} className="flex items-center gap-3">
-              <span className="text-sm text-neutral-300 w-28 shrink-0">{g.name}</span>
-              <div className="flex-1 bg-neutral-800 rounded-full h-1.5">
-                <div
-                  className="bg-neutral-100 h-1.5 rounded-full"
-                  style={{ width: `${(g.weight / maxWeight) * 100}%` }}
-                />
-              </div>
-              <span className="text-xs text-neutral-600 w-8 text-right">{g.count}</span>
+        <div className="grid grid-cols-3 gap-4">
+          {[
+            { label: "Ratings", value: profile.ratings_count },
+            { label: "Watchlist", value: profile.watchlist_count },
+            { label: "Candidates", value: profile.candidates_count },
+          ].map(({ label, value }) => (
+            <div key={label} className="bg-neutral-900 rounded-xl p-4 text-center border border-neutral-800">
+              <div className="text-2xl font-semibold">{value}</div>
+              <div className="text-xs text-neutral-500 mt-1 uppercase tracking-wider">{label}</div>
             </div>
           ))}
         </div>
-        <p className="text-xs text-neutral-600 mt-3">Bar = taste weight · Count = films rated</p>
-      </section>
+      </div>
 
-      <ImportFlow />
+      {/* Radars: wider section */}
+      <div className="max-w-4xl mx-auto px-12">
+        <div className="grid grid-cols-3 gap-10">
+          <GenreRadar data={topGenres} label="Genre" />
+          {hasDecades
+            ? <GenreRadar data={profile.decades} label="Era" />
+            : <div />}
+          {hasDirectors
+            ? <GenreRadar data={profile.directors} label="Directors" />
+            : <div />}
+        </div>
+      </div>
 
-      {/* Coming soon */}
-      <section className="space-y-3">
-        <h2 className="text-sm font-medium text-neutral-400 uppercase tracking-wider">Coming soon</h2>
-        {[
-          { label: "Taste visualization", desc: "Radar chart across genres, decades, and keywords" },
-          { label: "Recent ratings", desc: "Your latest Letterboxd activity" },
-          { label: "Recommendation history", desc: "What filmprint picked and whether you liked it" },
-        ].map(({ label, desc }) => (
-          <div key={label} className="border border-neutral-800 rounded-xl p-4 opacity-50">
-            <div className="text-sm font-medium">{label}</div>
-            <div className="text-xs text-neutral-500 mt-0.5">{desc}</div>
+      {/* Remaining content: narrow */}
+      <div className="max-w-2xl mx-auto px-6 space-y-10">
+        {/* Genre detail bars */}
+        <section>
+          <h2 className="text-sm font-medium text-neutral-400 uppercase tracking-wider mb-3">
+            Genre affinity
+          </h2>
+          <div className="space-y-2">
+            {topGenres.map((g) => (
+              <div key={g.name} className="flex items-center gap-3">
+                <span className="text-sm text-neutral-300 w-28 shrink-0">{g.name}</span>
+                <div className="flex-1 bg-neutral-800 rounded-full h-1.5">
+                  <div
+                    className="bg-neutral-100 h-1.5 rounded-full"
+                    style={{ width: `${(g.weight / maxWeight) * 100}%` }}
+                  />
+                </div>
+                <span className="text-xs text-neutral-600 w-8 text-right">{g.count}</span>
+              </div>
+            ))}
+            <p className="text-xs text-neutral-700 mt-1">Bar = taste weight · Count = films rated</p>
           </div>
-        ))}
-      </section>
+        </section>
+
+        {/* Critic stats */}
+        <section className="grid grid-cols-3 gap-4">
+          <div className="bg-neutral-900 rounded-xl p-4 border border-neutral-800">
+            <div className="text-xs text-neutral-500 uppercase tracking-wider mb-2">Critic alignment</div>
+            <div className="text-sm font-semibold leading-snug">{alignmentLabel}</div>
+            <div className="text-xs text-neutral-600 mt-1">{alignmentDesc}</div>
+          </div>
+          <div className="bg-neutral-900 rounded-xl p-4 border border-neutral-800">
+            <div className="text-xs text-neutral-500 uppercase tracking-wider mb-1">Quality floor</div>
+            <div className="text-xl font-semibold">{profile.quality_floor.toFixed(1)}</div>
+            <div className="text-xs text-neutral-600 mt-0.5">Min IMDb for candidates</div>
+          </div>
+          <div className="bg-neutral-900 rounded-xl p-4 border border-neutral-800">
+            <div className="text-xs text-neutral-500 uppercase tracking-wider mb-1">Your neutral</div>
+            <div className="text-xl font-semibold">{profile.neutral.toFixed(1)}★</div>
+            <div className="text-xs text-neutral-600 mt-0.5">Calibrated from your ratings</div>
+          </div>
+        </section>
+
+        {/* Recent ratings */}
+        <section>
+          <h2 className="text-sm font-medium text-neutral-400 uppercase tracking-wider mb-4">
+            Recently rated
+          </h2>
+          <RecentRatings ratings={recentRatings} />
+        </section>
+
+        {/* Recommendation history */}
+        <section>
+          <h2 className="text-sm font-medium text-neutral-400 uppercase tracking-wider mb-4">
+            Past picks
+          </h2>
+          <RecommendationHistory history={history} />
+        </section>
+
+        <ImportFlow />
+      </div>
     </div>
   )
 }

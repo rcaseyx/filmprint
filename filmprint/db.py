@@ -366,6 +366,49 @@ def is_profile_stale(user_id: int, current_version: str = "1.0") -> bool:
 
 # --- recommendations ---
 
+def get_recent_ratings(user_id: int, limit: int = 20) -> list[dict]:
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT r.letterboxd_rating, r.rated_at,
+                   m.id, m.title, m.year, m.genres, m.runtime, m.raw_tmdb
+            FROM user_ratings r
+            JOIN movies m ON m.id = r.movie_id
+            WHERE r.user_id = ?
+            ORDER BY r.rated_at DESC
+            LIMIT ?
+        """, (user_id, limit)).fetchall()
+    result = []
+    for row in rows:
+        m = dict(row)
+        m["raw_tmdb"] = json.loads(m["raw_tmdb"]) if m["raw_tmdb"] else {}
+        result.append(m)
+    return result
+
+
+def get_recommendation_history(user_id: int, limit: int = 20) -> list[dict]:
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT rec.id, rec.recommended_at, rec.mood_context, rec.score,
+                   m.id as movie_id, m.title, m.year, m.genres, m.runtime, m.raw_tmdb,
+                   CASE WHEN r.movie_id IS NOT NULL THEN 1 ELSE 0 END as followed_through,
+                   r.letterboxd_rating as follow_up_rating
+            FROM recommendations rec
+            JOIN movies m ON m.id = rec.movie_id
+            LEFT JOIN user_ratings r
+                   ON r.user_id = rec.user_id AND r.movie_id = rec.movie_id
+            WHERE rec.user_id = ?
+            ORDER BY rec.recommended_at DESC
+            LIMIT ?
+        """, (user_id, limit)).fetchall()
+    result = []
+    for row in rows:
+        m = dict(row)
+        m["raw_tmdb"] = json.loads(m["raw_tmdb"]) if m["raw_tmdb"] else {}
+        m["mood_context"] = json.loads(m["mood_context"]) if m["mood_context"] else {}
+        result.append(m)
+    return result
+
+
 def log_recommendation(user_id: int, movie_id: int, score: float, mood_context: dict) -> None:
     with get_connection() as conn:
         conn.execute("""
