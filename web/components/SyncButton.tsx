@@ -4,8 +4,9 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 
 interface SyncResult {
+  ratings_added: number
+  watchlist_added: number
   ratings_count: number
-  watchlist_count: number
   candidates_count: number
 }
 
@@ -43,7 +44,9 @@ export function SyncButton() {
       </button>
       {status === "done" && result && (
         <span className="text-xs text-neutral-500">
-          Done — {result.ratings_count} ratings · {result.candidates_count} candidates
+          {result.ratings_added > 0 || result.watchlist_added > 0
+            ? `+${result.ratings_added} ratings · +${result.watchlist_added} watchlist`
+            : "Already up to date"} · {result.candidates_count} candidates
         </span>
       )}
       {status === "error" && (

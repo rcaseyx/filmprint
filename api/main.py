@@ -25,7 +25,6 @@ from filmprint.db import (
     is_profile_stale, upsert_movie, update_feature_vector,
     log_recommendation, get_recent_recommendation_ids,
 )
-from filmprint.sync import sync_ratings_csv, sync_watchlist_csv, sync_watched_csv
 from filmprint.features import (
     build_feature_vector, taste_summary, build_keyword_vocab,
     build_affinity_scores, GENRES,
@@ -35,6 +34,7 @@ from filmprint.recommender import rank_watchlist, diversify
 from filmprint.discovery import expand_candidates
 from filmprint.app import ensure_feature_vectors
 from filmprint.tmdb import get_watch_providers
+from filmprint.sync import sync_ratings_csv, sync_watchlist_csv, sync_watched_csv, sync_rss
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 
@@ -42,16 +42,8 @@ DATA_DIR = Path(__file__).parent.parent / "data"
 _state: dict[str, Any] = {}
 
 
-def _build_pipeline(user_id: int) -> None:
-    ratings_path = DATA_DIR / "ratings.csv"
-    watchlist_path = DATA_DIR / "watchlist.csv"
-    watched_path = DATA_DIR / "watched.csv"
-
-    sync_ratings_csv(user_id, str(ratings_path))
-    sync_watchlist_csv(user_id, str(watchlist_path))
-    if watched_path.exists():
-        sync_watched_csv(user_id, str(watched_path))
-
+def _rebuild_state(user_id: int, username: str) -> None:
+    """Rebuild profile and ranking from whatever is currently in the DB. No sync."""
     rated_rows = get_user_ratings(user_id)
     rated_movies = ensure_feature_vectors(list(rated_rows))
     ratings = [r["letterboxd_rating"] for r in rated_rows]
@@ -95,6 +87,7 @@ def _build_pipeline(user_id: int) -> None:
 
     _state.update({
         "user_id": user_id,
+        "username": username,
         "rated_movies": rated_movies,
         "ratings": ratings,
         "profile_vec": profile_vec,
@@ -107,12 +100,29 @@ def _build_pipeline(user_id: int) -> None:
     })
 
 
+def _build_pipeline(user_id: int, username: str) -> None:
+    """Initial startup: sync from CSVs if present, then rebuild state."""
+    ratings_path = DATA_DIR / "ratings.csv"
+    watchlist_path = DATA_DIR / "watchlist.csv"
+    watched_path = DATA_DIR / "watched.csv"
+
+    if ratings_path.exists():
+        from filmprint.sync import sync_ratings_csv, sync_watchlist_csv, sync_watched_csv
+        sync_ratings_csv(user_id, str(ratings_path))
+        if watchlist_path.exists():
+            sync_watchlist_csv(user_id, str(watchlist_path))
+        if watched_path.exists():
+            sync_watched_csv(user_id, str(watched_path))
+
+    _rebuild_state(user_id, username)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    user_id, _ = get_or_prompt_user()
+    user_id, username = get_or_prompt_user()
     print("Initializing recommendation pipeline...")
-    _build_pipeline(user_id)
+    _build_pipeline(user_id, username)
     print(f"Ready — {len(_state['ranked'])} candidates ranked.")
     yield
 
@@ -383,14 +393,17 @@ def get_recommendations(mood: MoodContext):
 
 @app.post("/api/sync")
 def sync():
-    """Re-sync Letterboxd CSVs, rebuild profile if stale, re-rank candidates."""
+    """Pull latest activity from Letterboxd RSS, rebuild profile and ranking."""
     if not _state:
         raise HTTPException(status_code=503, detail="Pipeline not initialized")
     user_id = _state["user_id"]
-    _build_pipeline(user_id)
+    username = _state["username"]
+    ratings_added, watchlist_added = sync_rss(user_id, username)
+    _rebuild_state(user_id, username)
     return {
+        "ratings_added": ratings_added,
+        "watchlist_added": watchlist_added,
         "ratings_count": len(_state.get("ratings") or []),
         "watchlist_count": len(_state.get("watchlist_ids") or []),
         "candidates_count": len(_state.get("ranked") or []),
-        "summary": _state.get("summary"),
     }
