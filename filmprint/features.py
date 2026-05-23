@@ -165,3 +165,9 @@ def feature_labels(keyword_vocab: list[str] | None = None) -> list[str]:
         + [f"keyword:{k}" for k in (keyword_vocab or [])]
         + ["affinity:director", "affinity:actor"]
     )
+
+
+def taste_summary(profile: np.ndarray, keyword_vocab: list[str] | None = None) -> str:
+    labels = feature_labels(keyword_vocab)
+    top = sorted(zip(labels, profile), key=lambda x: x[1], reverse=True)[:8]
+    return ", ".join(f"{label} ({score:.2f})" for label, score in top)

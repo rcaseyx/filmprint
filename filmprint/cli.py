@@ -7,8 +7,10 @@ from dotenv import load_dotenv
 
 load_dotenv(override=True)
 from rich.console import Console
-from filmprint.features import GENRES
-from filmprint.recommender import diversify
+import random
+import numpy as np
+from filmprint.features import GENRES, taste_summary
+from filmprint.recommender import diversify, rank_watchlist
 
 console = Console()
 
@@ -38,9 +40,21 @@ def _call_claude(client: anthropic.Anthropic, **kwargs) -> str:
 
 _EMPTY_FILTERS = {"required_genres": [], "exclude_genres": [], "max_runtime": None}
 
+_OPENING_ANGLES = [
+    "energy level — something intense and gripping vs low-key and easy",
+    "mood or tone — light/escapist vs dark/heavy vs somewhere in between",
+    "one of their less-obvious genres — look past the dominant ones and ask about Horror, Sci-Fi, War, or whatever sits lower in their profile",
+    "pacing and atmosphere — slow-burn and atmospheric vs tight and fast-moving",
+    "time period or setting — contemporary, period piece, world cinema, a specific decade they might be feeling",
+    "what kind of experience they want — something safe and familiar vs challenging and unexpected",
+    "who they're watching with, and what kind of film works for that context",
+]
+
 
 def gather_mood_context(client: anthropic.Anthropic, taste_summary: str) -> tuple[str, dict]:
-    MAX_QUESTIONS = 5
+    MAX_QUESTIONS = 8   # hard cap on total questions asked
+    MIN_MEANINGFUL = 2  # real answers needed before Claude can conclude
+    opening_angle = random.choice(_OPENING_ANGLES)
 
     system = f"""You are a knowledgeable film friend helping someone pick what to watch tonight.
 
@@ -59,21 +73,24 @@ Rules:
 - Exactly 3 options per question
 - Make questions specific to their taste — reference genres or styles they actually like
 - Each follow-up should drill deeper into their previous answer, not jump to a new topic
-- Vary your opening angle each run: sometimes start with energy level or mood, sometimes with a specific genre or director style they like, sometimes with social context (solo vs. with someone) or pacing. Don't follow the same pattern every time.
+- Your first question must focus on: {opening_angle}
 - The summary should capture: mood/tone, anything to avoid
 - For required_genres and exclude_genres, use exact names from this list only: {", ".join(GENRES)}
-- Map adjacent concepts aggressively: espionage → Thriller, space/sci-fi → Science Fiction, heist → Crime
-- max_runtime: integer minutes if they want something short, null otherwise
+- For required_genres, map adjacent concepts: espionage → Thriller, space/sci-fi → Science Fiction, heist → Crime
+- For exclude_genres, ONLY include genres the user explicitly named (e.g. "no horror", "nothing scary"). NEVER infer genre exclusions from pacing or tone — "nothing slow" does NOT mean exclude Horror or Drama
+- max_runtime: integer minutes if they explicitly said they want something short, null otherwise
+- If the user chose "None of these" for a question, your next question must take a completely different angle — different genre territory, different framing entirely. Do not rephrase the same options
 - Output ONLY valid JSON, no commentary"""
 
     messages = [{"role": "user", "content": "What should I watch tonight?"}]
     qa_history = []
+    meaningful_count = 0
     console.print()
 
     for _ in range(MAX_QUESTIONS):
         reply = _call_claude(
             client,
-            model="claude-sonnet-4-6",
+            model="claude-haiku-4-5-20251001",
             max_tokens=300,
             system=system,
             messages=messages,
@@ -86,12 +103,16 @@ Rules:
             return reply.strip(), _EMPTY_FILTERS
 
         if parsed.get("done"):
-            filters = {
-                "required_genres": parsed.get("required_genres") or [],
-                "exclude_genres": parsed.get("exclude_genres") or [],
-                "max_runtime": parsed.get("max_runtime"),
-            }
-            return parsed["summary"], filters
+            if meaningful_count >= MIN_MEANINGFUL:
+                filters = {
+                    "required_genres": parsed.get("required_genres") or [],
+                    "exclude_genres": parsed.get("exclude_genres") or [],
+                    "max_runtime": parsed.get("max_runtime"),
+                }
+                return parsed["summary"], filters
+            # Not enough real answers yet — push Claude to keep going
+            messages.append({"role": "user", "content": "Keep going — ask another question."})
+            continue
 
         question = parsed["question"]
         options = parsed["options"]
@@ -109,6 +130,8 @@ Rules:
             console.print(f"[yellow]Enter 1-{len(options)} or 0[/yellow]")
 
         chosen = options[int(choice) - 1] if choice != "0" else "None of these"
+        if choice != "0":
+            meaningful_count += 1
         qa_history.append((question, chosen))
         messages.append({"role": "user", "content": chosen})
 
@@ -116,7 +139,7 @@ Rules:
     messages.append({"role": "user", "content": "That's all the questions. Please provide your summary now."})
     reply = _call_claude(
         client,
-        model="claude-sonnet-4-6",
+        model="claude-haiku-4-5-20251001",
         max_tokens=200,
         system=system,
         messages=messages,
@@ -131,6 +154,26 @@ Rules:
         return parsed.get("summary", reply.strip()), filters
     except json.JSONDecodeError:
         return reply.strip(), _EMPTY_FILTERS
+
+
+def select_cluster(
+    clusters: list,
+    filters: dict,
+) -> "np.ndarray | None":
+    """
+    Pick the cluster profile whose genre weights best match the mood's required
+    genres. Returns None if there are no clusters or no genre preference, so
+    the caller falls back to the blended profile.
+    """
+    required = filters.get("required_genres") or []
+    if not clusters or not required:
+        return None
+
+    genre_indices = [GENRES.index(g) for g in required if g in GENRES]
+    if not genre_indices:
+        return None
+
+    return max(clusters, key=lambda c: sum(c[i] for i in genre_indices))
 
 
 def apply_mood_filters(
@@ -224,24 +267,27 @@ Do NOT reference taste profile labels. Do NOT infer or invent preferences they d
     )
 
 
-def run(rated_movies, ratings, ranked, taste_summary, watchlist_ids, keyword_vocab=None, affinity=None):
+def run(rated_movies, ratings, ranked, blended_summary, watchlist_ids,
+        keyword_vocab=None, affinity=None, clusters=None):
     client = anthropic.Anthropic()
 
     console.print("\n[bold]Let's figure out what to watch tonight.[/bold]")
-    mood_summary, filters = gather_mood_context(client, taste_summary)
+    mood_summary, filters = gather_mood_context(client, blended_summary)
+
+    # Select the cluster whose genre profile best matches tonight's mood.
+    # If no clear genre preference, fall back to the blended profile ranking.
+    cluster = select_cluster(clusters or [], filters)
+    if cluster is not None:
+        console.print("[dim]Using mood-matched taste cluster for ranking[/dim]")
+        all_candidates = [m for m, _ in ranked]
+        ranked = rank_watchlist(cluster, all_candidates, keyword_vocab, affinity)
+        active_summary = taste_summary(cluster, keyword_vocab)
+    else:
+        active_summary = blended_summary
+
     filtered_ranked = apply_mood_filters(ranked, filters)
     diverse_ranked = diversify(filtered_ranked, ranked, keyword_vocab, affinity)
 
-    def _genre_summary(candidates):
-        from collections import Counter
-        counts = Counter(
-            g for m, _ in candidates[:20] for g in _genre_names(m)
-        )
-        return ", ".join(f"{g}({n})" for g, n in counts.most_common(6))
-
-    console.print(f"[dim]Before MMR: {_genre_summary(filtered_ranked)}[/dim]")
-    console.print(f"[dim]After MMR:  {_genre_summary(diverse_ranked)}[/dim]")
-
     console.print("\n[bold]Finding your best picks...[/bold]\n")
-    explanation = explain_recommendations(client, diverse_ranked, mood_summary, taste_summary, watchlist_ids)
+    explanation = explain_recommendations(client, diverse_ranked, mood_summary, active_summary, watchlist_ids)
     console.print(explanation)
