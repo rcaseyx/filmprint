@@ -86,9 +86,12 @@ def get_watch_providers(tmdb_id: int, country: str = "US") -> list[dict]:
     """
     data = _cached_get(f"providers_{tmdb_id}", f"/movie/{tmdb_id}/watch/providers")
     region = data.get("results", {}).get(country, {})
+    # Sort by raw name length so canonical short names ("AMC+") beat channel variants
+    # ("AMC+ Amazon Channel", "AMC Plus Apple TV Channel") during deduplication.
+    flatrate = sorted(region.get("flatrate", []), key=lambda p: len(p["provider_name"]))
     seen_names: set[str] = set()
     providers = []
-    for p in region.get("flatrate", []):
+    for p in flatrate:
         normalized = _normalize_provider_name(p["provider_name"])
         if normalized not in seen_names:
             seen_names.add(normalized)

@@ -9,7 +9,9 @@ interface StreamingProvider {
 
 const PROVIDER_URLS: Record<string, string> = {
   "Netflix": "https://www.netflix.com",
-  "Amazon Prime Video": "https://www.amazon.com/Prime-Video",
+  "Amazon Prime Video": "https://www.primevideo.com",
+  "MGM+": "https://www.mgmplus.com",
+  "Sundance Now": "https://www.sundancenow.com",
   "Disney+": "https://www.disneyplus.com",
   "Max": "https://www.max.com",
   "HBO Max": "https://www.max.com",
