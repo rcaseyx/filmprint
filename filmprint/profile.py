@@ -5,6 +5,19 @@ from sklearn.cluster import KMeans
 from .features import build_feature_vector
 
 
+def personal_neutral(ratings: list[float]) -> float:
+    """Derive the user's personal neutral rating point.
+
+    Users who rate generously (3★ = "liked it") have a mean skewed high.
+    We shift the midpoint 0.5 below the mean so those films register as
+    positive rather than neutral/excluded. Clamped to [1.5, 3.0].
+    """
+    if not ratings:
+        return 3.0
+    mean = sum(ratings) / len(ratings)
+    return round(max(1.5, min(3.0, mean - 0.5)), 2)
+
+
 def build_critic_profile(rated_movies: list[dict], ratings: list[float]) -> dict:
     """Compute how the user's taste aligns with critics and infer a quality floor.
 
@@ -12,14 +25,19 @@ def build_critic_profile(rated_movies: list[dict], ratings: list[float]) -> dict
         alignment: mean delta between user rating (normalised 0-10) and IMDb score.
                    Positive = user rates higher than critics, negative = harsher.
         quality_floor: inferred minimum TMDB vote_average for candidates.
-                       Derived from the 10th-percentile IMDb score of films the
-                       user has rated >= 4 stars, then nudged by alignment so
-                       contrarian users aren't over-filtered.
+                       Derived from the 25th-percentile IMDb score of films the user
+                       clearly liked (>= personal neutral + 1.0), minus a 1-point
+                       buffer for IMDb score compression. Contrarian users get a
+                       further reduction via alignment.
+        neutral: the derived personal neutral rating point.
     """
     from .omdb import get_scores
 
+    neutral = personal_neutral(ratings)
+    liked_threshold = neutral + 1.0
+
     deltas: list[float] = []
-    liked_scores: list[float] = []  # IMDb scores of films rated >= 4 stars
+    liked_scores: list[float] = []
 
     for movie, user_rating in zip(rated_movies, ratings):
         raw = movie.get("raw_tmdb") or movie
@@ -34,26 +52,25 @@ def build_critic_profile(rated_movies: list[dict], ratings: list[float]) -> dict
         user_normalised = user_rating * 2  # 0-5 → 0-10
         deltas.append(user_normalised - imdb)
 
-        if user_rating >= 4.0:
+        if user_rating >= liked_threshold:
             liked_scores.append(imdb)
 
     alignment = round(sum(deltas) / len(deltas), 2) if deltas else 0.0
 
     if liked_scores:
         liked_scores.sort()
-        p10_idx = max(0, int(len(liked_scores) * 0.10))
-        base_floor = liked_scores[p10_idx]
+        p25_idx = max(0, int(len(liked_scores) * 0.25))
+        # 1-point buffer: IMDb scores compress — a 6.0 film can be genuinely good
+        base_floor = liked_scores[p25_idx] - 1.0
     else:
-        base_floor = 6.0
+        base_floor = 5.5
 
-    # Contrarians (high positive alignment) get a lower floor;
-    # harsh users (negative alignment) get a higher one.
-    adjusted_floor = round(max(5.0, min(8.0, base_floor - alignment * 0.3)), 2)
+    adjusted_floor = round(max(4.0, min(7.5, base_floor - alignment * 0.5)), 2)
 
-    return {"alignment": alignment, "quality_floor": adjusted_floor}
+    return {"alignment": alignment, "quality_floor": adjusted_floor, "neutral": neutral}
 
 # Bump this any time the profile algorithm changes to force a rebuild.
-PROFILE_VERSION = "3.0"
+PROFILE_VERSION = "5.0"
 
 
 def build_taste_profile(
@@ -63,23 +80,23 @@ def build_taste_profile(
     affinity: dict | None = None,
 ) -> np.ndarray:
     """
-    Build a taste profile using signed exponential weights.
+    Build a taste profile using signed exponential weights around a personal neutral.
 
-    Weight formula: sign(r - 3.0) * (r - 3.0)^2
-      - 5.0 stars → +4.0  (loved it, pulls profile strongly toward)
-      - 4.0 stars → +1.0
-      - 3.0 stars →  0.0  (neutral, excluded entirely)
-      - 2.0 stars → -1.0
-      - 1.0 stars → -4.0  (hated it, actively pushes profile away)
+    The neutral point is derived from the rating distribution (mean - 0.5) so users
+    who rate generously (3★ = liked it) still have those films pull the profile
+    positively rather than being excluded as neutral.
+
+    Weight formula: sign(r - neutral) * (r - neutral)^2
     """
     if not rated_movies:
         raise ValueError("No rated movies to build a profile from.")
 
+    neutral = personal_neutral(ratings)
     vectors = []
     signed_weights = []
 
     for movie, rating in zip(rated_movies, ratings):
-        delta = rating - 3.0
+        delta = rating - neutral
         if abs(delta) < 0.01:
             continue
         w = (1 if delta > 0 else -1) * delta ** 2
@@ -113,9 +130,10 @@ def build_taste_clusters(
     if there aren't enough non-neutral films). Returns empty list if there's
     not enough data to cluster meaningfully.
     """
+    neutral = personal_neutral(ratings)
     pairs = [
         (m, r) for m, r in zip(rated_movies, ratings)
-        if abs(r - 3.0) >= 0.5
+        if abs(r - neutral) >= 0.5
     ]
 
     if len(pairs) < n_clusters * 10:

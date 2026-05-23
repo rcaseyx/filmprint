@@ -26,12 +26,13 @@ from filmprint.db import (
     get_seen_movie_ids, get_taste_profile, save_taste_profile,
     is_profile_stale, upsert_movie, update_feature_vector,
     log_recommendation, get_recent_recommendation_ids,
+    get_recent_ratings, get_recommendation_history,
 )
 from filmprint.features import (
     build_feature_vector, taste_summary, build_keyword_vocab,
-    build_affinity_scores, GENRES,
+    build_affinity_scores, GENRES, DECADES,
 )
-from filmprint.profile import build_taste_profile, build_taste_clusters, build_critic_profile, PROFILE_VERSION
+from filmprint.profile import build_taste_profile, build_taste_clusters, build_critic_profile, personal_neutral, PROFILE_VERSION
 from filmprint.recommender import rank_watchlist, diversify
 from filmprint.discovery import expand_candidates, discover_by_mood
 from filmprint.app import ensure_feature_vectors
@@ -63,7 +64,7 @@ def _rebuild_state(user_id: int, username: str) -> None:
         profile_data = get_taste_profile(user_id)
         profile_vec = np.array(profile_data["vector"])
         clusters = [np.array(c) for c in profile_data.get("clusters") or []]
-        expected_len = 32 + len(keyword_vocab) + 2
+        expected_len = 35 + len(keyword_vocab) + 2
         if len(profile_vec) != expected_len:
             profile_vec = build_taste_profile(rated_movies, ratings, keyword_vocab, affinity)
             clusters = build_taste_clusters(rated_movies, ratings, keyword_vocab, affinity)
@@ -110,8 +111,10 @@ def _rebuild_state(user_id: int, username: str) -> None:
         "ranked": ranked,
         "watchlist_ids": watchlist_ids,
         "seen_ids": seen_ids,
+        "session_recommended_ids": set(),
         "quality_floor": quality_floor,
         "critic_alignment": critic["alignment"],
+        "neutral": critic["neutral"],
         "summary": taste_summary(profile_vec, keyword_vocab),
     })
 
@@ -340,12 +343,57 @@ def get_profile():
             if g in genre_counts:
                 genre_counts[g] += 1
 
-    genre_weights = {GENRES[i]: float(profile_vec[i]) for i in range(len(GENRES))} if profile_vec is not None else {}
+    if profile_vec is not None:
+        genre_weights = {GENRES[i]: float(profile_vec[i]) for i in range(len(GENRES))}
+        decade_weights = {DECADES[i]: float(profile_vec[len(GENRES) + i]) for i in range(len(DECADES))}
+    else:
+        genre_weights = {}
+        decade_weights = {}
+
     genres = [
         {"name": g, "count": genre_counts[g], "weight": genre_weights.get(g, 0.0)}
         for g in GENRES if genre_counts[g] > 0
     ]
     genres.sort(key=lambda x: x["weight"], reverse=True)
+
+    decades = [{"name": d, "weight": decade_weights.get(d, 0.0)} for d in DECADES]
+
+    neutral = _state.get("neutral", 3.0)
+    director_scores: dict[str, float] = dict((_state.get("affinity") or {}).get("directors", {}))
+
+    # Count how many rated films each director has
+    director_counts: dict[str, int] = {}
+    for movie in rated_movies:
+        raw = movie.get("raw_tmdb") or movie
+        crew = (raw.get("credits") or {}).get("crew", [])
+        for p in crew:
+            if p.get("job") == "Director":
+                n = p["name"]
+                director_counts[n] = director_counts.get(n, 0) + 1
+
+    # Merge Coen brothers into a single entry
+    COENS = {"Joel Coen", "Ethan Coen", "Joel Coen Jr."}
+    coen_scores = [director_scores[n] for n in COENS if n in director_scores]
+    if len(coen_scores) > 1:
+        director_scores["Coen Brothers"] = sum(coen_scores) / len(coen_scores)
+        director_counts["Coen Brothers"] = max(director_counts.get(n, 0) for n in COENS)
+        for n in COENS:
+            director_scores.pop(n, None)
+            director_counts.pop(n, None)
+
+    directors = sorted(
+        [
+            {
+                "name": name,
+                "shortName": "Coens" if name == "Coen Brothers" else name.split()[-1],
+                "weight": round(score - neutral, 3),
+            }
+            for name, score in director_scores.items()
+            if score > neutral and director_counts.get(name, 0) >= 2
+        ],
+        key=lambda x: x["weight"],
+        reverse=True,
+    )[:8]
 
     return {
         "ratings_count": len(_state.get("ratings") or []),
@@ -353,6 +401,11 @@ def get_profile():
         "candidates_count": len(_state.get("ranked") or []),
         "summary": _state.get("summary"),
         "genres": genres,
+        "decades": decades,
+        "directors": directors,
+        "critic_alignment": _state.get("critic_alignment", 0.0),
+        "quality_floor": _state.get("quality_floor", 6.0),
+        "neutral": neutral,
     }
 
 
@@ -381,12 +434,64 @@ def get_genres():
     return {"genres": genres}
 
 
+@app.get("/api/ratings/recent")
+def recent_ratings():
+    if not _state:
+        raise HTTPException(status_code=503, detail="Pipeline not initialized")
+    user_id = _state["user_id"]
+    rows = get_recent_ratings(user_id, limit=20)
+    result = []
+    for m in rows:
+        raw = m.get("raw_tmdb") or {}
+        result.append({
+            "id": m["id"],
+            "title": m["title"],
+            "year": m.get("year"),
+            "rating": m["letterboxd_rating"],
+            "rated_at": m.get("rated_at"),
+            "poster_path": raw.get("poster_path"),
+            "genres": json.loads(m["genres"]) if isinstance(m.get("genres"), str) else (m.get("genres") or []),
+            "runtime": m.get("runtime"),
+        })
+    return {"ratings": result}
+
+
+@app.get("/api/recommendations/history")
+def recommendation_history():
+    if not _state:
+        raise HTTPException(status_code=503, detail="Pipeline not initialized")
+    user_id = _state["user_id"]
+    rows = get_recommendation_history(user_id, limit=20)
+    result = []
+    for m in rows:
+        raw = m.get("raw_tmdb") or {}
+        mood = m.get("mood_context") or {}
+        mood_filters = mood.get("filters") or {}
+        result.append({
+            "id": m["id"],
+            "movie_id": m["movie_id"],
+            "title": m["title"],
+            "year": m.get("year"),
+            "recommended_at": m.get("recommended_at"),
+            "poster_path": raw.get("poster_path"),
+            "genres": json.loads(m["genres"]) if isinstance(m.get("genres"), str) else (m.get("genres") or []),
+            "runtime": m.get("runtime"),
+            "score": m.get("score"),
+            "followed_through": bool(m.get("followed_through")),
+            "follow_up_rating": m.get("follow_up_rating"),
+            "mood_genres": mood_filters.get("required_genres") or [],
+            "mood_tone": mood_filters.get("tone"),
+        })
+    return {"history": result}
+
+
 @app.post("/api/recommendations")
 def get_recommendations(mood: MoodContext):
     if not _state:
         raise HTTPException(status_code=503, detail="Pipeline not initialized")
 
-    ranked = _state["ranked"]
+    session_ids = _state.get("session_recommended_ids", set())
+    ranked = [(m, s) for m, s in _state["ranked"] if m["id"] not in session_ids]
     keyword_vocab = _state["keyword_vocab"]
     affinity = _state["affinity"]
     profile_vec = _state["profile_vec"]
@@ -427,6 +532,7 @@ def get_recommendations(mood: MoodContext):
     mood_context = {"summary": mood_summary, "filters": mood.model_dump()}
     for pick in picks:
         log_recommendation(user_id, pick["id"], pick["score"], mood_context)
+        _state["session_recommended_ids"].add(pick["id"])
 
     return {"picks": picks, "mood_summary": mood_summary}
 

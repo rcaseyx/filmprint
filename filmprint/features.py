@@ -78,6 +78,27 @@ def _keyword_vector(movie: dict, vocab: list[str]) -> list[float]:
     return [1.0 if kw in kw_names else 0.0 for kw in vocab]
 
 
+def _critic_scores_vector(movie: dict) -> list[float]:
+    from .omdb import get_scores
+    imdb_id = _raw(movie).get("imdb_id", "")
+    if not imdb_id:
+        return [0.0, 0.0, 0.0]
+    scores = get_scores(imdb_id)
+    try:
+        imdb = float(scores["imdb"]) / 10.0 if scores["imdb"] else 0.0
+    except (ValueError, TypeError):
+        imdb = 0.0
+    try:
+        rt = float(str(scores["rt"]).rstrip("%")) / 100.0 if scores["rt"] else 0.0
+    except (ValueError, TypeError):
+        rt = 0.0
+    try:
+        mc = float(scores["metacritic"]) / 100.0 if scores["metacritic"] else 0.0
+    except (ValueError, TypeError):
+        mc = 0.0
+    return [imdb, rt, mc]
+
+
 def _affinity_vector(movie: dict, affinity: dict) -> list[float]:
     if not affinity:
         return [0.0, 0.0]
@@ -148,6 +169,7 @@ def build_feature_vector(
         + _runtime_vector(movie)
         + _score_vector(movie)
         + _popularity_vector(movie)
+        + _critic_scores_vector(movie)
         + _keyword_vector(movie, keyword_vocab or [])
         + _affinity_vector(movie, affinity or {})
     )
@@ -161,7 +183,7 @@ def feature_labels(keyword_vocab: list[str] | None = None) -> list[str]:
         [f"genre:{g}" for g in GENRES]
         + [f"decade:{d}" for d in DECADES]
         + [f"runtime:{b}" for b in RUNTIME_BUCKETS]
-        + ["score", "popularity"]
+        + ["score", "popularity", "critic:imdb", "critic:rt", "critic:metacritic"]
         + [f"keyword:{k}" for k in (keyword_vocab or [])]
         + ["affinity:director", "affinity:actor"]
     )
