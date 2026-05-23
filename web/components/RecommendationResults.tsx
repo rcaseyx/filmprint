@@ -29,6 +29,8 @@ const PROVIDER_URLS: Record<string, string> = {
   "Tubi": "https://tubitv.com",
   "Pluto TV": "https://pluto.tv",
   "Plex": "https://watch.plex.tv",
+  "FuboTV": "https://www.fubo.tv",
+  "YouTube TV": "https://tv.youtube.com",
 }
 
 interface Pick {
@@ -52,14 +54,8 @@ interface Props {
 export function RecommendationResults({ picks, onReset }: Props) {
   return (
     <div>
-      <div className="flex items-center justify-between mb-8">
+      <div className="mb-8">
         <h2 className="text-xl font-semibold tracking-tight">Tonight's picks</h2>
-        <button
-          onClick={onReset}
-          className="text-sm text-neutral-400 hover:text-neutral-200 transition-colors"
-        >
-          ← Start over
-        </button>
       </div>
 
       <div className="space-y-6 pb-2">

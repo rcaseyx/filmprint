@@ -387,7 +387,8 @@ def get_recommendations(mood: MoodContext):
     # Augment with TMDB Discover when mood specifies genres
     if mood.required_genres:
         existing_ids = {m["id"] for m, _ in ranked}
-        discovered_raw = discover_by_mood(mood.required_genres, existing_ids=existing_ids)
+        excluded = _state.get("seen_ids", set()) | existing_ids
+        discovered_raw = discover_by_mood(mood.required_genres, existing_ids=excluded)
         if discovered_raw:
             for d in discovered_raw:
                 upsert_movie(d)
