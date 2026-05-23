@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+:root {
+  --brand: #fbbf24; /* amber-400 — change here to retheme the whole app */
+}
+
 html {
   font-size: 17px;
 }
@@ -16,6 +20,22 @@ body {
   /* Small metadata text — genres, dates, runtime */
   .meta {
     @apply text-sm text-neutral-500;
+  }
+
+  .btn-primary {
+    @apply font-semibold rounded-lg cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed;
+    background-color: var(--brand);
+    color: #0a0a0a;
+    transition: box-shadow 150ms ease;
+  }
+  .btn-primary:hover:not(:disabled) {
+    box-shadow: 0 0 0 1.5px var(--brand), 0 0 14px color-mix(in srgb, var(--brand) 35%, transparent);
+  }
+
+  .btn-secondary {
+    @apply border border-neutral-700 text-neutral-300 rounded-lg transition-colors;
+    @apply hover:border-neutral-500 hover:text-neutral-100;
+    @apply disabled:opacity-40 disabled:cursor-not-allowed;
   }
 }
 
@@ -44,10 +64,18 @@ body {
 }
 
 .genre-bar {
-  transition: width 0.6s ease-out;
+  transition: width 1.2s ease-out 0.3s;
   @starting-style {
     width: 0 !important;
   }
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

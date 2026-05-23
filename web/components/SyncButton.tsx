@@ -7,7 +7,6 @@ interface SyncResult {
   ratings_added: number
   watchlist_added: number
   ratings_count: number
-  candidates_count: number
 }
 
 export function SyncButton() {
@@ -34,19 +33,24 @@ export function SyncButton() {
   }
 
   return (
-    <div className="flex items-center gap-4">
-      <button
-        onClick={handleSync}
-        disabled={status === "syncing"}
-        className="px-4 py-2 text-sm rounded-lg border border-neutral-700 text-neutral-300 hover:border-neutral-500 hover:text-neutral-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-      >
-        {status === "syncing" ? "Syncing..." : "Sync my data"}
-      </button>
+    <div className="flex flex-col items-end gap-2">
+      <div className="flex flex-col gap-1.5">
+        <button
+          onClick={handleSync}
+          disabled={status === "syncing"}
+          className="btn-primary px-4 py-2 text-sm"
+        >
+          {status === "syncing" ? "Syncing..." : "Sync my data"}
+        </button>
+        <a href="/import" className="btn-secondary px-4 py-2 text-sm text-center">
+          Re-import data
+        </a>
+      </div>
       {status === "done" && result && (
         <span className="text-xs text-neutral-500">
           {result.ratings_added > 0 || result.watchlist_added > 0
             ? `+${result.ratings_added} ratings · +${result.watchlist_added} watchlist`
-            : "Already up to date"} · {result.candidates_count} candidates
+            : "Already up to date"}
         </span>
       )}
       {status === "error" && (

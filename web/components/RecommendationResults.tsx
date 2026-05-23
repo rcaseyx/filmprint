@@ -163,7 +163,7 @@ export function RecommendationResults({ picks, onReset }: Props) {
 
       <button
         onClick={onReset}
-        className="mt-8 w-full py-3 rounded-lg border border-neutral-800 text-neutral-500 text-sm font-medium hover:border-neutral-600 hover:text-neutral-300 transition-colors"
+        className="btn-secondary mt-8 w-full py-3 text-sm font-medium"
       >
         Start over
       </button>

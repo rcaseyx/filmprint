@@ -1,7 +1,6 @@
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { SyncButton } from "@/components/SyncButton"
-import { ImportFlow } from "@/components/ImportFlow"
 import { GenreRadar } from "@/components/GenreRadar"
 import { RecentRatings } from "@/components/RecentRatings"
 import { RecommendationHistory } from "@/components/RecommendationHistory"
@@ -27,7 +26,7 @@ interface Director {
 interface ProfileData {
   ratings_count: number
   watchlist_count: number
-  candidates_count: number
+  avg_rating: number
   summary: string
   genres: Genre[]
   decades: Decade[]
@@ -124,7 +123,7 @@ export default async function ProfilePage() {
         <ProfileStats
           ratings={profile.ratings_count}
           watchlist={profile.watchlist_count}
-          candidates={profile.candidates_count}
+          avgRating={profile.avg_rating}
         />
       </div>
 
@@ -186,21 +185,20 @@ export default async function ProfilePage() {
 
         {/* Recent ratings */}
         <section>
-          <h2 className="label mb-4">
-            Recently rated
-          </h2>
-          <RecentRatings ratings={recentRatings} />
+          <h2 className="label mb-4">Recently rated</h2>
+          <div className="-mx-6">
+            <RecentRatings ratings={recentRatings} />
+          </div>
         </section>
 
         {/* Recommendation history */}
         <section>
-          <h2 className="label mb-4">
-            Past picks
-          </h2>
-          <RecommendationHistory history={history} />
+          <h2 className="label mb-4">Past picks</h2>
+          <div className="-mx-6">
+            <RecommendationHistory history={history} />
+          </div>
         </section>
 
-        <ImportFlow />
       </div>
     </div>
   )

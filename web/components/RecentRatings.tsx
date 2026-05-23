@@ -19,24 +19,11 @@ function Stars({ rating }: { rating: number }) {
   const full = Math.floor(rating)
   const half = rating % 1 >= 0.5
   return (
-    <span className="text-sm text-amber-400 tracking-tight">
+    <span className="text-xs text-amber-400 tracking-tight">
       {"★".repeat(full)}
       {half ? "½" : ""}
     </span>
   )
-}
-
-function relativeDate(dateStr: string | null): string {
-  if (!dateStr) return ""
-  const date = new Date(dateStr)
-  if (isNaN(date.getTime())) return ""
-  const now = new Date()
-  const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24))
-  if (diffDays === 0) return "Today"
-  if (diffDays === 1) return "Yesterday"
-  if (diffDays < 30) return `${diffDays}d ago`
-  if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo ago`
-  return `${Math.floor(diffDays / 365)}y ago`
 }
 
 export function RecentRatings({ ratings }: Props) {
@@ -45,31 +32,34 @@ export function RecentRatings({ ratings }: Props) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-1 px-6">
       {ratings.map((film) => (
-        <div key={`${film.id}-${film.rated_at}`} className="flex items-center gap-3">
-          <div className="flex-shrink-0 w-10 h-[60px] rounded overflow-hidden bg-neutral-800">
+        <a
+          key={`${film.id}-${film.rated_at}`}
+          href={`https://letterboxd.com/tmdb/${film.id}/`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex-shrink-0 w-[104px] group"
+        >
+          <div className="w-[104px] h-[156px] rounded-lg overflow-hidden bg-neutral-800 mb-2">
             {film.poster_path ? (
               <Image
-                src={`https://image.tmdb.org/t/p/w92${film.poster_path}`}
+                src={`https://image.tmdb.org/t/p/w185${film.poster_path}`}
                 alt={film.title}
-                width={40}
-                height={60}
-                className="object-cover w-full h-full"
+                width={104}
+                height={156}
+                className="object-cover w-full h-full group-hover:opacity-75 transition-opacity duration-150"
               />
             ) : (
-              <div className="w-full h-full bg-neutral-800" />
+              <div className="w-full h-full flex items-center justify-center text-neutral-700 text-xs text-center p-2">
+                {film.title}
+              </div>
             )}
           </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-baseline gap-2">
-              <span className="font-medium truncate">{film.title}</span>
-              <span className="meta shrink-0">{film.year}</span>
-            </div>
-            <Stars rating={film.rating} />
-          </div>
-          <span className="meta shrink-0">{relativeDate(film.rated_at)}</span>
-        </div>
+          <Stars rating={film.rating} />
+          <div className="text-xs text-neutral-400 truncate mt-0.5 leading-snug">{film.title}</div>
+          <div className="text-xs text-neutral-600">{film.year}</div>
+        </a>
       ))}
     </div>
   )

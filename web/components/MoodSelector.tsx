@@ -225,7 +225,7 @@ export function MoodSelector({ genres }: Props) {
         onClick={handleSubmit}
         disabled={loading}
         style={{ animationDelay: `${chipsDuration + 180}ms` }}
-        className="animate-fade-in-up w-full py-3 rounded-xl bg-amber-400 text-neutral-950 font-semibold text-sm hover:bg-amber-300 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+        className="animate-fade-in-up btn-primary w-full py-3 text-sm"
       >
         {loading ? (
           <span className="flex items-center justify-center gap-2">
