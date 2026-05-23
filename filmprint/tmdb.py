@@ -69,17 +69,30 @@ def get_recommendations(tmdb_id: int) -> list[dict]:
     return data.get("results", [])
 
 
+def _normalize_provider_name(name: str) -> str:
+    """Strip distribution-channel suffixes so AMC+/AMC+ Amazon Channel/AMC Plus Apple TV Channel all collapse to 'AMC+'."""
+    import re
+    name = name.strip()
+    name = re.sub(r"\s+(Amazon Channel|Apple TV Channel|with Ads)$", "", name, flags=re.IGNORECASE)
+    name = re.sub(r"\s+Plus\b", "+", name)  # "AMC Plus" -> "AMC+", consuming the preceding space
+    return name.strip()
+
+
 def get_watch_providers(tmdb_id: int, country: str = "US") -> list[dict]:
-    """Return deduplicated flatrate (streaming) providers for a film in the given country."""
+    """Return deduplicated flatrate (streaming) providers for a film in the given country.
+
+    Deduplicates by normalized provider name so that e.g. 'AMC+', 'AMC+ Amazon Channel',
+    and 'AMC Plus Apple TV Channel' collapse to a single entry.
+    """
     data = _cached_get(f"providers_{tmdb_id}", f"/movie/{tmdb_id}/watch/providers")
     region = data.get("results", {}).get(country, {})
-    seen_logos: set[str] = set()
+    seen_names: set[str] = set()
     providers = []
     for p in region.get("flatrate", []):
-        logo = p["logo_path"]
-        if logo not in seen_logos:
-            seen_logos.add(logo)
-            providers.append({"name": p["provider_name"], "logo_path": logo})
+        normalized = _normalize_provider_name(p["provider_name"])
+        if normalized not in seen_names:
+            seen_names.add(normalized)
+            providers.append({"name": normalized, "logo_path": p["logo_path"]})
     return providers
 
 

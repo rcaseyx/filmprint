@@ -58,9 +58,9 @@ def discover_by_mood(
 ) -> list[dict]:
     """Query TMDB Discover using mood genre filters and return fully enriched candidates.
 
-    Runs two queries — mainstream (high vote count) and deep cuts (lower vote count,
-    higher rating floor) — deduplicates, then fully enriches each result. Results are
-    cached to disk so repeat queries with the same genres are instant.
+    Runs two queries — mainstream (1000+ votes) and hidden gems (500–10k votes, higher
+    rating floor) — deduplicates, then fully enriches each result. Results are cached
+    to disk so repeat queries with the same genres are instant.
     """
     genre_ids = [TMDB_GENRE_IDS[g] for g in required_genres if g in TMDB_GENRE_IDS]
     if not genre_ids:
@@ -69,9 +69,10 @@ def discover_by_mood(
     seen = set(existing_ids)
     raw_results: list[dict] = []
 
-    mainstream = discover_movies(genre_ids=genre_ids, vote_average_gte=6.5, vote_count_gte=300)
+    mainstream = discover_movies(genre_ids=genre_ids, vote_average_gte=6.5, vote_count_gte=1000)
+    # Hidden gems: well-regarded but not widely seen — 500 vote floor prevents truly obscure picks
     deep_cuts = discover_movies(
-        genre_ids=genre_ids, vote_average_gte=7.2, vote_count_gte=50, vote_count_lte=2000
+        genre_ids=genre_ids, vote_average_gte=7.2, vote_count_gte=500, vote_count_lte=10000
     )
 
     for result in mainstream + deep_cuts:
