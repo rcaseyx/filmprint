@@ -8,6 +8,10 @@ html {
   font-size: 17px;
 }
 
+button:not(:disabled) {
+  cursor: pointer;
+}
+
 body {
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
