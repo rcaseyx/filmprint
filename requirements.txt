@@ -1,4 +1,5 @@
 anthropic
+beautifulsoup4
 fastapi
 feedparser
 numpy

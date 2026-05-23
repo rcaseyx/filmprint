@@ -34,7 +34,7 @@ from filmprint.recommender import rank_watchlist, diversify
 from filmprint.discovery import expand_candidates
 from filmprint.app import ensure_feature_vectors
 from filmprint.tmdb import get_watch_providers
-from filmprint.sync import sync_ratings_csv, sync_watchlist_csv, sync_watched_csv, sync_rss
+from filmprint.sync import sync_ratings_csv, sync_watchlist_csv, sync_watched_csv, sync_rss, sync_scrape
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 
@@ -101,18 +101,23 @@ def _rebuild_state(user_id: int, username: str) -> None:
 
 
 def _build_pipeline(user_id: int, username: str) -> None:
-    """Initial startup: sync from CSVs if present, then rebuild state."""
+    """Initial startup: scrape Letterboxd on first run (no prior data), then rebuild state.
+    Falls back to CSV exports if present (useful for local dev seed)."""
+    from filmprint.db import get_ratings_count
+
     ratings_path = DATA_DIR / "ratings.csv"
     watchlist_path = DATA_DIR / "watchlist.csv"
     watched_path = DATA_DIR / "watched.csv"
 
     if ratings_path.exists():
-        from filmprint.sync import sync_ratings_csv, sync_watchlist_csv, sync_watched_csv
         sync_ratings_csv(user_id, str(ratings_path))
         if watchlist_path.exists():
             sync_watchlist_csv(user_id, str(watchlist_path))
         if watched_path.exists():
             sync_watched_csv(user_id, str(watched_path))
+    elif get_ratings_count(user_id) == 0:
+        print(f"  No local data — scraping {username}'s Letterboxd profile...")
+        sync_scrape(user_id, username)
 
     _rebuild_state(user_id, username)
 
@@ -393,16 +398,21 @@ def get_recommendations(mood: MoodContext):
 
 @app.post("/api/sync")
 def sync():
-    """Pull latest activity from Letterboxd RSS, rebuild profile and ranking."""
+    """Scrape latest ratings and watchlist from Letterboxd, rebuild profile and ranking."""
     if not _state:
         raise HTTPException(status_code=503, detail="Pipeline not initialized")
     user_id = _state["user_id"]
     username = _state["username"]
-    ratings_added, watchlist_added = sync_rss(user_id, username)
+
+    ratings_before = len(_state.get("ratings") or [])
+    watchlist_before = len(_state.get("watchlist_ids") or [])
+
+    sync_scrape(user_id, username)
     _rebuild_state(user_id, username)
+
     return {
-        "ratings_added": ratings_added,
-        "watchlist_added": watchlist_added,
+        "ratings_added": len(_state.get("ratings") or []) - ratings_before,
+        "watchlist_added": len(_state.get("watchlist_ids") or []) - watchlist_before,
         "ratings_count": len(_state.get("ratings") or []),
         "watchlist_count": len(_state.get("watchlist_ids") or []),
         "candidates_count": len(_state.get("ranked") or []),

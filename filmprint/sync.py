@@ -11,6 +11,7 @@ from .db import (
 from .letterboxd import (
     load_ratings_csv, load_watchlist_csv, load_watched_csv,
     fetch_rss_ratings, fetch_rss_watchlist,
+    scrape_ratings, scrape_watchlist,
 )
 from .tmdb import enrich_movie
 
@@ -62,6 +63,22 @@ def sync_watched_csv(user_id: int, path: str) -> int:
             upsert_watched(user_id, tmdb_id, row.get("Date"), source="csv")
             synced += 1
     return synced
+
+
+def sync_scrape(user_id: int, username: str) -> None:
+    """Full scrape of a public Letterboxd profile — upserts all ratings and watchlist entries."""
+    ratings = scrape_ratings(username)
+    watchlist = scrape_watchlist(username)
+
+    for entry in track(ratings, description="Syncing scraped ratings..."):
+        tmdb_id = _ensure_movie(entry["title"], entry.get("year"))
+        if tmdb_id:
+            upsert_rating(user_id, tmdb_id, entry["rating"], None, source="scrape")
+
+    for entry in track(watchlist, description="Syncing scraped watchlist..."):
+        tmdb_id = _ensure_movie(entry["title"], entry.get("year"))
+        if tmdb_id:
+            upsert_watchlist_entry(user_id, tmdb_id)
 
 
 def sync_rss(user_id: int, username: str) -> tuple[int, int]:
