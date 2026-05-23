@@ -37,7 +37,7 @@ function Stars({ rating }: { rating: number }) {
   const full = Math.floor(rating)
   const half = rating % 1 >= 0.5
   return (
-    <span className="text-xs text-amber-400 tracking-tight">
+    <span className="text-sm text-amber-400 tracking-tight">
       {"★".repeat(full)}
       {half ? "½" : ""}
     </span>
@@ -46,20 +46,20 @@ function Stars({ rating }: { rating: number }) {
 
 export function RecommendationHistory({ history }: Props) {
   if (!history.length) {
-    return <p className="text-sm text-neutral-600">No recommendations yet — go find your picks.</p>
+    return <p className="meta">No recommendations yet — go find your picks.</p>
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {history.map((entry) => (
         <div key={entry.id} className="flex items-center gap-3">
-          <div className="flex-shrink-0 w-9 h-[54px] rounded overflow-hidden bg-neutral-800">
+          <div className="flex-shrink-0 w-10 h-[60px] rounded overflow-hidden bg-neutral-800">
             {entry.poster_path ? (
               <Image
                 src={`https://image.tmdb.org/t/p/w92${entry.poster_path}`}
                 alt={entry.title}
-                width={36}
-                height={54}
+                width={40}
+                height={60}
                 className="object-cover w-full h-full"
               />
             ) : (
@@ -68,23 +68,21 @@ export function RecommendationHistory({ history }: Props) {
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-baseline gap-2">
-              <span className="text-sm font-medium truncate">{entry.title}</span>
-              <span className="text-xs text-neutral-600 shrink-0">{entry.year}</span>
+              <span className="font-medium truncate">{entry.title}</span>
+              <span className="meta shrink-0">{entry.year}</span>
             </div>
-            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+            <div className="flex items-center gap-3 mt-0.5">
               {entry.mood_genres.slice(0, 2).map((g) => (
-                <span key={g} className="text-xs text-neutral-600">{g}</span>
+                <span key={g} className="meta">{g}</span>
               ))}
               {entry.followed_through && (
-                entry.follow_up_rating ? (
-                  <Stars rating={entry.follow_up_rating} />
-                ) : (
-                  <span className="text-xs text-green-700">watched</span>
-                )
+                entry.follow_up_rating
+                  ? <Stars rating={entry.follow_up_rating} />
+                  : <span className="meta text-green-700">watched</span>
               )}
             </div>
           </div>
-          <span className="text-xs text-neutral-700 shrink-0">{relativeDate(entry.recommended_at)}</span>
+          <span className="meta shrink-0">{relativeDate(entry.recommended_at)}</span>
         </div>
       ))}
     </div>

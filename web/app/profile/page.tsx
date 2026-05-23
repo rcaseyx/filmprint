@@ -151,7 +151,7 @@ export default async function ProfilePage() {
       <div className="max-w-2xl mx-auto px-6 space-y-10">
         {/* Genre detail bars */}
         <section>
-          <h2 className="text-sm font-medium text-neutral-400 uppercase tracking-wider mb-3">
+          <h2 className="label mb-3">
             Genre affinity
           </h2>
           <div className="space-y-2">
@@ -160,7 +160,7 @@ export default async function ProfilePage() {
                 <span className="text-sm text-neutral-300 w-28 shrink-0">{g.name}</span>
                 <div className="flex-1 bg-neutral-800 rounded-full h-1.5">
                   <div
-                    className="bg-neutral-100 h-1.5 rounded-full"
+                    className="bg-amber-400 h-1.5 rounded-full"
                     style={{ width: `${(g.weight / maxWeight) * 100}%` }}
                   />
                 </div>
@@ -185,14 +185,14 @@ export default async function ProfilePage() {
           </div>
           <div className="bg-neutral-900 rounded-xl p-4 border border-neutral-800">
             <div className="text-xs text-neutral-500 uppercase tracking-wider mb-1">Your neutral</div>
-            <div className="text-xl font-semibold">{profile.neutral.toFixed(1)}★</div>
+            <div className="text-xl font-semibold text-amber-400">{profile.neutral.toFixed(1)}★</div>
             <div className="text-xs text-neutral-600 mt-0.5">Calibrated from your ratings</div>
           </div>
         </section>
 
         {/* Recent ratings */}
         <section>
-          <h2 className="text-sm font-medium text-neutral-400 uppercase tracking-wider mb-4">
+          <h2 className="label mb-4">
             Recently rated
           </h2>
           <RecentRatings ratings={recentRatings} />
@@ -200,7 +200,7 @@ export default async function ProfilePage() {
 
         {/* Recommendation history */}
         <section>
-          <h2 className="text-sm font-medium text-neutral-400 uppercase tracking-wider mb-4">
+          <h2 className="label mb-4">
             Past picks
           </h2>
           <RecommendationHistory history={history} />

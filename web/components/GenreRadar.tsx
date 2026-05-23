@@ -51,10 +51,10 @@ export function GenreRadar({ data, label }: Props) {
             stroke="#262626" strokeWidth={1} />
         ))}
         <polygon points={polygon}
-          fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.6)"
+          fill="rgba(251,191,36,0.08)" stroke="rgba(251,191,36,0.7)"
           strokeWidth={1.5} strokeLinejoin="round" />
         {dataPoints.map((p, i) => (
-          <circle key={i} cx={p.x} cy={p.y} r={2.5} fill="white" />
+          <circle key={i} cx={p.x} cy={p.y} r={2.5} fill="#fbbf24" />
         ))}
         {top.map((d, i) => {
           const x = CENTER + LABEL_R * Math.cos(angles[i])

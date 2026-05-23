@@ -19,7 +19,7 @@ function Stars({ rating }: { rating: number }) {
   const full = Math.floor(rating)
   const half = rating % 1 >= 0.5
   return (
-    <span className="text-xs text-neutral-400 tracking-tight">
+    <span className="text-sm text-amber-400 tracking-tight">
       {"★".repeat(full)}
       {half ? "½" : ""}
     </span>
@@ -41,20 +41,20 @@ function relativeDate(dateStr: string | null): string {
 
 export function RecentRatings({ ratings }: Props) {
   if (!ratings.length) {
-    return <p className="text-sm text-neutral-600">No ratings yet.</p>
+    return <p className="meta">No ratings yet.</p>
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {ratings.map((film) => (
         <div key={`${film.id}-${film.rated_at}`} className="flex items-center gap-3">
-          <div className="flex-shrink-0 w-9 h-[54px] rounded overflow-hidden bg-neutral-800">
+          <div className="flex-shrink-0 w-10 h-[60px] rounded overflow-hidden bg-neutral-800">
             {film.poster_path ? (
               <Image
                 src={`https://image.tmdb.org/t/p/w92${film.poster_path}`}
                 alt={film.title}
-                width={36}
-                height={54}
+                width={40}
+                height={60}
                 className="object-cover w-full h-full"
               />
             ) : (
@@ -63,12 +63,12 @@ export function RecentRatings({ ratings }: Props) {
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-baseline gap-2">
-              <span className="text-sm font-medium truncate">{film.title}</span>
-              <span className="text-xs text-neutral-600 shrink-0">{film.year}</span>
+              <span className="font-medium truncate">{film.title}</span>
+              <span className="meta shrink-0">{film.year}</span>
             </div>
             <Stars rating={film.rating} />
           </div>
-          <span className="text-xs text-neutral-700 shrink-0">{relativeDate(film.rated_at)}</span>
+          <span className="meta shrink-0">{relativeDate(film.rated_at)}</span>
         </div>
       ))}
     </div>
