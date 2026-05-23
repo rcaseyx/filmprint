@@ -36,6 +36,7 @@ from filmprint.recommender import rank_watchlist, diversify
 from filmprint.discovery import expand_candidates, discover_by_mood
 from filmprint.app import ensure_feature_vectors
 from filmprint.tmdb import get_watch_providers
+from filmprint.omdb import get_scores
 from filmprint.sync import sync_ratings_csv, sync_watchlist_csv, sync_watched_csv, sync_rss, sync_scrape
 
 DATA_DIR = Path(__file__).parent.parent / "data"
@@ -301,6 +302,7 @@ For each reason:
             "genres": _genre_names(movie),
             "runtime": movie.get("runtime"),
             "streaming": get_watch_providers(movie["id"]),
+            "scores": get_scores((movie.get("raw_tmdb") or movie).get("imdb_id", "")),
         })
     return picks
 

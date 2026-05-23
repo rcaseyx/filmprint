@@ -27,6 +27,12 @@ const STREAMING_WHITELIST: Record<string, string> = {
   "Tubi":                 "https://tubitv.com",
 }
 
+interface Scores {
+  imdb: string | null
+  rt: string | null
+  metacritic: string | null
+}
+
 interface Pick {
   id: number
   title: string
@@ -38,6 +44,7 @@ interface Pick {
   genres: string[]
   runtime: number | null
   streaming: StreamingProvider[]
+  scores: Scores
 }
 
 interface Props {
@@ -93,6 +100,25 @@ export function RecommendationResults({ picks, onReset }: Props) {
                   <span className="text-xs text-neutral-500">{pick.runtime}min</span>
                 )}
               </div>
+              {(pick.scores.rt || pick.scores.imdb || pick.scores.metacritic) && (
+                <div className="flex gap-3 mt-1.5">
+                  {pick.scores.rt && (
+                    <span className="text-xs text-neutral-400">
+                      🍅 {pick.scores.rt}
+                    </span>
+                  )}
+                  {pick.scores.imdb && (
+                    <span className="text-xs text-neutral-400">
+                      IMDb {pick.scores.imdb}
+                    </span>
+                  )}
+                  {pick.scores.metacritic && (
+                    <span className="text-xs text-neutral-400">
+                      MC {pick.scores.metacritic}
+                    </span>
+                  )}
+                </div>
+              )}
               <p className="text-sm text-neutral-300 mt-2 leading-relaxed">{pick.reason}</p>
 
               {/* Streaming providers */}
