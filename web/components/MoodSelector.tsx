@@ -19,6 +19,7 @@ interface Pick {
   poster_path: string | null
   genres: string[]
   runtime: number | null
+  streaming: { name: string; logo_path: string }[]
 }
 
 interface Props {

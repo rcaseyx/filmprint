@@ -2,6 +2,11 @@
 
 import Image from "next/image"
 
+interface StreamingProvider {
+  name: string
+  logo_path: string
+}
+
 interface Pick {
   id: number
   title: string
@@ -12,6 +17,7 @@ interface Pick {
   poster_path: string | null
   genres: string[]
   runtime: number | null
+  streaming: StreamingProvider[]
 }
 
 interface Props {
@@ -74,6 +80,26 @@ export function RecommendationResults({ picks, onReset }: Props) {
                 )}
               </div>
               <p className="text-sm text-neutral-300 mt-2 leading-relaxed">{pick.reason}</p>
+
+              {/* Streaming providers */}
+              {pick.streaming?.length > 0 && (
+                <div className="flex items-center gap-2 mt-3">
+                  {pick.streaming.slice(0, 4).map((p) => (
+                    <Image
+                      key={p.name}
+                      src={`https://image.tmdb.org/t/p/original${p.logo_path}`}
+                      alt={p.name}
+                      title={p.name}
+                      width={24}
+                      height={24}
+                      className="rounded-md"
+                    />
+                  ))}
+                  <span className="text-xs text-neutral-500">
+                    {pick.streaming.slice(0, 4).map((p) => p.name).join(" · ")}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         ))}
