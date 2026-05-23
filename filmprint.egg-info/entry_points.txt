@@ -1,0 +1,4 @@
+[console_scripts]
+filmprint = filmprint.app:main
+filmprint-api = api.server:start
+filmprint-refresh = scripts.refresh:refresh
