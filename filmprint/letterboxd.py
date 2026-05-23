@@ -1,8 +1,14 @@
-"""Letterboxd data ingestion — CSV export parsing and RSS feed polling."""
+"""Letterboxd data ingestion — CSV export parsing, RSS feed polling, and profile scraping."""
 
+import re
+import time
 import feedparser
 import pandas as pd
+import requests
+from bs4 import BeautifulSoup
 from pathlib import Path
+
+_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; filmprint/1.0)"}
 
 
 def load_ratings_csv(path: str) -> pd.DataFrame:
@@ -59,4 +65,68 @@ def fetch_rss_watchlist(username: str) -> list[dict]:
             "title": title,
             "year": int(year) if year else None,
         })
+    return entries
+
+
+def _parse_name_year(raw: str) -> tuple[str, int | None]:
+    """Split 'Movie Title (2024)' into ('Movie Title', 2024)."""
+    m = re.search(r'\((\d{4})\)\s*$', raw)
+    if m:
+        return raw[:m.start()].strip(), int(m.group(1))
+    return raw.strip(), None
+
+
+def _scrape_grid_page(url: str) -> tuple[list[dict], bool]:
+    """Scrape one page of a Letterboxd grid. Returns (items, has_next)."""
+    resp = requests.get(url, headers=_HEADERS, timeout=15)
+    if resp.status_code != 200:
+        return [], False
+    soup = BeautifulSoup(resp.text, "html.parser")
+    items = []
+    for li in soup.select("li.griditem"):
+        slug_el = li.select_one("[data-item-slug]")
+        if not slug_el:
+            continue
+        slug = slug_el.get("data-item-slug", "")
+        name = slug_el.get("data-item-name", "") or slug.replace("-", " ")
+        title, year = _parse_name_year(name)
+        rated_span = li.find(class_=re.compile(r"^rated-\d+$"))
+        rating = None
+        if rated_span:
+            rc = next(
+                (c for c in rated_span.get("class", []) if c.startswith("rated-")),
+                None,
+            )
+            if rc:
+                rating = int(rc.removeprefix("rated-")) / 2
+        items.append({"slug": slug, "title": title, "year": year, "rating": rating})
+    has_next = bool(soup.select_one("a.next"))
+    return items, has_next
+
+
+def scrape_ratings(username: str) -> list[dict]:
+    """Scrape the most recent rated films from a public Letterboxd profile.
+
+    Letterboxd only serves the first page (~72 films) of ratings without
+    authentication. Paginated URLs (/films/page/N/) return 403. For full
+    history, users should import their Letterboxd CSV export.
+    """
+    items, _ = _scrape_grid_page(f"https://letterboxd.com/{username}/films/")
+    return [e for e in items if e["rating"] is not None]
+
+
+def scrape_watchlist(username: str) -> list[dict]:
+    """Scrape all films from a public Letterboxd watchlist (all pages public)."""
+    entries = []
+    page = 1
+    while True:
+        url = f"https://letterboxd.com/{username}/watchlist/page/{page}/"
+        items, has_next = _scrape_grid_page(url)
+        if not items:
+            break
+        entries.extend(items)
+        if not has_next:
+            break
+        page += 1
+        time.sleep(0.3)
     return entries
