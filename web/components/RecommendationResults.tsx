@@ -7,6 +7,28 @@ interface StreamingProvider {
   logo_path: string
 }
 
+const PROVIDER_URLS: Record<string, string> = {
+  "Netflix": "https://www.netflix.com",
+  "Amazon Prime Video": "https://www.amazon.com/Prime-Video",
+  "Disney+": "https://www.disneyplus.com",
+  "Max": "https://www.max.com",
+  "HBO Max": "https://www.max.com",
+  "Hulu": "https://www.hulu.com",
+  "Apple TV+": "https://tv.apple.com",
+  "Peacock": "https://www.peacocktv.com",
+  "Paramount+": "https://www.paramountplus.com",
+  "AMC+": "https://www.amcplus.com",
+  "Shudder": "https://www.shudder.com",
+  "Philo": "https://www.philo.com",
+  "Starz": "https://www.starz.com",
+  "Showtime": "https://www.sho.com",
+  "Criterion Channel": "https://www.criterionchannel.com",
+  "MUBI": "https://mubi.com",
+  "Tubi": "https://tubitv.com",
+  "Pluto TV": "https://pluto.tv",
+  "Plex": "https://watch.plex.tv",
+}
+
 interface Pick {
   id: number
   title: string
@@ -84,17 +106,32 @@ export function RecommendationResults({ picks, onReset }: Props) {
               {/* Streaming providers */}
               {pick.streaming?.length > 0 && (
                 <div className="flex items-center gap-1.5 mt-3">
-                  {pick.streaming.slice(0, 5).map((p) => (
-                    <Image
-                      key={p.logo_path}
-                      src={`https://image.tmdb.org/t/p/original${p.logo_path}`}
-                      alt={p.name}
-                      title={p.name}
-                      width={24}
-                      height={24}
-                      className="rounded-md"
-                    />
-                  ))}
+                  {pick.streaming.slice(0, 5).map((p) => {
+                    const url = PROVIDER_URLS[p.name]
+                    const logo = (
+                      <Image
+                        src={`https://image.tmdb.org/t/p/original${p.logo_path}`}
+                        alt={p.name}
+                        title={p.name}
+                        width={24}
+                        height={24}
+                        className="rounded-md"
+                      />
+                    )
+                    return url ? (
+                      <a
+                        key={p.logo_path}
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={p.name}
+                      >
+                        {logo}
+                      </a>
+                    ) : (
+                      <span key={p.logo_path}>{logo}</span>
+                    )
+                  })}
                 </div>
               )}
             </div>
