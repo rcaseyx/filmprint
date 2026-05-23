@@ -15,7 +15,7 @@ from filmprint.db import (
 from filmprint.sync import sync_ratings_csv, sync_watchlist_csv, sync_watched_csv
 from filmprint.features import (
     build_feature_vector, feature_labels, taste_summary,
-    build_keyword_vocab, build_affinity_scores,
+    build_keyword_vocab, build_affinity_scores, SUBGENRE_AXES, TONE_AXES,
 )
 from filmprint.profile import build_taste_profile, build_taste_clusters, PROFILE_VERSION
 from filmprint.recommender import rank_watchlist
@@ -78,7 +78,7 @@ def main():
         profile_vec = np.array(profile_data["vector"])
         clusters = [np.array(c) for c in profile_data.get("clusters") or []]
         # Rebuild if vector dimensions changed (e.g. keyword vocab grew)
-        expected_len = 35 + len(keyword_vocab) + 2
+        expected_len = 35 + len(keyword_vocab) + 2 + len(SUBGENRE_AXES) + len(TONE_AXES)
         if len(profile_vec) != expected_len:
             print("  Vector dimensions changed, rebuilding...")
             profile_vec = build_taste_profile(rated_movies, ratings, keyword_vocab, affinity)

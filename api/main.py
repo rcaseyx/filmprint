@@ -30,7 +30,7 @@ from filmprint.db import (
 )
 from filmprint.features import (
     build_feature_vector, taste_summary, build_keyword_vocab,
-    build_affinity_scores, GENRES, DECADES,
+    build_affinity_scores, GENRES, DECADES, compute_axis_scores, TONE_AXES, SUBGENRE_AXES,
 )
 from filmprint.profile import build_taste_profile, build_taste_clusters, build_critic_profile, personal_neutral, PROFILE_VERSION
 from filmprint.recommender import rank_watchlist, diversify
@@ -64,7 +64,7 @@ def _rebuild_state(user_id: int, username: str) -> None:
         profile_data = get_taste_profile(user_id)
         profile_vec = np.array(profile_data["vector"])
         clusters = [np.array(c) for c in profile_data.get("clusters") or []]
-        expected_len = 35 + len(keyword_vocab) + 2
+        expected_len = 35 + len(keyword_vocab) + 2 + len(SUBGENRE_AXES) + len(TONE_AXES)
         if len(profile_vec) != expected_len:
             profile_vec = build_taste_profile(rated_movies, ratings, keyword_vocab, affinity)
             clusters = build_taste_clusters(rated_movies, ratings, keyword_vocab, affinity)
@@ -398,6 +398,9 @@ def get_profile():
     ratings = _state.get("ratings") or []
     avg_rating = round(sum(ratings) / len(ratings), 1) if ratings else 0.0
 
+    tone = compute_axis_scores(rated_movies, ratings, TONE_AXES)
+    subgenres = compute_axis_scores(rated_movies, ratings, SUBGENRE_AXES)
+
     return {
         "ratings_count": len(ratings),
         "watchlist_count": len(_state.get("watchlist_ids") or []),
@@ -406,6 +409,8 @@ def get_profile():
         "genres": genres,
         "decades": decades,
         "directors": directors,
+        "tone": tone,
+        "subgenres": subgenres,
         "critic_alignment": _state.get("critic_alignment", 0.0),
         "quality_floor": _state.get("quality_floor", 6.0),
         "neutral": neutral,
