@@ -107,8 +107,19 @@ export function MoodSelector({ genres }: Props) {
     }
   }
 
+  const handleReset = () => {
+    setPicks(null)
+    setSelectedGenres([])
+    setTone(null)
+    setPacing(null)
+    setFamiliarity(null)
+    setRuntime("any")
+    setFreeText("")
+    setError(null)
+  }
+
   if (picks) {
-    return <RecommendationResults picks={picks} onReset={() => setPicks(null)} />
+    return <RecommendationResults picks={picks} onReset={handleReset} />
   }
 
   return (
