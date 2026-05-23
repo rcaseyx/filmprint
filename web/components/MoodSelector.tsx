@@ -20,6 +20,7 @@ interface Pick {
   genres: string[]
   runtime: number | null
   streaming: { name: string; logo_path: string }[]
+  scores: { imdb: string | null; rt: string | null; metacritic: string | null }
 }
 
 interface Props {
