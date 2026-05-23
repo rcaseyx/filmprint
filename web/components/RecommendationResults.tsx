@@ -83,10 +83,10 @@ export function RecommendationResults({ picks, onReset }: Props) {
 
               {/* Streaming providers */}
               {pick.streaming?.length > 0 && (
-                <div className="flex items-center gap-2 mt-3">
-                  {pick.streaming.slice(0, 4).map((p) => (
+                <div className="flex items-center gap-1.5 mt-3">
+                  {pick.streaming.slice(0, 5).map((p) => (
                     <Image
-                      key={p.name}
+                      key={p.logo_path}
                       src={`https://image.tmdb.org/t/p/original${p.logo_path}`}
                       alt={p.name}
                       title={p.name}
@@ -95,9 +95,6 @@ export function RecommendationResults({ picks, onReset }: Props) {
                       className="rounded-md"
                     />
                   ))}
-                  <span className="text-xs text-neutral-500">
-                    {pick.streaming.slice(0, 4).map((p) => p.name).join(" · ")}
-                  </span>
                 </div>
               )}
             </div>

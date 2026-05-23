@@ -61,13 +61,17 @@ def get_recommendations(tmdb_id: int) -> list[dict]:
 
 
 def get_watch_providers(tmdb_id: int, country: str = "US") -> list[dict]:
-    """Return flatrate (streaming) providers for a film in the given country."""
+    """Return deduplicated flatrate (streaming) providers for a film in the given country."""
     data = _cached_get(f"providers_{tmdb_id}", f"/movie/{tmdb_id}/watch/providers")
     region = data.get("results", {}).get(country, {})
-    return [
-        {"name": p["provider_name"], "logo_path": p["logo_path"]}
-        for p in region.get("flatrate", [])
-    ]
+    seen_logos: set[str] = set()
+    providers = []
+    for p in region.get("flatrate", []):
+        logo = p["logo_path"]
+        if logo not in seen_logos:
+            seen_logos.add(logo)
+            providers.append({"name": p["provider_name"], "logo_path": logo})
+    return providers
 
 
 def enrich_movie(title: str, year: int | None = None) -> dict | None:
