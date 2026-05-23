@@ -379,3 +379,18 @@ def get_recommendations(mood: MoodContext):
         log_recommendation(user_id, pick["id"], pick["score"], mood_context)
 
     return {"picks": picks, "mood_summary": mood_summary}
+
+
+@app.post("/api/sync")
+def sync():
+    """Re-sync Letterboxd CSVs, rebuild profile if stale, re-rank candidates."""
+    if not _state:
+        raise HTTPException(status_code=503, detail="Pipeline not initialized")
+    user_id = _state["user_id"]
+    _build_pipeline(user_id)
+    return {
+        "ratings_count": len(_state.get("ratings") or []),
+        "watchlist_count": len(_state.get("watchlist_ids") or []),
+        "candidates_count": len(_state.get("ranked") or []),
+        "summary": _state.get("summary"),
+    }

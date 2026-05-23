@@ -1,5 +1,6 @@
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
+import { SyncButton } from "@/components/SyncButton"
 
 interface Genre {
   name: string
@@ -46,13 +47,16 @@ export default async function ProfilePage() {
   return (
     <div className="max-w-2xl mx-auto px-6 py-12 space-y-10">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {session?.user?.name ?? "Your"} taste profile
-        </h1>
-        <p className="text-neutral-400 text-sm mt-1">
-          Built from {profile.ratings_count} Letterboxd ratings
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {session?.user?.name ?? "Your"} taste profile
+          </h1>
+          <p className="text-neutral-400 text-sm mt-1">
+            Built from {profile.ratings_count} Letterboxd ratings
+          </p>
+        </div>
+        <SyncButton />
       </div>
 
       {/* Stats */}
