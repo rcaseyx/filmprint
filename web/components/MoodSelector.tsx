@@ -31,36 +31,37 @@ type Tone = "light" | "dark"
 type Pacing = "slow" | "fast"
 type Familiarity = "familiar" | "challenging"
 
-const RUNTIME_OPTIONS = [
-  { label: "Short", sublabel: "< 90 min", value: 90 },
+const RUNTIME_OPTIONS: { label: string; sublabel: string; value: number | null }[] = [
+  { label: "Short", sublabel: "Under 90 min", value: 90 },
   { label: "Standard", sublabel: "90–120 min", value: 120 },
-  { label: "Long", sublabel: "120+ min", value: null },
+  { label: "Long", sublabel: "Over 2 hours", value: null },
 ]
 
-function Toggle<T extends string>({
-  left, right, value, onChange,
+function VibeBlock({
+  label,
+  desc,
+  selected,
+  onClick,
 }: {
-  left: { label: string; value: T }
-  right: { label: string; value: T }
-  value: T | null
-  onChange: (v: T | null) => void
+  label: string
+  desc: string
+  selected: boolean
+  onClick: () => void
 }) {
   return (
-    <div className="flex rounded-lg overflow-hidden border border-neutral-800">
-      {[left, right].map((opt) => (
-        <button
-          key={opt.value}
-          onClick={() => onChange(value === opt.value ? null : opt.value)}
-          className={`flex-1 px-4 py-2 text-sm transition-colors ${
-            value === opt.value
-              ? "bg-neutral-100 text-neutral-900 font-medium"
-              : "text-neutral-400 hover:text-neutral-200"
-          }`}
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
+    <button
+      onClick={onClick}
+      className={`p-4 rounded-xl text-left border transition-colors ${
+        selected
+          ? "bg-amber-400 text-neutral-950 border-amber-400"
+          : "border-neutral-800 hover:bg-neutral-900/60 hover:border-neutral-600"
+      }`}
+    >
+      <div className="font-medium text-sm">{label}</div>
+      <div className={`text-xs mt-1 leading-snug ${selected ? "text-neutral-700" : "text-neutral-600"}`}>
+        {desc}
+      </div>
+    </button>
   )
 }
 
@@ -127,90 +128,95 @@ export function MoodSelector({ genres }: Props) {
     <div className="space-y-8">
       {/* Genre chips */}
       {genres.length > 0 && (
-        <section>
-          <h2 className="text-sm font-medium text-neutral-400 uppercase tracking-wider mb-3">Genres</h2>
-          <div className="flex flex-wrap gap-2">
-            {genres.map((g) => (
-              <button
-                key={g.name}
-                onClick={() => toggleGenre(g.name)}
-                className={`px-3 py-1.5 rounded-full text-sm transition-colors border ${
-                  selectedGenres.includes(g.name)
-                    ? "bg-neutral-100 text-neutral-900 border-neutral-100 font-medium"
-                    : "border-neutral-700 text-neutral-300 hover:border-neutral-500"
-                }`}
-              >
-                {g.name}
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Mood toggles */}
-      <section>
-        <h2 className="text-sm font-medium text-neutral-400 uppercase tracking-wider mb-3">Mood</h2>
-        <div className="space-y-2">
-          <Toggle<Tone>
-            left={{ label: "Light", value: "light" }}
-            right={{ label: "Dark", value: "dark" }}
-            value={tone}
-            onChange={setTone}
-          />
-          <Toggle<Pacing>
-            left={{ label: "Slow-burn", value: "slow" }}
-            right={{ label: "Fast-paced", value: "fast" }}
-            value={pacing}
-            onChange={setPacing}
-          />
-          <Toggle<Familiarity>
-            left={{ label: "Familiar", value: "familiar" }}
-            right={{ label: "Challenging", value: "challenging" }}
-            value={familiarity}
-            onChange={setFamiliarity}
-          />
-        </div>
-      </section>
-
-      {/* Runtime */}
-      <section>
-        <h2 className="text-sm font-medium text-neutral-400 uppercase tracking-wider mb-3">Runtime</h2>
-        <div className="flex gap-2">
-          {RUNTIME_OPTIONS.map((opt) => (
+        <div className="flex flex-wrap gap-2">
+          {genres.map((g) => (
             <button
-              key={opt.label}
-              onClick={() => setRuntime(runtime === opt.value ? "any" : opt.value)}
-              className={`flex-1 py-2 px-3 rounded-lg text-sm border transition-colors text-center ${
-                runtime === opt.value
-                  ? "bg-neutral-100 text-neutral-900 border-neutral-100 font-medium"
-                  : "border-neutral-700 text-neutral-300 hover:border-neutral-500"
+              key={g.name}
+              onClick={() => toggleGenre(g.name)}
+              className={`px-4 py-2 rounded-full text-sm transition-colors border ${
+                selectedGenres.includes(g.name)
+                  ? "bg-amber-400 text-neutral-950 border-amber-400 font-medium"
+                  : "border-neutral-800 text-neutral-400 hover:border-neutral-600 hover:text-neutral-200"
               }`}
             >
-              <div>{opt.label}</div>
-              <div className="text-xs opacity-60">{opt.sublabel}</div>
+              {g.name}
             </button>
           ))}
         </div>
-      </section>
+      )}
+
+      {/* Vibe grid */}
+      <div className="space-y-2">
+        <div className="grid grid-cols-2 gap-2">
+          <VibeBlock
+            label="Light"
+            desc="Feel-good, fun, easy watching"
+            selected={tone === "light"}
+            onClick={() => setTone(tone === "light" ? null : "light")}
+          />
+          <VibeBlock
+            label="Dark"
+            desc="Tense, heavy, or intense"
+            selected={tone === "dark"}
+            onClick={() => setTone(tone === "dark" ? null : "dark")}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <VibeBlock
+            label="Slow-burn"
+            desc="Patient, layered, atmospheric"
+            selected={pacing === "slow"}
+            onClick={() => setPacing(pacing === "slow" ? null : "slow")}
+          />
+          <VibeBlock
+            label="Fast-paced"
+            desc="Kinetic, plot-driven, propulsive"
+            selected={pacing === "fast"}
+            onClick={() => setPacing(pacing === "fast" ? null : "fast")}
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <VibeBlock
+            label="Crowd-pleaser"
+            desc="Accessible, broadly appealing"
+            selected={familiarity === "familiar"}
+            onClick={() => setFamiliarity(familiarity === "familiar" ? null : "familiar")}
+          />
+          <VibeBlock
+            label="Challenging"
+            desc="Unconventional, bold, demanding"
+            selected={familiarity === "challenging"}
+            onClick={() => setFamiliarity(familiarity === "challenging" ? null : "challenging")}
+          />
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {RUNTIME_OPTIONS.map((opt) => (
+            <VibeBlock
+              key={opt.label}
+              label={opt.label}
+              desc={opt.sublabel}
+              selected={runtime === opt.value}
+              onClick={() => setRuntime(runtime === opt.value ? "any" : opt.value)}
+            />
+          ))}
+        </div>
+      </div>
 
       {/* Free text */}
-      <section>
-        <h2 className="text-sm font-medium text-neutral-400 uppercase tracking-wider mb-3">Anything else?</h2>
-        <textarea
-          value={freeText}
-          onChange={(e) => setFreeText(e.target.value)}
-          placeholder="e.g. something set in Japan, or a director I haven't seen before..."
-          rows={2}
-          className="w-full bg-neutral-900 border border-neutral-700 rounded-lg px-4 py-3 text-sm text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-neutral-500 resize-none"
-        />
-      </section>
+      <textarea
+        value={freeText}
+        onChange={(e) => setFreeText(e.target.value)}
+        placeholder="e.g. something set in Japan, or a director I haven't seen before..."
+        rows={2}
+        className="w-full bg-neutral-900/60 border border-neutral-800 rounded-xl px-4 py-3 text-sm text-neutral-100 placeholder-neutral-700 focus:outline-none focus:border-neutral-600 resize-none"
+      />
 
       {error && <p className="text-red-400 text-sm">{error}</p>}
 
       <button
         onClick={handleSubmit}
         disabled={loading}
-        className="w-full py-3 rounded-lg bg-neutral-100 text-neutral-900 font-medium text-sm hover:bg-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full py-3 rounded-xl bg-amber-400 text-neutral-950 font-semibold text-sm hover:bg-amber-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
       >
         {loading ? "Finding your picks..." : "Find my picks"}
       </button>
