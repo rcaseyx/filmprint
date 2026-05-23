@@ -5,6 +5,7 @@ import { ImportFlow } from "@/components/ImportFlow"
 import { GenreRadar } from "@/components/GenreRadar"
 import { RecentRatings } from "@/components/RecentRatings"
 import { RecommendationHistory } from "@/components/RecommendationHistory"
+import { ProfileStats } from "@/components/ProfileStats"
 
 interface Genre {
   name: string
@@ -120,18 +121,11 @@ export default async function ProfilePage() {
           <SyncButton />
         </div>
 
-        <div className="grid grid-cols-3 gap-4">
-          {[
-            { label: "Ratings", value: profile.ratings_count },
-            { label: "Watchlist", value: profile.watchlist_count },
-            { label: "Candidates", value: profile.candidates_count },
-          ].map(({ label, value }) => (
-            <div key={label} className="bg-neutral-900 rounded-xl p-4 text-center border border-neutral-800">
-              <div className="text-2xl font-semibold">{value}</div>
-              <div className="text-xs text-neutral-500 mt-1 uppercase tracking-wider">{label}</div>
-            </div>
-          ))}
-        </div>
+        <ProfileStats
+          ratings={profile.ratings_count}
+          watchlist={profile.watchlist_count}
+          candidates={profile.candidates_count}
+        />
       </div>
 
       {/* Radars: wider section */}
@@ -160,7 +154,7 @@ export default async function ProfilePage() {
                 <span className="text-sm text-neutral-300 w-28 shrink-0">{g.name}</span>
                 <div className="flex-1 bg-neutral-800 rounded-full h-1.5">
                   <div
-                    className="bg-amber-400 h-1.5 rounded-full"
+                    className="bg-amber-400 h-1.5 rounded-full genre-bar"
                     style={{ width: `${(g.weight / maxWeight) * 100}%` }}
                   />
                 </div>
