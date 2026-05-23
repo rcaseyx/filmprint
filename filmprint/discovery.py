@@ -1,6 +1,6 @@
 """Expand the candidate pool beyond the watchlist using taste-seeded TMDB discovery."""
 
-from .tmdb import get_similar, get_recommendations, get_movie_details
+from .tmdb import get_similar, get_recommendations, get_movie_details, discover_movies, TMDB_GENRE_IDS
 
 
 def expand_candidates(
@@ -49,3 +49,37 @@ def expand_candidates(
                 return candidates
 
     return candidates
+
+
+def discover_by_mood(
+    required_genres: list[str],
+    existing_ids: set[int],
+    max_results: int = 40,
+) -> list[dict]:
+    """Query TMDB Discover using mood genre filters and return fully enriched candidates.
+
+    Runs two queries — mainstream (high vote count) and deep cuts (lower vote count,
+    higher rating floor) — deduplicates, then fully enriches each result. Results are
+    cached to disk so repeat queries with the same genres are instant.
+    """
+    genre_ids = [TMDB_GENRE_IDS[g] for g in required_genres if g in TMDB_GENRE_IDS]
+    if not genre_ids:
+        return []
+
+    seen = set(existing_ids)
+    raw_results: list[dict] = []
+
+    mainstream = discover_movies(genre_ids=genre_ids, vote_average_gte=6.5, vote_count_gte=300)
+    deep_cuts = discover_movies(
+        genre_ids=genre_ids, vote_average_gte=7.2, vote_count_gte=50, vote_count_lte=2000
+    )
+
+    for result in mainstream + deep_cuts:
+        if result["id"] in seen:
+            continue
+        seen.add(result["id"])
+        raw_results.append(result)
+        if len(raw_results) >= max_results:
+            break
+
+    return [get_movie_details(r["id"]) for r in raw_results]

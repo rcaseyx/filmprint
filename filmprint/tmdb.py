@@ -8,6 +8,15 @@ from pathlib import Path
 BASE_URL = "https://api.themoviedb.org/3"
 CACHE_DIR = Path(__file__).parent.parent / "data" / "cache"
 
+# Maps genre names (as used in our feature vectors) to TMDB genre IDs
+TMDB_GENRE_IDS: dict[str, int] = {
+    "Action": 28, "Adventure": 12, "Animation": 16, "Comedy": 35,
+    "Crime": 80, "Documentary": 99, "Drama": 18, "Family": 10751,
+    "Fantasy": 14, "History": 36, "Horror": 27, "Music": 10402,
+    "Mystery": 9648, "Romance": 10749, "Science Fiction": 878,
+    "Thriller": 53, "War": 10752, "Western": 37,
+}
+
 
 def _cache_path(key: str) -> Path:
     return CACHE_DIR / f"{key}.json"
@@ -72,6 +81,27 @@ def get_watch_providers(tmdb_id: int, country: str = "US") -> list[dict]:
             seen_logos.add(logo)
             providers.append({"name": p["provider_name"], "logo_path": logo})
     return providers
+
+
+def discover_movies(
+    genre_ids: list[int],
+    vote_average_gte: float = 6.5,
+    vote_count_gte: int = 150,
+    vote_count_lte: int | None = None,
+    page: int = 1,
+) -> list[dict]:
+    """Query TMDB Discover for films matching the given genre and quality filters."""
+    params: dict = {
+        "sort_by": "vote_average.desc",
+        "vote_average.gte": vote_average_gte,
+        "vote_count.gte": vote_count_gte,
+        "with_genres": ",".join(str(g) for g in genre_ids),
+        "page": page,
+    }
+    if vote_count_lte is not None:
+        params["vote_count.lte"] = vote_count_lte
+    cache_key = "discover_" + "_".join(f"{k}-{v}" for k, v in sorted(params.items()))
+    return _cached_get(cache_key, "/discover/movie", params).get("results", [])
 
 
 def enrich_movie(title: str, year: int | None = None) -> dict | None:
