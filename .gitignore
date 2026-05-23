@@ -7,3 +7,8 @@ data/cache/
 data/*.db
 venv/
 .venv/
+
+# Next.js
+web/.next/
+web/node_modules/
+web/.env.local
