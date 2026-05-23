@@ -1,6 +1,7 @@
 "use client"
 
 import Image from "next/image"
+import { useState } from "react"
 
 interface StreamingProvider {
   name: string
@@ -51,30 +52,45 @@ interface Props {
   onReset: () => void
 }
 
+function PosterImage({ path, title }: { path: string | null; title: string }) {
+  const [loaded, setLoaded] = useState(false)
+  return (
+    <div className="flex-shrink-0 w-40 h-60 rounded-lg overflow-hidden bg-neutral-800">
+      {path ? (
+        <Image
+          src={`https://image.tmdb.org/t/p/w200${path}`}
+          alt={title}
+          width={160}
+          height={240}
+          className={`object-cover w-full h-full transition-opacity duration-300 ${loaded ? "opacity-100" : "opacity-0"}`}
+          onLoad={() => setLoaded(true)}
+        />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center text-neutral-700 text-sm text-center p-3">
+          No poster
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function RecommendationResults({ picks, onReset }: Props) {
   return (
-    <div>
+    <div className="animate-fade-in">
       <h2 className="text-2xl font-semibold tracking-tight mb-6">Tonight's picks</h2>
 
       <div className="space-y-4">
-        {picks.map((pick) => (
-          <div key={pick.id} className="flex gap-5 bg-neutral-900/50 border border-neutral-800/70 rounded-xl p-4">
+        {picks.map((pick, index) => (
+          <a
+            key={pick.id}
+            href={`https://letterboxd.com/tmdb/${pick.id}/`}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ animationDelay: `${index * 80}ms` }}
+            className="animate-fade-in-up flex gap-5 bg-neutral-900/50 border border-neutral-800/70 rounded-xl p-4 hover:-translate-y-0.5 hover:border-amber-400/40 hover:bg-neutral-900/80 hover:shadow-lg hover:shadow-amber-900/20 transition-[transform,border-color,background-color,box-shadow] duration-200 cursor-pointer"
+          >
             {/* Poster */}
-            <div className="flex-shrink-0 w-40 h-60 rounded-lg overflow-hidden bg-neutral-800">
-              {pick.poster_path ? (
-                <Image
-                  src={`https://image.tmdb.org/t/p/w200${pick.poster_path}`}
-                  alt={pick.title}
-                  width={160}
-                  height={240}
-                  className="object-cover w-full h-full"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-neutral-700 text-sm text-center p-3">
-                  No poster
-                </div>
-              )}
-            </div>
+            <PosterImage path={pick.poster_path} title={pick.title} />
 
             {/* Info */}
             <div className="flex-1 min-w-0 flex flex-col gap-2.5 py-1">
@@ -128,26 +144,20 @@ export function RecommendationResults({ picks, onReset }: Props) {
                     .filter((p) => p.name in STREAMING_WHITELIST)
                     .slice(0, 5)
                     .map((p) => (
-                      <a
+                      <Image
                         key={p.logo_path}
-                        href={STREAMING_WHITELIST[p.name]}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                        src={`https://image.tmdb.org/t/p/original${p.logo_path}`}
+                        alt={p.name}
                         title={p.name}
-                      >
-                        <Image
-                          src={`https://image.tmdb.org/t/p/original${p.logo_path}`}
-                          alt={p.name}
-                          width={28}
-                          height={28}
-                          className="rounded-md opacity-80 hover:opacity-100 transition-opacity"
-                        />
-                      </a>
+                        width={28}
+                        height={28}
+                        className="rounded-md opacity-70"
+                      />
                     ))}
                 </div>
               )}
             </div>
-          </div>
+          </a>
         ))}
       </div>
 

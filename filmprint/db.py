@@ -10,6 +10,7 @@ SQLite → Postgres migration notes:
   - get_connection(): swap DB_PATH for a connection string
 """
 
+import hashlib
 import json
 import sqlite3
 from pathlib import Path
@@ -101,6 +102,7 @@ def init_db() -> None:
         for migration in [
             "ALTER TABLE taste_profile ADD COLUMN version TEXT NOT NULL DEFAULT '1.0'",
             "ALTER TABLE taste_profile ADD COLUMN clusters TEXT",
+            "ALTER TABLE taste_profile ADD COLUMN ratings_hash TEXT",
         ]:
             try:
                 conn.execute(migration)
@@ -319,6 +321,18 @@ def get_seen_movie_ids(user_id: int) -> set[int]:
 
 # --- taste_profile ---
 
+def compute_ratings_hash(user_id: int) -> str:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT movie_id, letterboxd_rating FROM user_ratings WHERE user_id = ? ORDER BY movie_id",
+            (user_id,),
+        ).fetchall()
+    h = hashlib.sha256()
+    for row in rows:
+        h.update(f"{row['movie_id']}:{row['letterboxd_rating']}".encode())
+    return h.hexdigest()
+
+
 def get_taste_profile(user_id: int) -> dict | None:
     with get_connection() as conn:
         row = conn.execute(
@@ -331,6 +345,7 @@ def get_taste_profile(user_id: int) -> dict | None:
             "ratings_count": row["ratings_count"],
             "version": row["version"],
             "clusters": json.loads(row["clusters"]) if row["clusters"] else [],
+            "ratings_hash": row["ratings_hash"],
         }
 
 
@@ -341,27 +356,30 @@ def save_taste_profile(
     version: str = "1.0",
     clusters: list[list[float]] | None = None,
 ) -> None:
+    ratings_hash = compute_ratings_hash(user_id)
     with get_connection() as conn:
         conn.execute("""
-            INSERT INTO taste_profile (user_id, vector, ratings_count, version, clusters)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO taste_profile (user_id, vector, ratings_count, version, clusters, ratings_hash)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(user_id) DO UPDATE SET
                 vector        = excluded.vector,
                 built_at      = datetime('now'),
                 ratings_count = excluded.ratings_count,
                 version       = excluded.version,
-                clusters      = excluded.clusters
+                clusters      = excluded.clusters,
+                ratings_hash  = excluded.ratings_hash
         """, (user_id, json.dumps(vector), ratings_count, version,
-              json.dumps(clusters) if clusters is not None else None))
+              json.dumps(clusters) if clusters is not None else None, ratings_hash))
 
 
 def is_profile_stale(user_id: int, current_version: str = "1.0") -> bool:
-    """Returns True if ratings have changed or the profile algorithm version changed."""
-    current_count = get_ratings_count(user_id)
+    """Returns True if any rating value changed, ratings were added/removed, or the algorithm version changed."""
     profile = get_taste_profile(user_id)
     if not profile:
         return True
-    return current_count != profile["ratings_count"] or profile["version"] != current_version
+    if profile["version"] != current_version:
+        return True
+    return compute_ratings_hash(user_id) != profile["ratings_hash"]
 
 
 # --- recommendations ---

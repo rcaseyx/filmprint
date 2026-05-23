@@ -51,7 +51,7 @@ function VibeBlock({
   return (
     <button
       onClick={onClick}
-      className={`p-4 rounded-xl text-left border transition-colors ${
+      className={`p-4 rounded-xl text-left border transition-all duration-200 ${
         selected
           ? "bg-amber-400 text-neutral-950 border-amber-400"
           : "border-neutral-800 hover:bg-neutral-900/60 hover:border-neutral-600"
@@ -124,18 +124,25 @@ export function MoodSelector({ genres }: Props) {
     return <RecommendationResults picks={picks} onReset={handleReset} />
   }
 
+  const chipsDuration = Math.min(genres.length * 35 + 50, 350)
+
   return (
     <div className="space-y-8">
+      <div className="animate-fade-in-up mb-10">
+        <h1 className="text-2xl font-semibold tracking-tight">What are you in the mood for?</h1>
+        <p className="text-neutral-400 text-sm mt-1">Pick what sounds good tonight and we'll find your best options.</p>
+      </div>
       {/* Genre chips */}
       {genres.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {genres.map((g) => (
+          {genres.map((g, i) => (
             <button
               key={g.name}
               onClick={() => toggleGenre(g.name)}
-              className={`px-4 py-2 rounded-full text-sm transition-colors border ${
+              style={{ animationDelay: `${i * 35}ms` }}
+              className={`animate-fade-in-up px-4 py-2 rounded-full text-sm transition-all duration-150 border active:scale-95 ${
                 selectedGenres.includes(g.name)
-                  ? "bg-amber-400 text-neutral-950 border-amber-400 font-medium"
+                  ? "bg-amber-400 text-neutral-950 border-amber-400 font-medium scale-105"
                   : "border-neutral-800 text-neutral-400 hover:border-neutral-600 hover:text-neutral-200"
               }`}
             >
@@ -146,7 +153,7 @@ export function MoodSelector({ genres }: Props) {
       )}
 
       {/* Vibe grid */}
-      <div className="space-y-2">
+      <div className="animate-fade-in-up space-y-2" style={{ animationDelay: `${chipsDuration}ms` }}>
         <div className="grid grid-cols-2 gap-2">
           <VibeBlock
             label="Light"
@@ -208,7 +215,8 @@ export function MoodSelector({ genres }: Props) {
         onChange={(e) => setFreeText(e.target.value)}
         placeholder="e.g. something set in Japan, or a director I haven't seen before..."
         rows={2}
-        className="w-full bg-neutral-900/60 border border-neutral-800 rounded-xl px-4 py-3 text-sm text-neutral-100 placeholder-neutral-700 focus:outline-none focus:border-neutral-600 resize-none"
+        style={{ animationDelay: `${chipsDuration + 100}ms` }}
+        className="animate-fade-in-up w-full bg-neutral-900/60 border border-neutral-800 rounded-xl px-4 py-3 text-sm text-neutral-100 placeholder-neutral-700 focus:outline-none focus:border-neutral-600 resize-none"
       />
 
       {error && <p className="text-red-400 text-sm">{error}</p>}
@@ -216,9 +224,18 @@ export function MoodSelector({ genres }: Props) {
       <button
         onClick={handleSubmit}
         disabled={loading}
-        className="w-full py-3 rounded-xl bg-amber-400 text-neutral-950 font-semibold text-sm hover:bg-amber-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        style={{ animationDelay: `${chipsDuration + 180}ms` }}
+        className="animate-fade-in-up w-full py-3 rounded-xl bg-amber-400 text-neutral-950 font-semibold text-sm hover:bg-amber-300 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
       >
-        {loading ? "Finding your picks..." : "Find my picks"}
+        {loading ? (
+          <span className="flex items-center justify-center gap-2">
+            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            Finding your picks…
+          </span>
+        ) : "Find my picks"}
       </button>
     </div>
   )
