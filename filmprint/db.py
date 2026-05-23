@@ -103,6 +103,8 @@ def init_db() -> None:
             "ALTER TABLE taste_profile ADD COLUMN version TEXT NOT NULL DEFAULT '1.0'",
             "ALTER TABLE taste_profile ADD COLUMN clusters TEXT",
             "ALTER TABLE taste_profile ADD COLUMN ratings_hash TEXT",
+            "ALTER TABLE recommendations ADD COLUMN outcome TEXT",
+            "ALTER TABLE recommendations ADD COLUMN resolved_at TEXT",
         ]:
             try:
                 conn.execute(migration)
@@ -444,3 +446,55 @@ def get_recent_recommendation_ids(user_id: int, days: int = 14) -> set[int]:
               AND recommended_at >= datetime('now', ? || ' days')
         """, (user_id, f"-{days}")).fetchall()
     return {row["movie_id"] for row in rows}
+
+
+def resolve_recommendation_outcomes(user_id: int) -> None:
+    """Cross-reference unresolved recommendations against ratings and watched entries.
+
+    Outcomes:
+      enjoyed      — rated >= 3.5 (strong positive validation)
+      disliked     — rated <= 2.5 (strong negative signal)
+      rated_neutral— rated between 2.5 and 3.5 (watched, mild signal)
+      watched      — in user_watched but no rating yet
+    """
+    with get_connection() as conn:
+        # Resolve via ratings first
+        conn.execute("""
+            UPDATE recommendations
+            SET outcome = CASE
+                WHEN (SELECT letterboxd_rating FROM user_ratings
+                      WHERE user_id = ? AND movie_id = recommendations.movie_id) >= 3.5
+                    THEN 'enjoyed'
+                WHEN (SELECT letterboxd_rating FROM user_ratings
+                      WHERE user_id = ? AND movie_id = recommendations.movie_id) <= 2.5
+                    THEN 'disliked'
+                ELSE 'rated_neutral'
+            END,
+            resolved_at = datetime('now')
+            WHERE user_id = ?
+              AND outcome IS NULL
+              AND movie_id IN (SELECT movie_id FROM user_ratings WHERE user_id = ?)
+        """, (user_id, user_id, user_id, user_id))
+
+        # Resolve remaining via watched (no rating yet)
+        conn.execute("""
+            UPDATE recommendations
+            SET outcome = 'watched', resolved_at = datetime('now')
+            WHERE user_id = ?
+              AND outcome IS NULL
+              AND movie_id IN (SELECT movie_id FROM user_watched WHERE user_id = ?)
+        """, (user_id, user_id))
+
+
+def get_recommendation_boosts(user_id: int) -> dict[int, float]:
+    """Return {movie_id: weight_multiplier} for recommendations with confirmed outcomes.
+
+    Only enjoyed and disliked outcomes get a boost — both get 1.5x so the profile
+    pulls more strongly toward validated wins and away from confirmed misses.
+    """
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT movie_id, outcome FROM recommendations
+            WHERE user_id = ? AND outcome IN ('enjoyed', 'disliked')
+        """, (user_id,)).fetchall()
+    return {row["movie_id"]: 1.5 for row in rows}
