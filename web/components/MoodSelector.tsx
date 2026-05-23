@@ -130,7 +130,7 @@ export function MoodSelector({ genres }: Props) {
     <div className="space-y-8">
       <div className="animate-fade-in-up mb-10">
         <h1 className="text-2xl font-semibold tracking-tight">What are you in the mood for?</h1>
-        <p className="text-neutral-400 text-sm mt-1">Pick what sounds good tonight and we'll find your best options.</p>
+        <p className="text-neutral-400 text-sm mt-1">Pick what sounds good and we'll find your best options.</p>
       </div>
       {/* Genre chips */}
       {genres.length > 0 && (
