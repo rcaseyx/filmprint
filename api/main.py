@@ -31,7 +31,7 @@ from filmprint.features import (
 )
 from filmprint.profile import build_taste_profile, build_taste_clusters, PROFILE_VERSION
 from filmprint.recommender import rank_watchlist, diversify
-from filmprint.discovery import expand_candidates
+from filmprint.discovery import expand_candidates, discover_by_mood
 from filmprint.app import ensure_feature_vectors
 from filmprint.tmdb import get_watch_providers
 from filmprint.sync import sync_ratings_csv, sync_watchlist_csv, sync_watched_csv, sync_rss, sync_scrape
@@ -96,6 +96,7 @@ def _rebuild_state(user_id: int, username: str) -> None:
         "affinity": affinity,
         "ranked": ranked,
         "watchlist_ids": watchlist_ids,
+        "seen_ids": seen_ids,
         "summary": taste_summary(profile_vec, keyword_vocab),
     })
 
@@ -375,12 +376,24 @@ def get_recommendations(mood: MoodContext):
     profile_vec = _state["profile_vec"]
 
     cluster = _select_cluster(mood)
+    active_vec = cluster if cluster is not None else profile_vec
     if cluster is not None:
         all_candidates = [m for m, _ in ranked]
         ranked = rank_watchlist(cluster, all_candidates, keyword_vocab, affinity)
         active_summary = taste_summary(cluster, keyword_vocab)
     else:
         active_summary = _state["summary"]
+
+    # Augment with TMDB Discover when mood specifies genres
+    if mood.required_genres:
+        existing_ids = {m["id"] for m, _ in ranked}
+        discovered_raw = discover_by_mood(mood.required_genres, existing_ids=existing_ids)
+        if discovered_raw:
+            for d in discovered_raw:
+                upsert_movie(d)
+            discovered = ensure_feature_vectors([{**d, "raw_tmdb": d} for d in discovered_raw])
+            new_ranked = rank_watchlist(active_vec, discovered, keyword_vocab, affinity)
+            ranked = sorted(ranked + new_ranked, key=lambda x: x[1], reverse=True)
 
     filtered = _apply_filters(ranked, mood)
     diverse = diversify(filtered, ranked, keyword_vocab, affinity)
