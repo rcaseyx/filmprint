@@ -97,6 +97,15 @@ def init_db() -> None:
                 score           REAL
             );
         """)
+        # Migrations: add columns if not present
+        for migration in [
+            "ALTER TABLE taste_profile ADD COLUMN version TEXT NOT NULL DEFAULT '1.0'",
+            "ALTER TABLE taste_profile ADD COLUMN clusters TEXT",
+        ]:
+            try:
+                conn.execute(migration)
+            except Exception:
+                pass
 
 
 # --- users ---
@@ -317,28 +326,42 @@ def get_taste_profile(user_id: int) -> dict | None:
         ).fetchone()
         if not row:
             return None
-        return {"vector": json.loads(row["vector"]), "ratings_count": row["ratings_count"]}
+        return {
+            "vector": json.loads(row["vector"]),
+            "ratings_count": row["ratings_count"],
+            "version": row["version"],
+            "clusters": json.loads(row["clusters"]) if row["clusters"] else [],
+        }
 
 
-def save_taste_profile(user_id: int, vector: list[float], ratings_count: int) -> None:
+def save_taste_profile(
+    user_id: int,
+    vector: list[float],
+    ratings_count: int,
+    version: str = "1.0",
+    clusters: list[list[float]] | None = None,
+) -> None:
     with get_connection() as conn:
         conn.execute("""
-            INSERT INTO taste_profile (user_id, vector, ratings_count)
-            VALUES (?, ?, ?)
+            INSERT INTO taste_profile (user_id, vector, ratings_count, version, clusters)
+            VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(user_id) DO UPDATE SET
                 vector        = excluded.vector,
                 built_at      = datetime('now'),
-                ratings_count = excluded.ratings_count
-        """, (user_id, json.dumps(vector), ratings_count))
+                ratings_count = excluded.ratings_count,
+                version       = excluded.version,
+                clusters      = excluded.clusters
+        """, (user_id, json.dumps(vector), ratings_count, version,
+              json.dumps(clusters) if clusters is not None else None))
 
 
-def is_profile_stale(user_id: int) -> bool:
-    """Returns True if ratings have been added since the profile was last built."""
+def is_profile_stale(user_id: int, current_version: str = "1.0") -> bool:
+    """Returns True if ratings have changed or the profile algorithm version changed."""
     current_count = get_ratings_count(user_id)
     profile = get_taste_profile(user_id)
     if not profile:
         return True
-    return current_count != profile["ratings_count"]
+    return current_count != profile["ratings_count"] or profile["version"] != current_version
 
 
 # --- recommendations ---
