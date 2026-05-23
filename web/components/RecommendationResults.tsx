@@ -62,7 +62,7 @@ export function RecommendationResults({ picks, onReset }: Props) {
         </button>
       </div>
 
-      <div className="space-y-6">
+      <div className="space-y-6 pb-2">
         {picks.map((pick) => (
           <div key={pick.id} className="flex gap-4">
             {/* Poster */}
@@ -140,6 +140,13 @@ export function RecommendationResults({ picks, onReset }: Props) {
           </div>
         ))}
       </div>
+
+      <button
+        onClick={onReset}
+        className="mt-8 w-full py-3 rounded-lg border border-neutral-700 text-neutral-300 text-sm font-medium hover:border-neutral-500 hover:text-neutral-100 transition-colors"
+      >
+        Start over
+      </button>
     </div>
   )
 }
