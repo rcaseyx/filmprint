@@ -4,6 +4,54 @@ import numpy as np
 from sklearn.cluster import KMeans
 from .features import build_feature_vector
 
+
+def build_critic_profile(rated_movies: list[dict], ratings: list[float]) -> dict:
+    """Compute how the user's taste aligns with critics and infer a quality floor.
+
+    Returns:
+        alignment: mean delta between user rating (normalised 0-10) and IMDb score.
+                   Positive = user rates higher than critics, negative = harsher.
+        quality_floor: inferred minimum TMDB vote_average for candidates.
+                       Derived from the 10th-percentile IMDb score of films the
+                       user has rated >= 4 stars, then nudged by alignment so
+                       contrarian users aren't over-filtered.
+    """
+    from .omdb import get_scores
+
+    deltas: list[float] = []
+    liked_scores: list[float] = []  # IMDb scores of films rated >= 4 stars
+
+    for movie, user_rating in zip(rated_movies, ratings):
+        raw = movie.get("raw_tmdb") or movie
+        imdb_id = raw.get("imdb_id", "")
+        if not imdb_id:
+            continue
+        scores = get_scores(imdb_id)
+        if scores["imdb"] is None:
+            continue
+
+        imdb = float(scores["imdb"])
+        user_normalised = user_rating * 2  # 0-5 → 0-10
+        deltas.append(user_normalised - imdb)
+
+        if user_rating >= 4.0:
+            liked_scores.append(imdb)
+
+    alignment = round(sum(deltas) / len(deltas), 2) if deltas else 0.0
+
+    if liked_scores:
+        liked_scores.sort()
+        p10_idx = max(0, int(len(liked_scores) * 0.10))
+        base_floor = liked_scores[p10_idx]
+    else:
+        base_floor = 6.0
+
+    # Contrarians (high positive alignment) get a lower floor;
+    # harsh users (negative alignment) get a higher one.
+    adjusted_floor = round(max(5.0, min(8.0, base_floor - alignment * 0.3)), 2)
+
+    return {"alignment": alignment, "quality_floor": adjusted_floor}
+
 # Bump this any time the profile algorithm changes to force a rebuild.
 PROFILE_VERSION = "3.0"
 

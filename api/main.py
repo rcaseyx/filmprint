@@ -31,7 +31,7 @@ from filmprint.features import (
     build_feature_vector, taste_summary, build_keyword_vocab,
     build_affinity_scores, GENRES,
 )
-from filmprint.profile import build_taste_profile, build_taste_clusters, PROFILE_VERSION
+from filmprint.profile import build_taste_profile, build_taste_clusters, build_critic_profile, PROFILE_VERSION
 from filmprint.recommender import rank_watchlist, diversify
 from filmprint.discovery import expand_candidates, discover_by_mood
 from filmprint.app import ensure_feature_vectors
@@ -80,9 +80,16 @@ def _rebuild_state(user_id: int, username: str) -> None:
         upsert_movie(d)
     discovered = ensure_feature_vectors([{**d, "raw_tmdb": d} for d in discovered_raw])
 
+    critic = build_critic_profile(rated_movies, ratings)
+    quality_floor = critic["quality_floor"]
+
+    def _above_floor(movie: dict) -> bool:
+        va = movie.get("vote_average") or 0
+        return va == 0 or va >= quality_floor  # pass through if no votes yet
+
     all_candidates = (
-        [m for m in watchlist if m["id"] not in seen_ids]
-        + [d for d in discovered if d["id"] not in watchlist_ids]
+        [m for m in watchlist if m["id"] not in seen_ids and _above_floor(m)]
+        + [d for d in discovered if d["id"] not in watchlist_ids and _above_floor(d)]
     )
 
     recent_ids = get_recent_recommendation_ids(user_id)
@@ -103,6 +110,8 @@ def _rebuild_state(user_id: int, username: str) -> None:
         "ranked": ranked,
         "watchlist_ids": watchlist_ids,
         "seen_ids": seen_ids,
+        "quality_floor": quality_floor,
+        "critic_alignment": critic["alignment"],
         "summary": taste_summary(profile_vec, keyword_vocab),
     })
 
@@ -395,8 +404,13 @@ def get_recommendations(mood: MoodContext):
     if mood.required_genres:
         existing_ids = {m["id"] for m, _ in ranked}
         excluded = _state.get("seen_ids", set()) | existing_ids
+        quality_floor = _state.get("quality_floor", 6.0)
         discovered_raw = discover_by_mood(mood.required_genres, existing_ids=excluded)
         if discovered_raw:
+            discovered_raw = [
+                d for d in discovered_raw
+                if not d.get("vote_average") or d["vote_average"] >= quality_floor
+            ]
             for d in discovered_raw:
                 upsert_movie(d)
             discovered = ensure_feature_vectors([{**d, "raw_tmdb": d} for d in discovered_raw])
