@@ -77,7 +77,7 @@ function PosterImage({ path, title }: { path: string | null; title: string }) {
 export function RecommendationResults({ picks, onReset }: Props) {
   return (
     <div className="animate-fade-in">
-      <h2 className="text-2xl font-semibold tracking-tight mb-6">Tonight's picks</h2>
+      <h2 className="text-2xl font-semibold tracking-tight mb-6">Your picks</h2>
 
       <div className="space-y-4">
         {picks.map((pick, index) => (

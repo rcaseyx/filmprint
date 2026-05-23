@@ -102,7 +102,7 @@ export default async function ProfilePage() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">
-              {session?.user?.name ?? "Your"} taste profile
+              Your taste profile
             </h1>
             <p className="text-neutral-400 text-sm mt-1">
               Built from {profile.ratings_count} Letterboxd ratings

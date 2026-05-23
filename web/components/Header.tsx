@@ -34,7 +34,7 @@ export function Header() {
           filmprint
         </Link>
         <nav className="flex items-center gap-5">
-          {navLink("/", "Tonight")}
+          {navLink("/", "Picks")}
           {navLink("/profile", "Profile")}
         </nav>
       </div>
