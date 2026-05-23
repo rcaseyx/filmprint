@@ -77,7 +77,10 @@ def _rebuild_state(user_id: int, username: str) -> None:
         upsert_movie(d)
     discovered = ensure_feature_vectors([{**d, "raw_tmdb": d} for d in discovered_raw])
 
-    all_candidates = watchlist + [d for d in discovered if d["id"] not in watchlist_ids]
+    all_candidates = (
+        [m for m in watchlist if m["id"] not in seen_ids]
+        + [d for d in discovered if d["id"] not in watchlist_ids]
+    )
 
     recent_ids = get_recent_recommendation_ids(user_id)
     if recent_ids:
