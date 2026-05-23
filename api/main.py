@@ -34,6 +34,7 @@ from filmprint.profile import build_taste_profile, build_taste_clusters, PROFILE
 from filmprint.recommender import rank_watchlist, diversify
 from filmprint.discovery import expand_candidates
 from filmprint.app import ensure_feature_vectors
+from filmprint.tmdb import get_watch_providers
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 
@@ -278,6 +279,7 @@ For each reason:
             "poster_path": (movie.get("raw_tmdb") or {}).get("poster_path"),
             "genres": _genre_names(movie),
             "runtime": movie.get("runtime"),
+            "streaming": get_watch_providers(movie["id"]),
         })
     return picks
 
@@ -289,7 +291,36 @@ def get_user():
     return {
         "summary": _state.get("summary"),
         "ratings_count": len(_state.get("ratings") or []),
+        "watchlist_count": len(_state.get("watchlist_ids") or []),
         "candidates_count": len(_state.get("ranked") or []),
+    }
+
+
+@app.get("/api/profile")
+def get_profile():
+    """All data needed for the profile page in one call."""
+    profile_vec = _state.get("profile_vec")
+    rated_movies = _state.get("rated_movies") or []
+
+    genre_counts: dict[str, int] = {g: 0 for g in GENRES}
+    for movie in rated_movies:
+        for g in _genre_names(movie):
+            if g in genre_counts:
+                genre_counts[g] += 1
+
+    genre_weights = {GENRES[i]: float(profile_vec[i]) for i in range(len(GENRES))} if profile_vec is not None else {}
+    genres = [
+        {"name": g, "count": genre_counts[g], "weight": genre_weights.get(g, 0.0)}
+        for g in GENRES if genre_counts[g] > 0
+    ]
+    genres.sort(key=lambda x: x["weight"], reverse=True)
+
+    return {
+        "ratings_count": len(_state.get("ratings") or []),
+        "watchlist_count": len(_state.get("watchlist_ids") or []),
+        "candidates_count": len(_state.get("ranked") or []),
+        "summary": _state.get("summary"),
+        "genres": genres,
     }
 
 
