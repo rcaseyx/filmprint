@@ -459,7 +459,8 @@ def genre_examples(name: str, current_user: dict = Depends(get_current_user)):
             if name in set(_genre_names(m))
         ]
     else:
-        keywords = set(SUBGENRE_AXES.get(name) or TONE_AXES.get(name) or [])
+        user_subgenre_axes = state.get("user_subgenre_axes") or {}
+        keywords = set(SUBGENRE_AXES.get(name) or TONE_AXES.get(name) or user_subgenre_axes.get(name) or [])
         matches = [
             (m, r) for m, r in zip(rated_movies, ratings)
             if _movie_keywords(m) & keywords
