@@ -61,15 +61,22 @@ _NOISE_KEYWORDS: frozenset[str] = frozenset({
     "shanghai", "beijing", "mumbai", "dubai",
     # US states as standalone keywords
     "california", "new york state", "texas", "florida", "illinois",
+    # Emotional states — tone descriptors, not subgenres
+    "excited", "exciting", "anxious", "angry", "nervous", "disgusted",
+    "depressed", "enraged", "yelling", "shyness", "unsettling",
 })
 
-# Themes excluded from the subgenre radar — character archetypes and standalone
-# city-name clusters that slipped through before keyword-level filtering caught them.
+# Themes excluded from the subgenre radar — character archetypes, standalone
+# city-name clusters, and emotional state themes.
 # Theme names with a comma are city+country/state TMDB clusters ("Berlin, Germany").
 _NOISE_THEMES: frozenset[str] = frozenset({
+    # Character archetypes
     "Villain", "Hero", "Protagonist", "Antagonist",
+    # Standalone city names
     "New York City", "New York State", "Manhattan, New York City",
     "London, England",
+    # Emotional states
+    "Excited", "Anxious", "Angry", "Nervous", "Disgusted", "Fear", "Depressed",
 })
 
 # ── module-level cache ───────────────────────────────────────────────────────
