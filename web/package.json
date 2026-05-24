@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently --names \"next,api\" --prefix-colors \"cyan,yellow\" --restart-tries 5 --restart-after 2000 \"NODE_OPTIONS='--max-old-space-size=4096' next dev\" \"cd .. && .venv/bin/uvicorn api.main:app --port 8000 --reload\"",
+    "dev": "concurrently --names \"next,api\" --prefix-colors \"cyan,yellow\" \"bash -c 'trap exit INT TERM; while true; do NODE_OPTIONS=--max-old-space-size=4096 next dev; sleep 2; done'\" \"bash -c 'trap exit INT TERM; while true; do (cd .. && .venv/bin/uvicorn api.main:app --port 8000 --reload); sleep 2; done'\"",
     "build": "next build",
     "start": "next start"
   },
