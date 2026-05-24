@@ -81,6 +81,8 @@ _centroids: dict[str, np.ndarray] = {}   # theme → mean embedding vector
 def _get_model():
     global _model
     if _model is None:
+        import logging
+        logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
         from sentence_transformers import SentenceTransformer
         _model = SentenceTransformer("all-MiniLM-L6-v2")
     return _model
