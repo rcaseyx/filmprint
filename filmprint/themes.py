@@ -64,6 +64,9 @@ _NOISE_KEYWORDS: frozenset[str] = frozenset({
     # Emotional states — tone descriptors, not subgenres
     "excited", "exciting", "anxious", "angry", "nervous", "disgusted",
     "depressed", "enraged", "yelling", "shyness", "unsettling",
+    # Franchise universe tags — subgenre signal comes from the film's other keywords
+    "marvel cinematic universe (mcu)", "dc extended universe", "dceu",
+    "star wars", "james bond", "monsterverse", "wizarding world",
 })
 
 # Themes excluded from the subgenre radar — character archetypes, standalone
