@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently --names \"next,api\" --prefix-colors \"cyan,yellow\" \"next dev\" \"cd .. && .venv/bin/uvicorn api.main:app --port 8000 --reload\"",
+    "dev": "concurrently --names \"next,api\" --prefix-colors \"cyan,yellow\" --restart-tries 5 --restart-after 2000 \"NODE_OPTIONS='--max-old-space-size=4096' next dev\" \"cd .. && .venv/bin/uvicorn api.main:app --port 8000 --reload\"",
     "build": "next build",
     "start": "next start"
   },
