@@ -240,7 +240,7 @@ def upsert_rating(user_id: int, movie_id: int, rating: float, rated_at: str | No
             VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(user_id, movie_id) DO UPDATE SET
                 letterboxd_rating = excluded.letterboxd_rating,
-                rated_at          = excluded.rated_at,
+                rated_at          = COALESCE(excluded.rated_at, user_ratings.rated_at),
                 source            = excluded.source
         """, (user_id, movie_id, rating, rated_at, source))
 

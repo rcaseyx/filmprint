@@ -38,7 +38,7 @@ def sync_ratings_csv(user_id: int, path: str) -> int:
     for _, row in track(df.iterrows(), description="Syncing ratings...", total=len(df)):
         tmdb_id = _ensure_movie(row["title"], row.get("year"))
         if tmdb_id:
-            upsert_rating(user_id, tmdb_id, row["rating"], row.get("Date"), source="csv")
+            upsert_rating(user_id, tmdb_id, row["rating"], row.get("date"), source="csv")
             synced += 1
     return synced
 
@@ -90,7 +90,7 @@ def sync_rss(user_id: int, username: str) -> tuple[int, int]:
     for entry in track(ratings, description="Syncing RSS ratings..."):
         tmdb_id = _ensure_movie(entry["title"], entry.get("year"))
         if tmdb_id:
-            upsert_rating(user_id, tmdb_id, entry["rating"], None, source="rss")
+            upsert_rating(user_id, tmdb_id, entry["rating"], entry.get("date"), source="rss")
             ratings_added += 1
 
     watchlist_added = 0

@@ -34,7 +34,7 @@ function splitLabel(text: string, maxLen = 10): [string, string | null] {
 
 export function GenreRadar({ data, label }: Props) {
   const [hovered, setHovered] = useState<number | null>(null)
-  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 })
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0, flipDown: false })
   const [examples, setExamples] = useState<Record<number, Example[]>>({})
   const containerRef = useRef<HTMLDivElement>(null)
   const fetchedRef = useRef<Set<number>>(new Set())
@@ -65,7 +65,11 @@ export function GenreRadar({ data, label }: Props) {
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!containerRef.current) return
     const rect = containerRef.current.getBoundingClientRect()
-    setTooltipPos({ x: e.clientX - rect.left + 14, y: e.clientY - rect.top - 10 })
+    setTooltipPos({
+      x: e.clientX - rect.left + 14,
+      y: e.clientY - rect.top,
+      flipDown: e.clientY < 230,
+    })
   }
 
   const handleVertexEnter = (i: number) => {
@@ -87,7 +91,7 @@ export function GenreRadar({ data, label }: Props) {
       {hoveredPoint && (
         <div
           className="absolute z-10 pointer-events-none bg-neutral-950 border border-neutral-700 rounded-xl px-3 py-2.5 text-xs shadow-xl"
-          style={{ left: tooltipPos.x, top: tooltipPos.y, transform: "translateY(-100%)", minWidth: "10rem", maxWidth: "14rem" }}
+          style={{ left: tooltipPos.x, top: tooltipPos.y, transform: tooltipPos.flipDown ? "translateY(10px)" : "translateY(-100%)", minWidth: "10rem", maxWidth: "14rem" }}
         >
           <div className="font-medium text-neutral-100">{hoveredPoint.name}</div>
           <div className="text-neutral-500 mt-0.5 mb-2">

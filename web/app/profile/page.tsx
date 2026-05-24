@@ -2,7 +2,6 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { SyncButton } from "@/components/SyncButton"
 import { GenreRadar } from "@/components/GenreRadar"
-import { RecentRatings } from "@/components/RecentRatings"
 import { RecommendationHistory } from "@/components/RecommendationHistory"
 import { ProfileStats } from "@/components/ProfileStats"
 
@@ -41,16 +40,6 @@ async function getProfile(): Promise<ProfileData | null> {
   }
 }
 
-async function getRecentRatings() {
-  try {
-    const res = await fetch(`${API}/api/ratings/recent`, { cache: "no-store" })
-    const data = await res.json()
-    return data.ratings ?? []
-  } catch {
-    return []
-  }
-}
-
 async function getHistory() {
   try {
     const res = await fetch(`${API}/api/recommendations/history`, { cache: "no-store" })
@@ -62,10 +51,9 @@ async function getHistory() {
 }
 
 export default async function ProfilePage() {
-  const [session, profile, recentRatings, history] = await Promise.all([
+  const [session, profile, history] = await Promise.all([
     getServerSession(authOptions),
     getProfile(),
-    getRecentRatings(),
     getHistory(),
   ])
 
@@ -130,9 +118,7 @@ export default async function ProfilePage() {
       <div className="max-w-2xl mx-auto px-6 space-y-10">
         {/* Genre detail bars */}
         <section>
-          <h2 className="label mb-3">
-            Genre affinity
-          </h2>
+          <h2 className="label mb-3">Genre affinity</h2>
           <div className="space-y-2">
             {topGenres.map((g) => (
               <div key={g.name} className="flex items-center gap-3">
@@ -169,14 +155,6 @@ export default async function ProfilePage() {
           </div>
         </section>
 
-        {/* Recent ratings */}
-        <section>
-          <h2 className="label mb-4">Recently rated</h2>
-          <div className="-mx-6">
-            <RecentRatings ratings={recentRatings} />
-          </div>
-        </section>
-
         {/* Recommendation history */}
         <section>
           <h2 className="label mb-4">Past picks</h2>
@@ -184,7 +162,6 @@ export default async function ProfilePage() {
             <RecommendationHistory history={history} />
           </div>
         </section>
-
       </div>
     </div>
   )
