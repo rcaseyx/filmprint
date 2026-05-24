@@ -11,6 +11,10 @@ filmprint-api = "api.server:start"
 [tool.setuptools.packages.find]
 include = ["filmprint*"]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = [".venv", "node_modules", "data", "scripts"]
+
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
