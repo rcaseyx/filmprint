@@ -45,7 +45,7 @@ from filmprint.tmdb import get_watch_providers
 from filmprint.omdb import get_scores
 from filmprint.sync import sync_ratings_csv, sync_watchlist_csv, sync_watched_csv, sync_rss, sync_scrape
 from filmprint.letterboxd import validate_username
-from filmprint.themes import assign_new_keywords, build_user_subgenre_axes, backfill_catalog_keywords, build_clusters
+from filmprint.themes import assign_new_keywords, build_user_subgenre_axes, backfill_catalog_keywords, build_clusters, claude_cleanup_themes
 import requests as _requests
 
 DATA_DIR = Path(__file__).parent.parent / "data"
@@ -705,6 +705,24 @@ async def import_csv(
 @app.get("/api/admin/users")
 def admin_list_users(_admin: dict = Depends(get_admin_user)):
     return {"users": get_all_users_with_stats()}
+
+
+@app.get("/api/admin/themes")
+def admin_theme_stats(_admin: dict = Depends(get_admin_user)):
+    from collections import Counter
+    rows = get_all_keyword_themes_full()
+    counts = Counter(r["theme"] for r in rows)
+    return {
+        "total_keywords": len(rows),
+        "total_themes": len(counts),
+        "multi_keyword_themes": sum(1 for c in counts.values() if c > 1),
+    }
+
+
+@app.post("/api/admin/cleanup-themes")
+def admin_cleanup_themes(_admin: dict = Depends(get_admin_user)):
+    changes = claude_cleanup_themes()
+    return {"changes": changes}
 
 
 @app.delete("/api/admin/users/{user_id}")

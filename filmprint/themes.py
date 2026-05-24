@@ -292,6 +292,106 @@ def backfill_catalog_keywords() -> int:
     return len({v for v in get_all_keyword_themes().values()})
 
 
+# ── claude cleanup ───────────────────────────────────────────────────────────
+
+def claude_cleanup_themes() -> list[dict]:
+    """Send multi-keyword themes to Claude Haiku for label correction and merging.
+
+    Asks Claude to return a {old_label: new_label} map. Themes that should merge
+    all map to the same new label. Only themes needing changes are returned.
+    Corrections are written with source='claude' so future recluster runs can
+    identify what's already been reviewed.
+
+    Centroids are updated in-memory by renaming/averaging — no re-embedding needed.
+
+    Returns a list of changes: [{from, to, keywords}]
+    """
+    import anthropic
+
+    theme_map = get_all_keyword_themes()
+    theme_keywords: dict[str, list[str]] = defaultdict(list)
+    for kw, theme in theme_map.items():
+        theme_keywords[theme].append(kw)
+
+    multi = {t: kws for t, kws in theme_keywords.items() if len(kws) > 1}
+    if not multi:
+        return []
+
+    theme_list = "\n".join(
+        f'"{theme}" ({len(kws)} kws): {", ".join(kws[:8])}{"…" if len(kws) > 8 else ""}'
+        for theme, kws in sorted(multi.items(), key=lambda x: -len(x[1]))
+    )
+
+    prompt = f"""You are reviewing auto-generated subgenre theme labels for a film recommendation system.
+Each theme is a cluster of TMDB keywords grouped by co-occurrence across the film catalog.
+The label is the most "central" keyword in each cluster — not always the best human-readable name.
+
+Themes to review (each line: label, keyword count, up to 8 sample keywords):
+{theme_list}
+
+Your job:
+1. Fix poorly auto-labeled themes (e.g. "Primate" → "Wildlife Horror", "Murder By Gunshot" → "Gun Violence")
+2. Merge themes that clearly belong together by mapping both to the same new label
+3. Leave well-labeled themes out of your response entirely
+
+Label rules:
+- 1–4 words, title-cased
+- Describes a film subgenre, setting, or recurring theme — not a specific character
+- Prefer broad genre terms over franchise-specific names (e.g. "Sci-Fi Horror" not "Alien Films")
+
+Return ONLY a valid JSON object. Keys are current labels, values are corrected labels.
+Only include themes that need changes. No explanation, no markdown, just JSON.
+
+Example: {{"Primate": "Wildlife Horror", "Santa Claus": "Christmas", "Old Hollywood": "Hollywood Nostalgia"}}"""
+
+    client = anthropic.Anthropic()
+    response = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=2048,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    reply = response.content[0].text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    corrections: dict[str, str] = json.loads(reply)
+
+    if not corrections:
+        return []
+
+    # Apply to DB
+    changes: list[dict] = []
+    with get_connection() as conn:
+        for old_theme, new_theme in corrections.items():
+            if old_theme == new_theme:
+                continue
+            row = conn.execute(
+                "SELECT COUNT(*) as n FROM keyword_themes WHERE theme = ?", (old_theme,)
+            ).fetchone()
+            if not row or row["n"] == 0:
+                continue
+            conn.execute(
+                "UPDATE keyword_themes SET theme = ?, source = 'claude' WHERE theme = ?",
+                (new_theme, old_theme),
+            )
+            changes.append({"from": old_theme, "to": new_theme, "keywords": row["n"]})
+
+    # Update centroids in-memory and in DB by renaming/averaging — no re-embedding
+    if changes and _centroids:
+        updated = dict(_centroids)
+        for change in changes:
+            old, new = change["from"], change["to"]
+            if old not in updated:
+                continue
+            if new in updated:
+                # Merge: average the two centroids
+                updated[new] = (updated[new] + updated[old]) / 2.0
+            else:
+                updated[new] = updated[old]
+            del updated[old]
+        _store_centroids(updated)
+
+    return changes
+
+
 # ── user subgenre axes ───────────────────────────────────────────────────────
 
 def build_user_subgenre_axes(keyword_vocab: list[str]) -> dict[str, list[str]]:
