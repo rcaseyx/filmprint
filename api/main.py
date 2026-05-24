@@ -590,6 +590,7 @@ def sync():
     watchlist_before = len(_state.get("watchlist_ids") or [])
 
     sync_scrape(user_id, username)
+    sync_rss(user_id, username)
     _rebuild_state(user_id, username)
 
     return {

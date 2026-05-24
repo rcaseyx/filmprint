@@ -15,10 +15,10 @@ def load_ratings_csv(path: str) -> pd.DataFrame:
     """Load a Letterboxd ratings CSV export into a DataFrame."""
     df = pd.read_csv(path)
     # Expected columns: Date, Name, Year, Letterboxd URI, Rating
-    df = df.rename(columns={"Name": "title", "Year": "year", "Rating": "rating"})
+    df = df.rename(columns={"Name": "title", "Year": "year", "Rating": "rating", "Date": "date"})
     df = df.dropna(subset=["rating"])
     df["rating"] = df["rating"].astype(float)
-    return df[["title", "year", "rating"]]
+    return df[["title", "year", "rating", "date"]]
 
 
 def load_watchlist_csv(path: str) -> pd.DataFrame:
@@ -37,6 +37,7 @@ def load_watched_csv(path: str) -> pd.DataFrame:
 
 def fetch_rss_ratings(username: str) -> list[dict]:
     """Fetch recent diary entries (with ratings) from Letterboxd RSS."""
+    import time as _time
     url = f"https://letterboxd.com/{username}/rss/"
     feed = feedparser.parse(url)
     entries = []
@@ -44,11 +45,13 @@ def fetch_rss_ratings(username: str) -> list[dict]:
         rating = getattr(entry, "letterboxd_memberrating", None)
         title = getattr(entry, "letterboxd_filmtitle", entry.get("title", ""))
         year = getattr(entry, "letterboxd_filmyear", None)
+        published = entry.get("published_parsed")
         if rating:
             entries.append({
                 "title": title,
                 "year": int(year) if year else None,
                 "rating": float(rating),
+                "date": _time.strftime("%Y-%m-%d", published) if published else None,
             })
     return entries
 
