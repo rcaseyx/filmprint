@@ -27,7 +27,7 @@ body {
   }
 
   .btn-primary {
-    @apply font-semibold rounded-lg cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed;
+    @apply font-semibold rounded-lg cursor-pointer;
     background-color: var(--brand);
     color: #0a0a0a;
     transition: box-shadow 150ms ease;
@@ -35,11 +35,18 @@ body {
   .btn-primary:hover:not(:disabled) {
     box-shadow: 0 0 0 1.5px var(--brand), 0 0 14px color-mix(in srgb, var(--brand) 35%, transparent);
   }
+  .btn-primary:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
 
   .btn-secondary {
     @apply border border-neutral-700 text-neutral-300 rounded-lg transition-colors;
     @apply hover:border-neutral-500 hover:text-neutral-100;
-    @apply disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  .btn-secondary:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 }
 
