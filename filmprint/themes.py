@@ -39,12 +39,37 @@ CLUSTER_DISTANCE = 0.55 # agglomerative linkage cutoff (distance = 1 − similar
 ASSIGN_THRESHOLD = 0.35 # min cosine to nearest centroid to join it vs own theme
 
 _NOISE_KEYWORDS: frozenset[str] = frozenset({
+    # TMDB metadata tags
     "aftercreditsstinger", "duringcreditsstinger",
     "based on novel or book", "based on novel", "based on comic",
     "based on true story", "based on short film",
     "sequel", "prequel", "spin-off", "reboot", "remake",
     "female protagonist", "male protagonist",
     "independent film", "cult film",
+    # Character roles — archetypes, not subgenres
+    "villain", "supervillain", "anti villain", "master villain", "mystery villain",
+    "evil villain", "masked supervillain",
+    "hero", "child hero", "returning hero",
+    "protagonist", "antagonist", "anti-hero", "antihero", "sidekick",
+    "tyrant", "control freak",
+    # Major cities/locations — belong in a location axis, not subgenre
+    "new york city", "new york", "los angeles", "london", "paris", "tokyo",
+    "berlin", "rome", "moscow", "chicago", "san francisco", "miami",
+    "las vegas", "washington d.c.", "washington dc", "boston", "seattle",
+    "philadelphia", "detroit", "atlanta", "hong kong", "sydney", "toronto",
+    "madrid", "barcelona", "amsterdam", "vienna", "budapest", "prague",
+    "shanghai", "beijing", "mumbai", "dubai",
+    # US states as standalone keywords
+    "california", "new york state", "texas", "florida", "illinois",
+})
+
+# Themes excluded from the subgenre radar — character archetypes and standalone
+# city-name clusters that slipped through before keyword-level filtering caught them.
+# Theme names with a comma are city+country/state TMDB clusters ("Berlin, Germany").
+_NOISE_THEMES: frozenset[str] = frozenset({
+    "Villain", "Hero", "Protagonist", "Antagonist",
+    "New York City", "New York State", "Manhattan, New York City",
+    "London, England",
 })
 
 # ── module-level cache ───────────────────────────────────────────────────────
@@ -398,6 +423,16 @@ Example: {{"Primate": "Wildlife Horror", "Satanism": "Satanic Horror", "Satanic 
 
 # ── user subgenre axes ───────────────────────────────────────────────────────
 
+def _is_noise_theme(theme: str) -> bool:
+    """True for themes that are locations or character archetypes, not subgenres."""
+    if theme in _NOISE_THEMES:
+        return True
+    # City, Country / City, State format from TMDB keyword clusters
+    if "," in theme:
+        return True
+    return False
+
+
 def build_user_subgenre_axes(keyword_vocab: list[str]) -> dict[str, list[str]]:
     """Map a user's keyword vocab through the shared lookup table.
 
@@ -410,6 +445,6 @@ def build_user_subgenre_axes(keyword_vocab: list[str]) -> dict[str, list[str]]:
         if kw.lower() in _NOISE_KEYWORDS:
             continue
         theme = theme_map.get(kw)
-        if theme:
+        if theme and not _is_noise_theme(theme):
             axes[theme].append(kw)
     return dict(axes)
