@@ -1,7 +1,7 @@
 "use client"
 
 import Image from "next/image"
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 interface StreamingProvider {
   name: string
@@ -50,6 +50,8 @@ interface Pick {
 interface Props {
   picks: Pick[]
   onReset: () => void
+  onRefresh: () => void
+  refreshing?: boolean
 }
 
 function PosterImage({ path, title }: { path: string | null; title: string }) {
@@ -74,9 +76,15 @@ function PosterImage({ path, title }: { path: string | null; title: string }) {
   )
 }
 
-export function RecommendationResults({ picks, onReset }: Props) {
+export function RecommendationResults({ picks, onReset, onRefresh, refreshing }: Props) {
+  const topRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }, [picks])
+
   return (
-    <div className="animate-fade-in">
+    <div ref={topRef} className="animate-fade-in">
       <h2 className="text-2xl font-semibold tracking-tight mb-6">Your picks</h2>
 
       <div className="space-y-4">
@@ -161,12 +169,29 @@ export function RecommendationResults({ picks, onReset }: Props) {
         ))}
       </div>
 
-      <button
-        onClick={onReset}
-        className="btn-secondary mt-8 w-full py-3 text-sm font-medium"
-      >
-        Start over
-      </button>
+      <div className="mt-8 flex flex-col gap-3">
+        <button
+          onClick={onRefresh}
+          disabled={refreshing}
+          className="btn-primary w-full py-3 text-sm font-medium"
+        >
+          {refreshing ? (
+            <span className="flex items-center justify-center gap-2">
+              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Finding more picks…
+            </span>
+          ) : "Show me different picks"}
+        </button>
+        <button
+          onClick={onReset}
+          className="btn-secondary w-full py-3 text-sm font-medium"
+        >
+          Start over
+        </button>
+      </div>
     </div>
   )
 }
