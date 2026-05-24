@@ -748,6 +748,25 @@ def admin_theme_stats(_admin: dict = Depends(get_admin_user)):
     }
 
 
+@app.get("/api/admin/themes/breakdown")
+def admin_theme_breakdown(_admin: dict = Depends(get_admin_user)):
+    """All themes with their keywords, sorted by keyword count descending."""
+    from collections import defaultdict
+    rows = get_all_keyword_themes_full()
+    groups: dict[str, dict] = defaultdict(lambda: {"keywords": [], "sources": {}})
+    for r in rows:
+        entry = groups[r["theme"]]
+        entry["keywords"].append(r["keyword"])
+        entry["sources"][r["source"]] = entry["sources"].get(r["source"], 0) + 1
+    return {
+        "themes": sorted(
+            [{"name": name, "count": len(d["keywords"]), "keywords": d["keywords"], "sources": d["sources"]}
+             for name, d in groups.items()],
+            key=lambda x: x["count"], reverse=True,
+        )
+    }
+
+
 @app.post("/api/admin/cleanup-themes")
 def admin_cleanup_themes(_admin: dict = Depends(get_admin_user)):
     changes = claude_cleanup_themes()

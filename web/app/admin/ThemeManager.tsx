@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useSession } from "next-auth/react"
+import { ThemeBreakdown } from "./ThemeBreakdown"
 
 interface ThemeStats {
   total_keywords: number
@@ -113,6 +114,8 @@ export function ThemeManager({ initialStats }: { initialStats: ThemeStats }) {
           <p className="text-sm text-neutral-300">Re-cluster complete — {reclustered} themes discovered</p>
         </div>
       )}
+
+      <ThemeBreakdown />
 
       {changes !== null && (
         <div className="rounded-xl border border-neutral-800 bg-neutral-900 overflow-hidden">
