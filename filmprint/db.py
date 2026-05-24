@@ -25,13 +25,37 @@ def get_connection() -> sqlite3.Connection:
     return conn
 
 
+def _migrate_users_nullable_username(conn: sqlite3.Connection) -> None:
+    """Make letterboxd_username nullable and email unique (one-time migration)."""
+    cols = {row["name"]: row["notnull"]
+            for row in conn.execute("PRAGMA table_info(users)").fetchall()}
+    if not cols.get("letterboxd_username", 0):
+        return  # Already nullable
+    conn.execute("PRAGMA foreign_keys = OFF")
+    conn.execute("""
+        CREATE TABLE users_new (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            email               TEXT UNIQUE,
+            letterboxd_username TEXT UNIQUE,
+            created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)
+    conn.execute("""
+        INSERT OR IGNORE INTO users_new (id, email, letterboxd_username, created_at)
+        SELECT id, email, letterboxd_username, created_at FROM users
+    """)
+    conn.execute("DROP TABLE users")
+    conn.execute("ALTER TABLE users_new RENAME TO users")
+    conn.execute("PRAGMA foreign_keys = ON")
+
+
 def init_db() -> None:
     with get_connection() as conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS users (
                 id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-                email               TEXT,
-                letterboxd_username TEXT NOT NULL UNIQUE,
+                email               TEXT UNIQUE,
+                letterboxd_username TEXT UNIQUE,
                 created_at          TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
@@ -98,6 +122,7 @@ def init_db() -> None:
                 score           REAL
             );
         """)
+        _migrate_users_nullable_username(conn)
         # Migrations: add columns if not present
         for migration in [
             "ALTER TABLE taste_profile ADD COLUMN version TEXT NOT NULL DEFAULT '1.0'",
@@ -120,29 +145,45 @@ def get_all_users() -> list[dict]:
         return [dict(row) for row in rows]
 
 
-def get_or_create_user(username: str) -> int:
+def get_all_users_with_stats() -> list[dict]:
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT u.id, u.email, u.letterboxd_username, u.created_at,
+                   COUNT(DISTINCT r.movie_id) AS ratings_count,
+                   COUNT(DISTINCT w.movie_id) AS watchlist_count
+            FROM users u
+            LEFT JOIN user_ratings r ON r.user_id = u.id
+            LEFT JOIN user_watchlist w ON w.user_id = u.id
+            GROUP BY u.id
+            ORDER BY u.created_at DESC
+        """).fetchall()
+        return [dict(row) for row in rows]
+
+
+def delete_user(user_id: int) -> None:
+    with get_connection() as conn:
+        for table in ("recommendations", "user_ratings", "user_watchlist", "user_watched", "taste_profile"):
+            conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+
+
+def get_or_create_user_by_email(email: str) -> tuple[int, str | None]:
+    """Return (user_id, letterboxd_username). Creates the user row if new."""
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT id FROM users WHERE letterboxd_username = ?", (username,)
+            "SELECT id, letterboxd_username FROM users WHERE email = ?", (email,)
         ).fetchone()
         if row:
-            return row["id"]
-        cur = conn.execute(
-            "INSERT INTO users (letterboxd_username) VALUES (?)", (username,)
+            return row["id"], row["letterboxd_username"]
+        cur = conn.execute("INSERT INTO users (email) VALUES (?)", (email,))
+        return cur.lastrowid, None
+
+
+def update_user_username(user_id: int, username: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE users SET letterboxd_username = ? WHERE id = ?", (username, user_id)
         )
-        return cur.lastrowid
-
-
-def get_or_prompt_user() -> tuple[int, str]:
-    """Return (user_id, username). Prompts for username on first run if no users exist."""
-    users = get_all_users()
-    if users:
-        user = users[0]
-        return user["id"], user["letterboxd_username"]
-    print("\nNo user found. Let's get you set up.")
-    username = input("Enter your Letterboxd username: ").strip()
-    user_id = get_or_create_user(username)
-    return user_id, username
 
 
 # --- movies ---

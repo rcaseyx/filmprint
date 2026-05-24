@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useSession } from "next-auth/react"
 import { RecommendationResults } from "@/components/RecommendationResults"
 
 interface Genre {
@@ -66,6 +67,7 @@ function VibeBlock({
 }
 
 export function MoodSelector({ genres }: Props) {
+  const { data: session } = useSession()
   const [selectedGenres, setSelectedGenres] = useState<string[]>([])
   const [tone, setTone] = useState<Tone | null>(null)
   const [pacing, setPacing] = useState<Pacing | null>(null)
@@ -86,9 +88,11 @@ export function MoodSelector({ genres }: Props) {
     setLoading(true)
     setError(null)
     try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" }
+      if (session?.user?.email) headers["X-User-Email"] = session.user.email
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/recommendations`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           required_genres: selectedGenres,
           exclude_genres: [],

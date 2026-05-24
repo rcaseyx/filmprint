@@ -35,6 +35,21 @@ def load_watched_csv(path: str) -> pd.DataFrame:
     return df[["title", "year"]]
 
 
+def validate_username(username: str) -> bool:
+    """Return True if the Letterboxd username exists (RSS feed responds with 200).
+
+    Raises requests.RequestException on network failure — callers should surface
+    this as a retryable error rather than silently saving an unvalidated username.
+    """
+    res = requests.head(
+        f"https://letterboxd.com/{username}/rss/",
+        headers=_HEADERS,
+        timeout=8,
+        allow_redirects=True,
+    )
+    return res.status_code == 200
+
+
 def fetch_rss_ratings(username: str) -> list[dict]:
     """Fetch recent diary entries (with ratings) from Letterboxd RSS."""
     import time as _time

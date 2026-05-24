@@ -1,5 +1,7 @@
+import { redirect } from "next/navigation"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
+import { apiFetch } from "@/lib/api"
 import { SyncButton } from "@/components/SyncButton"
 import { GenreRadar } from "@/components/GenreRadar"
 import { RecommendationHistory } from "@/components/RecommendationHistory"
@@ -29,11 +31,19 @@ interface ProfileData {
   neutral: number
 }
 
-const API = process.env.NEXT_PUBLIC_API_URL
+async function getUserStatus() {
+  try {
+    const res = await apiFetch("/api/user", { cache: "no-store" })
+    if (!res.ok) return null
+    return res.json()
+  } catch {
+    return null
+  }
+}
 
 async function getProfile(): Promise<ProfileData | null> {
   try {
-    const res = await fetch(`${API}/api/profile`, { cache: "no-store" })
+    const res = await apiFetch("/api/profile", { cache: "no-store" })
     return res.json()
   } catch {
     return null
@@ -42,7 +52,7 @@ async function getProfile(): Promise<ProfileData | null> {
 
 async function getHistory() {
   try {
-    const res = await fetch(`${API}/api/recommendations/history`, { cache: "no-store" })
+    const res = await apiFetch("/api/recommendations/history", { cache: "no-store" })
     const data = await res.json()
     return data.history ?? []
   } catch {
@@ -51,11 +61,16 @@ async function getHistory() {
 }
 
 export default async function ProfilePage() {
-  const [session, profile, history] = await Promise.all([
+  const [session, user, profile, history] = await Promise.all([
     getServerSession(authOptions),
+    getUserStatus(),
     getProfile(),
     getHistory(),
   ])
+
+  if (user && !user.has_profile) {
+    redirect("/onboarding")
+  }
 
   if (!profile) {
     return (
