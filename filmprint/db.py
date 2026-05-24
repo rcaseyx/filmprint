@@ -49,7 +49,7 @@ def _migrate_users_nullable_username(conn: sqlite3.Connection) -> None:
     conn.execute("PRAGMA foreign_keys = ON")
 
 
-def init_db() -> None:
+def init_db(seed_data: dict | None = None) -> None:
     with get_connection() as conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS users (
@@ -121,8 +121,22 @@ def init_db() -> None:
                 mood_context    TEXT,   -- JSON object of mood answers
                 score           REAL
             );
+
+            CREATE TABLE IF NOT EXISTS keyword_themes (
+                keyword    TEXT PRIMARY KEY,
+                theme      TEXT NOT NULL,
+                source     TEXT NOT NULL DEFAULT 'auto',  -- seed | auto | claude
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
         """)
         _migrate_users_nullable_username(conn)
+        if seed_data:
+            for theme, keywords in seed_data.items():
+                for kw in keywords:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO keyword_themes (keyword, theme, source) VALUES (?, ?, 'seed')",
+                        (kw, theme),
+                    )
         # Migrations: add columns if not present
         for migration in [
             "ALTER TABLE taste_profile ADD COLUMN version TEXT NOT NULL DEFAULT '1.0'",
@@ -165,6 +179,34 @@ def delete_user(user_id: int) -> None:
         for table in ("recommendations", "user_ratings", "user_watchlist", "user_watched", "taste_profile"):
             conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+
+
+# --- keyword_themes ---
+
+def get_all_keyword_themes() -> dict[str, str]:
+    """Return {keyword: theme} for all known keywords."""
+    with get_connection() as conn:
+        rows = conn.execute("SELECT keyword, theme FROM keyword_themes").fetchall()
+        return {row["keyword"]: row["theme"] for row in rows}
+
+
+def upsert_keyword_theme(keyword: str, theme: str, source: str = "auto") -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """INSERT INTO keyword_themes (keyword, theme, source)
+               VALUES (?, ?, ?)
+               ON CONFLICT(keyword) DO UPDATE SET theme = excluded.theme, source = excluded.source""",
+            (keyword, theme, source),
+        )
+
+
+def get_all_keyword_themes_full() -> list[dict]:
+    """Return full rows for admin display."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT keyword, theme, source, created_at FROM keyword_themes ORDER BY theme, keyword"
+        ).fetchall()
+        return [dict(row) for row in rows]
 
 
 def get_or_create_user_by_email(email: str) -> tuple[int, str | None]:
