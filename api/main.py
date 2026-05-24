@@ -44,6 +44,7 @@ from filmprint.tmdb import get_watch_providers
 from filmprint.omdb import get_scores
 from filmprint.sync import sync_ratings_csv, sync_watchlist_csv, sync_watched_csv, sync_rss, sync_scrape
 from filmprint.letterboxd import validate_username
+from filmprint.themes import assign_new_keywords, build_user_subgenre_axes, backfill_catalog_keywords
 import requests as _requests
 
 DATA_DIR = Path(__file__).parent.parent / "data"
@@ -62,6 +63,8 @@ def _rebuild_state(user_id: int, username: str) -> None:
     ratings = [r["letterboxd_rating"] for r in rated_rows]
 
     keyword_vocab = build_keyword_vocab(rated_movies)
+    assign_new_keywords(keyword_vocab)
+    user_subgenre_axes = build_user_subgenre_axes(keyword_vocab)
     affinity = build_affinity_scores(rated_movies, ratings)
 
     if is_profile_stale(user_id, PROFILE_VERSION):
@@ -121,6 +124,7 @@ def _rebuild_state(user_id: int, username: str) -> None:
         "critic_alignment": critic["alignment"],
         "neutral": critic["neutral"],
         "summary": taste_summary(profile_vec, keyword_vocab),
+        "user_subgenre_axes": user_subgenre_axes,
     }
 
 
@@ -133,7 +137,8 @@ def _get_or_build_state(user_id: int, username: str) -> dict:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
+    init_db(seed_data=SUBGENRE_AXES)
+    backfill_catalog_keywords()
     yield
 
 
@@ -416,7 +421,11 @@ def get_profile(current_user: dict = Depends(get_current_user)):
     avg_rating = round(sum(ratings) / len(ratings), 1) if ratings else 0.0
 
     tone = compute_axis_scores(rated_movies, ratings, TONE_AXES)
-    subgenres = compute_axis_scores(rated_movies, ratings, SUBGENRE_AXES)
+    all_subgenres = compute_axis_scores(
+        rated_movies, ratings,
+        state.get("user_subgenre_axes") or SUBGENRE_AXES,
+    )
+    subgenres = [s for s in all_subgenres if s["weight"] > 0][:8]
 
     return {
         "ratings_count": len(ratings),
