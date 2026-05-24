@@ -30,6 +30,7 @@ from filmprint.db import (
     log_recommendation, get_recent_ratings, get_recommendation_history,
     resolve_recommendation_outcomes, get_recommendation_boosts,
     get_ratings_count, get_all_users_with_stats, delete_user,
+    get_all_keyword_themes_full,
 )
 from filmprint.features import (
     build_feature_vector, taste_summary, build_keyword_vocab,
@@ -44,7 +45,7 @@ from filmprint.tmdb import get_watch_providers
 from filmprint.omdb import get_scores
 from filmprint.sync import sync_ratings_csv, sync_watchlist_csv, sync_watched_csv, sync_rss, sync_scrape
 from filmprint.letterboxd import validate_username
-from filmprint.themes import assign_new_keywords, build_user_subgenre_axes, backfill_catalog_keywords
+from filmprint.themes import assign_new_keywords, build_user_subgenre_axes, backfill_catalog_keywords, build_clusters
 import requests as _requests
 
 DATA_DIR = Path(__file__).parent.parent / "data"
@@ -711,3 +712,10 @@ def admin_delete_user(user_id: int, _admin: dict = Depends(get_admin_user)):
     delete_user(user_id)
     _user_states.pop(user_id, None)
     return {"deleted": user_id}
+
+
+@app.post("/api/admin/recluster")
+def admin_recluster(_admin: dict = Depends(get_admin_user)):
+    """Re-run full co-occurrence + embedding clustering on the catalog."""
+    n_themes = build_clusters()
+    return {"themes": n_themes}

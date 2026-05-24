@@ -128,6 +128,12 @@ def init_db(seed_data: dict | None = None) -> None:
                 source     TEXT NOT NULL DEFAULT 'auto',  -- seed | auto | claude
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
+
+            CREATE TABLE IF NOT EXISTS theme_centroids (
+                theme      TEXT PRIMARY KEY,
+                centroid   TEXT NOT NULL,  -- JSON array of floats
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
         """)
         _migrate_users_nullable_username(conn)
         if seed_data:
@@ -207,6 +213,21 @@ def get_all_keyword_themes_full() -> list[dict]:
             "SELECT keyword, theme, source, created_at FROM keyword_themes ORDER BY theme, keyword"
         ).fetchall()
         return [dict(row) for row in rows]
+
+
+def save_theme_centroids(centroids: dict[str, list[float]]) -> None:
+    with get_connection() as conn:
+        conn.execute("DELETE FROM theme_centroids")
+        conn.executemany(
+            "INSERT INTO theme_centroids (theme, centroid) VALUES (?, ?)",
+            [(theme, json.dumps(vec)) for theme, vec in centroids.items()],
+        )
+
+
+def load_theme_centroids() -> dict[str, list[float]]:
+    with get_connection() as conn:
+        rows = conn.execute("SELECT theme, centroid FROM theme_centroids").fetchall()
+        return {row["theme"]: json.loads(row["centroid"]) for row in rows}
 
 
 def get_or_create_user_by_email(email: str) -> tuple[int, str | None]:
