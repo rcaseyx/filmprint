@@ -9,24 +9,27 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 import json
+import os
 import tempfile
 import zipfile
 
 import anthropic
 import numpy as np
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 load_dotenv(override=True)
 
 from filmprint.db import (
-    init_db, get_or_prompt_user, get_user_ratings, get_user_watchlist,
+    init_db, get_or_create_user_by_email, update_user_username,
+    get_user_ratings, get_user_watchlist,
     get_seen_movie_ids, get_taste_profile, save_taste_profile,
     is_profile_stale, upsert_movie, update_feature_vector,
     log_recommendation, get_recent_ratings, get_recommendation_history,
     resolve_recommendation_outcomes, get_recommendation_boosts,
+    get_ratings_count, get_all_users_with_stats, delete_user,
 )
 from filmprint.features import (
     build_feature_vector, taste_summary, build_keyword_vocab,
@@ -40,11 +43,13 @@ from filmprint.app import ensure_feature_vectors
 from filmprint.tmdb import get_watch_providers
 from filmprint.omdb import get_scores
 from filmprint.sync import sync_ratings_csv, sync_watchlist_csv, sync_watched_csv, sync_rss, sync_scrape
+from filmprint.letterboxd import validate_username
+import requests as _requests
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 
-# Pipeline state, populated on startup
-_state: dict[str, Any] = {}
+# Per-user pipeline state, keyed by user_id, built lazily on first request
+_user_states: dict[int, dict[str, Any]] = {}
 
 
 def _rebuild_state(user_id: int, username: str) -> None:
@@ -99,7 +104,7 @@ def _rebuild_state(user_id: int, username: str) -> None:
 
     ranked = rank_watchlist(profile_vec, all_candidates, keyword_vocab, affinity)
 
-    _state.update({
+    _user_states[user_id] = {
         "user_id": user_id,
         "username": username,
         "rated_movies": rated_movies,
@@ -116,38 +121,19 @@ def _rebuild_state(user_id: int, username: str) -> None:
         "critic_alignment": critic["alignment"],
         "neutral": critic["neutral"],
         "summary": taste_summary(profile_vec, keyword_vocab),
-    })
+    }
 
 
-def _build_pipeline(user_id: int, username: str) -> None:
-    """Initial startup: scrape Letterboxd on first run (no prior data), then rebuild state.
-    Falls back to CSV exports if present (useful for local dev seed)."""
-    from filmprint.db import get_ratings_count
-
-    ratings_path = DATA_DIR / "ratings.csv"
-    watchlist_path = DATA_DIR / "watchlist.csv"
-    watched_path = DATA_DIR / "watched.csv"
-
-    if ratings_path.exists():
-        sync_ratings_csv(user_id, str(ratings_path))
-        if watchlist_path.exists():
-            sync_watchlist_csv(user_id, str(watchlist_path))
-        if watched_path.exists():
-            sync_watched_csv(user_id, str(watched_path))
-    elif get_ratings_count(user_id) == 0:
-        print(f"  No local data — scraping {username}'s Letterboxd profile...")
-        sync_scrape(user_id, username)
-
-    _rebuild_state(user_id, username)
+def _get_or_build_state(user_id: int, username: str) -> dict:
+    """Return cached state for user, building it lazily if they have data in the DB."""
+    if user_id not in _user_states and username and get_ratings_count(user_id) > 0:
+        _rebuild_state(user_id, username)
+    return _user_states.get(user_id, {})
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    user_id, username = get_or_prompt_user()
-    print("Initializing recommendation pipeline...")
-    _build_pipeline(user_id, username)
-    print(f"Ready — {len(_state['ranked'])} candidates ranked.")
     yield
 
 
@@ -159,6 +145,25 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# --- auth dependencies ---
+
+async def get_current_user(request: Request) -> dict:
+    email = request.headers.get("X-User-Email")
+    if not email:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    user_id, username = get_or_create_user_by_email(email)
+    return {"user_id": user_id, "username": username or "", "email": email}
+
+
+_ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
+
+
+async def get_admin_user(current_user: dict = Depends(get_current_user)) -> dict:
+    if not _ADMIN_EMAIL or current_user["email"] != _ADMIN_EMAIL:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    return current_user
 
 
 # --- schemas ---
@@ -211,8 +216,8 @@ def _apply_filters(
     return filtered or ranked
 
 
-def _select_cluster(mood: MoodContext) -> "np.ndarray | None":
-    clusters = _state.get("clusters") or []
+def _select_cluster(mood: MoodContext, state: dict) -> "np.ndarray | None":
+    clusters = state.get("clusters") or []
     required = mood.required_genres
     if not clusters or not required:
         return None
@@ -241,9 +246,9 @@ def _explain_recommendations(
     top_movies: list[tuple[dict, float]],
     mood_summary: str,
     active_summary: str,
+    watchlist_ids: set,
 ) -> list[dict]:
     client = anthropic.Anthropic()
-    watchlist_ids = _state["watchlist_ids"]
     candidates = top_movies[:20]
 
     movie_list = "\n".join(
@@ -322,20 +327,32 @@ For each reason:
 # --- endpoints ---
 
 @app.get("/api/user")
-def get_user():
+def get_user(current_user: dict = Depends(get_current_user)):
+    user_id = current_user["user_id"]
+    username = current_user["username"]
+    # Use a direct DB count so this endpoint is always fast — no state build triggered.
+    # Endpoints that need full state (_get_or_build_state) do so lazily on first request.
+    ratings_count = get_ratings_count(user_id)
+    state = _user_states.get(user_id, {})
     return {
-        "summary": _state.get("summary"),
-        "ratings_count": len(_state.get("ratings") or []),
-        "watchlist_count": len(_state.get("watchlist_ids") or []),
-        "candidates_count": len(_state.get("ranked") or []),
+        "has_profile": ratings_count > 0,
+        "needs_username": not username,
+        "summary": state.get("summary"),
+        "ratings_count": ratings_count,
+        "watchlist_count": len(state.get("watchlist_ids") or []),
+        "candidates_count": len(state.get("ranked") or []),
     }
 
 
 @app.get("/api/profile")
-def get_profile():
+def get_profile(current_user: dict = Depends(get_current_user)):
     """All data needed for the profile page in one call."""
-    profile_vec = _state.get("profile_vec")
-    rated_movies = _state.get("rated_movies") or []
+    user_id = current_user["user_id"]
+    username = current_user["username"]
+    state = _get_or_build_state(user_id, username)
+
+    profile_vec = state.get("profile_vec")
+    rated_movies = state.get("rated_movies") or []
 
     genre_counts: dict[str, int] = {g: 0 for g in GENRES}
     for movie in rated_movies:
@@ -358,8 +375,8 @@ def get_profile():
 
     decades = [{"name": d, "weight": decade_weights.get(d, 0.0)} for d in DECADES]
 
-    neutral = _state.get("neutral", 3.0)
-    director_scores: dict[str, float] = dict((_state.get("affinity") or {}).get("directors", {}))
+    neutral = state.get("neutral", 3.0)
+    director_scores: dict[str, float] = dict((state.get("affinity") or {}).get("directors", {}))
 
     # Count how many rated films each director has
     director_counts: dict[str, int] = {}
@@ -395,7 +412,7 @@ def get_profile():
         reverse=True,
     )[:8]
 
-    ratings = _state.get("ratings") or []
+    ratings = state.get("ratings") or []
     avg_rating = round(sum(ratings) / len(ratings), 1) if ratings else 0.0
 
     tone = compute_axis_scores(rated_movies, ratings, TONE_AXES)
@@ -403,25 +420,28 @@ def get_profile():
 
     return {
         "ratings_count": len(ratings),
-        "watchlist_count": len(_state.get("watchlist_ids") or []),
+        "watchlist_count": len(state.get("watchlist_ids") or []),
         "avg_rating": avg_rating,
-        "summary": _state.get("summary"),
+        "summary": state.get("summary"),
         "genres": genres,
         "decades": decades,
         "directors": directors,
         "tone": tone,
         "subgenres": subgenres,
-        "critic_alignment": _state.get("critic_alignment", 0.0),
-        "quality_floor": _state.get("quality_floor", 6.0),
+        "critic_alignment": state.get("critic_alignment", 0.0),
+        "quality_floor": state.get("quality_floor", 6.0),
         "neutral": neutral,
     }
 
 
 @app.get("/api/profile/genre/{name}/examples")
-def genre_examples(name: str):
+def genre_examples(name: str, current_user: dict = Depends(get_current_user)):
     """Return the top 3 highest-rated films the user has seen for a genre or axis."""
-    rated_movies = _state.get("rated_movies") or []
-    ratings = _state.get("ratings") or []
+    user_id = current_user["user_id"]
+    username = current_user["username"]
+    state = _get_or_build_state(user_id, username)
+    rated_movies = state.get("rated_movies") or []
+    ratings = state.get("ratings") or []
 
     if name in GENRES:
         matches = [
@@ -451,19 +471,20 @@ def genre_examples(name: str):
 
 
 @app.get("/api/genres")
-def get_genres():
+def get_genres(current_user: dict = Depends(get_current_user)):
     """Return genres present in the user's rated films, with profile weights."""
-    profile_vec = _state.get("profile_vec")
-    rated_movies = _state.get("rated_movies") or []
+    user_id = current_user["user_id"]
+    username = current_user["username"]
+    state = _get_or_build_state(user_id, username)
+    profile_vec = state.get("profile_vec")
+    rated_movies = state.get("rated_movies") or []
 
-    # Count how many rated films have each genre
     genre_counts: dict[str, int] = {g: 0 for g in GENRES}
     for movie in rated_movies:
         for g in _genre_names(movie):
             if g in genre_counts:
                 genre_counts[g] += 1
 
-    # Genre weights from the first 18 dims of the profile vector
     genre_weights = {GENRES[i]: float(profile_vec[i]) for i in range(len(GENRES))} if profile_vec is not None else {}
 
     genres = [
@@ -476,10 +497,8 @@ def get_genres():
 
 
 @app.get("/api/ratings/recent")
-def recent_ratings():
-    if not _state:
-        raise HTTPException(status_code=503, detail="Pipeline not initialized")
-    user_id = _state["user_id"]
+def recent_ratings(current_user: dict = Depends(get_current_user)):
+    user_id = current_user["user_id"]
     rows = get_recent_ratings(user_id, limit=20)
     result = []
     for m in rows:
@@ -498,10 +517,8 @@ def recent_ratings():
 
 
 @app.get("/api/recommendations/history")
-def recommendation_history():
-    if not _state:
-        raise HTTPException(status_code=503, detail="Pipeline not initialized")
-    user_id = _state["user_id"]
+def recommendation_history(current_user: dict = Depends(get_current_user)):
+    user_id = current_user["user_id"]
     rows = get_recommendation_history(user_id, limit=20)
     result = []
     for m in rows:
@@ -527,30 +544,35 @@ def recommendation_history():
 
 
 @app.post("/api/recommendations")
-def get_recommendations(mood: MoodContext):
-    if not _state:
-        raise HTTPException(status_code=503, detail="Pipeline not initialized")
+def get_recommendations(mood: MoodContext, current_user: dict = Depends(get_current_user)):
+    user_id = current_user["user_id"]
+    username = current_user["username"]
+    state = _get_or_build_state(user_id, username)
 
-    session_ids = _state.get("session_recommended_ids", set())
-    ranked = [(m, s) for m, s in _state["ranked"] if m["id"] not in session_ids]
-    keyword_vocab = _state["keyword_vocab"]
-    affinity = _state["affinity"]
-    profile_vec = _state["profile_vec"]
+    if not state:
+        raise HTTPException(status_code=428, detail="Import your Letterboxd data first")
 
-    cluster = _select_cluster(mood)
+    session_ids = state.get("session_recommended_ids", set())
+    ranked = [(m, s) for m, s in state["ranked"] if m["id"] not in session_ids]
+    keyword_vocab = state["keyword_vocab"]
+    affinity = state["affinity"]
+    profile_vec = state["profile_vec"]
+    watchlist_ids = state["watchlist_ids"]
+
+    cluster = _select_cluster(mood, state)
     active_vec = cluster if cluster is not None else profile_vec
     if cluster is not None:
         all_candidates = [m for m, _ in ranked]
         ranked = rank_watchlist(cluster, all_candidates, keyword_vocab, affinity)
         active_summary = taste_summary(cluster, keyword_vocab)
     else:
-        active_summary = _state["summary"]
+        active_summary = state["summary"]
 
     # Augment with TMDB Discover when mood specifies genres
     if mood.required_genres:
         existing_ids = {m["id"] for m, _ in ranked}
-        excluded = _state.get("seen_ids", set()) | existing_ids | session_ids
-        quality_floor = _state.get("quality_floor", 6.0)
+        excluded = state.get("seen_ids", set()) | existing_ids | session_ids
+        quality_floor = state.get("quality_floor", 6.0)
         discovered_raw = discover_by_mood(mood.required_genres, existing_ids=excluded)
         if discovered_raw:
             discovered_raw = [
@@ -567,50 +589,67 @@ def get_recommendations(mood: MoodContext):
     diverse = diversify(filtered, ranked, keyword_vocab, affinity)
 
     mood_summary = _mood_to_summary(mood)
-    picks = _explain_recommendations(diverse, mood_summary, active_summary)
+    picks = _explain_recommendations(diverse, mood_summary, active_summary, watchlist_ids)
 
-    user_id = _state["user_id"]
     mood_context = {"summary": mood_summary, "filters": mood.model_dump()}
     for pick in picks:
         log_recommendation(user_id, pick["id"], pick["score"], mood_context)
-        _state["session_recommended_ids"].add(pick["id"])
+        state["session_recommended_ids"].add(pick["id"])
 
     return {"picks": picks, "mood_summary": mood_summary}
 
 
 @app.post("/api/sync")
-def sync():
+def sync(current_user: dict = Depends(get_current_user)):
     """Scrape latest ratings and watchlist from Letterboxd, rebuild profile and ranking."""
-    if not _state:
-        raise HTTPException(status_code=503, detail="Pipeline not initialized")
-    user_id = _state["user_id"]
-    username = _state["username"]
+    user_id = current_user["user_id"]
+    username = current_user["username"]
 
-    ratings_before = len(_state.get("ratings") or [])
-    watchlist_before = len(_state.get("watchlist_ids") or [])
+    if not username:
+        raise HTTPException(status_code=428, detail="Set your Letterboxd username before syncing")
+
+    state = _user_states.get(user_id, {})
+    ratings_before = len(state.get("ratings") or [])
+    watchlist_before = len(state.get("watchlist_ids") or [])
 
     sync_scrape(user_id, username)
     sync_rss(user_id, username)
     _rebuild_state(user_id, username)
 
+    new_state = _user_states.get(user_id, {})
     return {
-        "ratings_added": len(_state.get("ratings") or []) - ratings_before,
-        "watchlist_added": len(_state.get("watchlist_ids") or []) - watchlist_before,
-        "ratings_count": len(_state.get("ratings") or []),
-        "watchlist_count": len(_state.get("watchlist_ids") or []),
-        "candidates_count": len(_state.get("ranked") or []),
+        "ratings_added": len(new_state.get("ratings") or []) - ratings_before,
+        "watchlist_added": len(new_state.get("watchlist_ids") or []) - watchlist_before,
+        "ratings_count": len(new_state.get("ratings") or []),
+        "watchlist_count": len(new_state.get("watchlist_ids") or []),
+        "candidates_count": len(new_state.get("ranked") or []),
     }
 
 
 @app.post("/api/import")
-async def import_csv(file: UploadFile = File(...)):
+async def import_csv(
+    current_user: dict = Depends(get_current_user),
+    file: UploadFile = File(...),
+    username: str | None = Form(None),
+):
     """Accept a Letterboxd data export (.zip or individual CSV) and ingest it."""
-    if not _state:
-        raise HTTPException(status_code=503, detail="Pipeline not initialized")
-    user_id = _state["user_id"]
+    user_id = current_user["user_id"]
+    active_username = current_user["username"]
 
-    ratings_before = len(_state.get("ratings") or [])
-    watchlist_before = len(_state.get("watchlist_ids") or [])
+    # Validate and save username if this is first-time setup
+    if username and not active_username:
+        try:
+            exists = validate_username(username)
+        except _requests.RequestException:
+            raise HTTPException(status_code=503, detail="Could not reach Letterboxd to verify your username — please try again")
+        if not exists:
+            raise HTTPException(status_code=422, detail=f"Letterboxd username '{username}' not found")
+        update_user_username(user_id, username)
+        active_username = username
+
+    state = _user_states.get(user_id, {})
+    ratings_before = len(state.get("ratings") or [])
+    watchlist_before = len(state.get("watchlist_ids") or [])
 
     content = await file.read()
 
@@ -623,7 +662,6 @@ async def import_csv(file: UploadFile = File(...)):
             with zipfile.ZipFile(zip_path) as zf:
                 zf.extractall(tmp_path)
         else:
-            # Single CSV — write using the uploaded filename
             (tmp_path / (file.filename or "ratings.csv")).write_bytes(content)
 
         ratings_csv = next(tmp_path.rglob("ratings.csv"), None)
@@ -640,12 +678,27 @@ async def import_csv(file: UploadFile = File(...)):
         if watched_csv:
             sync_watched_csv(user_id, str(watched_csv))
 
-    _rebuild_state(user_id, _state["username"])
+    _rebuild_state(user_id, active_username)
 
+    new_state = _user_states.get(user_id, {})
     return {
-        "ratings_added": len(_state.get("ratings") or []) - ratings_before,
-        "watchlist_added": len(_state.get("watchlist_ids") or []) - watchlist_before,
-        "ratings_count": len(_state.get("ratings") or []),
-        "watchlist_count": len(_state.get("watchlist_ids") or []),
-        "candidates_count": len(_state.get("ranked") or []),
+        "ratings_added": len(new_state.get("ratings") or []) - ratings_before,
+        "watchlist_added": len(new_state.get("watchlist_ids") or []) - watchlist_before,
+        "ratings_count": len(new_state.get("ratings") or []),
+        "watchlist_count": len(new_state.get("watchlist_ids") or []),
+        "candidates_count": len(new_state.get("ranked") or []),
     }
+
+
+# --- admin endpoints ---
+
+@app.get("/api/admin/users")
+def admin_list_users(_admin: dict = Depends(get_admin_user)):
+    return {"users": get_all_users_with_stats()}
+
+
+@app.delete("/api/admin/users/{user_id}")
+def admin_delete_user(user_id: int, _admin: dict = Depends(get_admin_user)):
+    delete_user(user_id)
+    _user_states.pop(user_id, None)
+    return {"deleted": user_id}

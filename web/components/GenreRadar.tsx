@@ -2,6 +2,7 @@
 
 import Image from "next/image"
 import { useRef, useState } from "react"
+import { useSession } from "next-auth/react"
 
 interface DataPoint {
   name: string
@@ -33,6 +34,7 @@ function splitLabel(text: string, maxLen = 10): [string, string | null] {
 }
 
 export function GenreRadar({ data, label }: Props) {
+  const { data: session } = useSession()
   const [hovered, setHovered] = useState<number | null>(null)
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0, flipDown: false })
   const [examples, setExamples] = useState<Record<number, Example[]>>({})
@@ -77,7 +79,9 @@ export function GenreRadar({ data, label }: Props) {
     if (fetchedRef.current.has(i)) return
     fetchedRef.current.add(i)
     const name = top[i].name
-    fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/profile/genre/${encodeURIComponent(name)}/examples`)
+    const headers: Record<string, string> = {}
+    if (session?.user?.email) headers["X-User-Email"] = session.user.email
+    fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/profile/genre/${encodeURIComponent(name)}/examples`, { headers })
       .then((r) => r.json())
       .then((d) => setExamples((prev) => ({ ...prev, [i]: d.examples })))
       .catch(() => setExamples((prev) => ({ ...prev, [i]: [] })))

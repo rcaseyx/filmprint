@@ -11,8 +11,14 @@ from filmprint.db import (
     upsert_movie,
     upsert_rating,
     upsert_watchlist_entry,
-    get_or_create_user,
+    get_or_create_user_by_email,
 )
+
+
+def get_or_create_user(username: str) -> int:
+    """Test helper: create a user by username (via fake email)."""
+    user_id, _ = get_or_create_user_by_email(f"{username}@test.local")
+    return user_id
 from tests.conftest import make_movie
 
 

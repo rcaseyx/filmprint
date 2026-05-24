@@ -12,7 +12,7 @@ load_dotenv(override=True)
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from filmprint.db import init_db, get_or_prompt_user, get_all_users
+from filmprint.db import init_db, get_all_users
 from filmprint.sync import sync_rss
 
 

@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { useSession } from "next-auth/react"
 
 interface SyncResult {
   ratings_added: number
@@ -11,15 +12,21 @@ interface SyncResult {
 
 export function SyncButton() {
   const router = useRouter()
+  const { data: session } = useSession()
   const [status, setStatus] = useState<"idle" | "syncing" | "done" | "error">("idle")
   const [result, setResult] = useState<SyncResult | null>(null)
 
   const handleSync = async () => {
     setStatus("syncing")
     setResult(null)
+    const headers: Record<string, string> = {}
+    if (session?.user?.email) {
+      headers["X-User-Email"] = session.user.email
+    }
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/sync`, {
         method: "POST",
+        headers,
       })
       if (!res.ok) throw new Error()
       const data = await res.json()
