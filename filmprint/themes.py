@@ -67,6 +67,10 @@ _NOISE_KEYWORDS: frozenset[str] = frozenset({
     # Franchise universe tags — subgenre signal comes from the film's other keywords
     "marvel cinematic universe (mcu)", "dc extended universe", "dceu",
     "star wars", "james bond", "monsterverse", "wizarding world",
+    # Franchise-specific proper nouns (character/creature names, not genre descriptors)
+    "muggle", "bourne", "valak", "casshan", "pandorum",
+    # Generic visual/structural descriptors that don't describe a film subgenre
+    "rousing", "twisted", "silhouette", "trio", "chapter", "monolith", "dyr",
 })
 
 # Themes excluded from the subgenre radar — character archetypes, standalone
