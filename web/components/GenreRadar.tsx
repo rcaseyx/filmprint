@@ -2,7 +2,6 @@
 
 import Image from "next/image"
 import { useRef, useState } from "react"
-import { useSession } from "next-auth/react"
 
 interface DataPoint {
   name: string
@@ -22,6 +21,7 @@ interface Example {
 interface Props {
   data: DataPoint[]
   label: string
+  initialExamples?: Record<string, Example[]>
 }
 
 function splitLabel(text: string, maxLen = 10): [string, string | null] {
@@ -33,13 +33,10 @@ function splitLabel(text: string, maxLen = 10): [string, string | null] {
   return [text, null]
 }
 
-export function GenreRadar({ data, label }: Props) {
-  const { data: session } = useSession()
+export function GenreRadar({ data, label, initialExamples = {} }: Props) {
   const [hovered, setHovered] = useState<number | null>(null)
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0, flipDown: false })
-  const [examples, setExamples] = useState<Record<number, Example[]>>({})
   const containerRef = useRef<HTMLDivElement>(null)
-  const fetchedRef = useRef<Set<number>>(new Set())
 
   const top = data.slice(0, 8)
   const N = top.length
@@ -74,21 +71,8 @@ export function GenreRadar({ data, label }: Props) {
     })
   }
 
-  const handleVertexEnter = (i: number) => {
-    setHovered(i)
-    if (fetchedRef.current.has(i)) return
-    fetchedRef.current.add(i)
-    const name = top[i].name
-    const headers: Record<string, string> = {}
-    if (session?.user?.email) headers["X-User-Email"] = session.user.email
-    fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/profile/genre/${encodeURIComponent(name)}/examples`, { headers })
-      .then((r) => r.json())
-      .then((d) => setExamples((prev) => ({ ...prev, [i]: d.examples })))
-      .catch(() => setExamples((prev) => ({ ...prev, [i]: [] })))
-  }
-
   const hoveredPoint = hovered !== null ? top[hovered] : null
-  const hoveredExamples = hovered !== null ? (examples[hovered] ?? null) : null
+  const hoveredExamples = hovered !== null ? (initialExamples[top[hovered].name] ?? []) : null
 
   return (
     <div ref={containerRef} className="relative flex flex-col items-center gap-2">
@@ -103,15 +87,7 @@ export function GenreRadar({ data, label }: Props) {
             {hoveredPoint.count !== undefined && ` · ${hoveredPoint.count} films`}
           </div>
           <div className="border-t border-neutral-800 pt-2 flex gap-2">
-            {hoveredExamples === null ? (
-              // Placeholders hold size while loading
-              Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="flex flex-col items-center gap-1 w-[64px]">
-                  <div className="w-[64px] h-[96px] rounded bg-neutral-800" />
-                  <div className="h-2 w-10 rounded bg-neutral-800" />
-                </div>
-              ))
-            ) : hoveredExamples.map((ex) => (
+            {hoveredExamples?.map((ex) => (
               <div key={ex.id} className="flex flex-col items-center gap-1 w-[64px]">
                 <div className="w-[64px] h-[96px] rounded overflow-hidden bg-neutral-800 shrink-0">
                   {ex.poster_path ? (
@@ -165,7 +141,7 @@ export function GenreRadar({ data, label }: Props) {
         {dataPoints.map((p, i) => (
           <g
             key={i}
-            onMouseEnter={() => handleVertexEnter(i)}
+            onMouseEnter={() => setHovered(i)}
             onMouseLeave={() => setHovered(null)}
             style={{ cursor: "default" }}
           >
