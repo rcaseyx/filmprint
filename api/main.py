@@ -31,6 +31,7 @@ from filmprint.db import (
 from filmprint.features import (
     build_feature_vector, taste_summary, build_keyword_vocab,
     build_affinity_scores, GENRES, DECADES, compute_axis_scores, TONE_AXES, SUBGENRE_AXES,
+    _movie_keywords,
 )
 from filmprint.profile import build_taste_profile, build_taste_clusters, build_critic_profile, personal_neutral, PROFILE_VERSION
 from filmprint.recommender import rank_watchlist, diversify
@@ -413,6 +414,39 @@ def get_profile():
         "critic_alignment": _state.get("critic_alignment", 0.0),
         "quality_floor": _state.get("quality_floor", 6.0),
         "neutral": neutral,
+    }
+
+
+@app.get("/api/profile/genre/{name}/examples")
+def genre_examples(name: str):
+    """Return the top 3 highest-rated films the user has seen for a genre or axis."""
+    rated_movies = _state.get("rated_movies") or []
+    ratings = _state.get("ratings") or []
+
+    if name in GENRES:
+        matches = [
+            (m, r) for m, r in zip(rated_movies, ratings)
+            if name in set(_genre_names(m))
+        ]
+    else:
+        keywords = set(SUBGENRE_AXES.get(name) or TONE_AXES.get(name) or [])
+        matches = [
+            (m, r) for m, r in zip(rated_movies, ratings)
+            if _movie_keywords(m) & keywords
+        ]
+
+    matches.sort(key=lambda x: x[1], reverse=True)
+    return {
+        "examples": [
+            {
+                "id": m["id"],
+                "title": m["title"],
+                "year": m.get("year"),
+                "rating": r,
+                "poster_path": (m.get("raw_tmdb") or {}).get("poster_path"),
+            }
+            for m, r in matches[:3]
+        ]
     }
 
 
