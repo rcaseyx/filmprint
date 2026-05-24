@@ -31,6 +31,16 @@ interface ProfileData {
   neutral: number
 }
 
+interface Example {
+  id: number
+  title: string
+  year: number | null
+  rating: number
+  poster_path: string | null
+}
+
+type RadarExamples = Record<string, Example[]>
+
 async function getUserStatus() {
   try {
     const res = await apiFetch("/api/user", { cache: "no-store" })
@@ -60,12 +70,23 @@ async function getHistory() {
   }
 }
 
+async function getExamples(): Promise<{ genre: RadarExamples; subgenre: RadarExamples }> {
+  try {
+    const res = await apiFetch("/api/profile/examples", { cache: "no-store" })
+    if (!res.ok) return { genre: {}, subgenre: {} }
+    return res.json()
+  } catch {
+    return { genre: {}, subgenre: {} }
+  }
+}
+
 export default async function ProfilePage() {
-  const [session, user, profile, history] = await Promise.all([
+  const [session, user, profile, history, examples] = await Promise.all([
     getServerSession(authOptions),
     getUserStatus(),
     getProfile(),
     getHistory(),
+    getExamples(),
   ])
 
   if (user && !user.has_profile) {
@@ -124,8 +145,8 @@ export default async function ProfilePage() {
       {/* Radars: wider section */}
       <div className="max-w-3xl mx-auto px-8">
         <div className="grid grid-cols-2 gap-8">
-          <GenreRadar data={topGenres} label="Genre" />
-          <GenreRadar data={profile.subgenres} label="Sub-genre" />
+          <GenreRadar data={topGenres} label="Genre" initialExamples={examples.genre} />
+          <GenreRadar data={profile.subgenres} label="Sub-genre" initialExamples={examples.subgenre} />
         </div>
       </div>
 

@@ -444,41 +444,69 @@ def get_profile(current_user: dict = Depends(get_current_user)):
     }
 
 
-@app.get("/api/profile/genre/{name}/examples")
-def genre_examples(name: str, current_user: dict = Depends(get_current_user)):
-    """Return the top 3 highest-rated films the user has seen for a genre or axis."""
+@app.get("/api/profile/examples")
+def profile_examples(current_user: dict = Depends(get_current_user)):
+    """Return top 3 film examples per radar axis, deduplicated within each radar.
+
+    Deduplication ensures each film appears on at most one axis — so hovering
+    different points shows different posters rather than the same top-rated films.
+    """
     user_id = current_user["user_id"]
     username = current_user["username"]
     state = _get_or_build_state(user_id, username)
     rated_movies = state.get("rated_movies") or []
     ratings = state.get("ratings") or []
 
-    if name in GENRES:
-        matches = [
-            (m, r) for m, r in zip(rated_movies, ratings)
-            if name in set(_genre_names(m))
-        ]
-    else:
-        user_subgenre_axes = state.get("user_subgenre_axes") or {}
-        keywords = set(SUBGENRE_AXES.get(name) or TONE_AXES.get(name) or user_subgenre_axes.get(name) or [])
-        matches = [
-            (m, r) for m, r in zip(rated_movies, ratings)
-            if _movie_keywords(m) & keywords
-        ]
+    def _serialize(m: dict, r: float) -> dict:
+        return {
+            "id": m["id"],
+            "title": m["title"],
+            "year": m.get("year"),
+            "rating": r,
+            "poster_path": (m.get("raw_tmdb") or {}).get("poster_path"),
+        }
 
-    matches.sort(key=lambda x: x[1], reverse=True)
-    return {
-        "examples": [
-            {
-                "id": m["id"],
-                "title": m["title"],
-                "year": m.get("year"),
-                "rating": r,
-                "poster_path": (m.get("raw_tmdb") or {}).get("poster_path"),
-            }
-            for m, r in matches[:3]
-        ]
-    }
+    def pick_examples(axes: list[str], match_fn) -> dict[str, list[dict]]:
+        used_ids: set[int] = set()
+        result: dict[str, list[dict]] = {}
+        for name in axes:
+            candidates = sorted(
+                [(m, r) for m, r in zip(rated_movies, ratings)
+                 if match_fn(name, m) and m["id"] not in used_ids],
+                key=lambda x: x[1], reverse=True,
+            )
+            for m, r in candidates[:3]:
+                used_ids.add(m["id"])
+            result[name] = [_serialize(m, r) for m, r in candidates[:3]]
+        return result
+
+    # ── genres: top 8 by profile weight, same order as radar ─────────────────
+    profile_vec = state.get("profile_vec")
+    genre_weights = {GENRES[i]: float(profile_vec[i]) for i in range(len(GENRES))} if profile_vec is not None else {}
+    genre_counts: dict[str, int] = {g: 0 for g in GENRES}
+    for movie in rated_movies:
+        for g in _genre_names(movie):
+            if g in genre_counts:
+                genre_counts[g] += 1
+    top_genres = sorted(
+        [g for g in GENRES if genre_counts.get(g, 0) > 0],
+        key=lambda g: genre_weights.get(g, 0.0), reverse=True,
+    )[:8]
+
+    genre_ex = pick_examples(top_genres, lambda name, m: name in set(_genre_names(m)))
+
+    # ── subgenres: top active axes, same list as radar ────────────────────────
+    user_subgenre_axes = state.get("user_subgenre_axes") or SUBGENRE_AXES
+    all_subgenres = compute_axis_scores(rated_movies, ratings, user_subgenre_axes)
+    top_subgenres = [s["name"] for s in all_subgenres if s["weight"] > 0][:8]
+
+    def subgenre_match(name: str, m: dict) -> bool:
+        kws = set(SUBGENRE_AXES.get(name) or TONE_AXES.get(name) or user_subgenre_axes.get(name) or [])
+        return bool(_movie_keywords(m) & kws)
+
+    subgenre_ex = pick_examples(top_subgenres, subgenre_match)
+
+    return {"genre": genre_ex, "subgenre": subgenre_ex}
 
 
 @app.get("/api/genres")
