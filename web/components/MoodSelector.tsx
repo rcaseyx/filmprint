@@ -121,7 +121,7 @@ export function MoodSelector({ genres }: Props) {
   }
 
   if (picks) {
-    return <RecommendationResults picks={picks} onReset={handleReset} />
+    return <RecommendationResults picks={picks} onReset={handleReset} onRefresh={handleSubmit} refreshing={loading} />
   }
 
   const chipsDuration = Math.min(genres.length * 35 + 50, 350)

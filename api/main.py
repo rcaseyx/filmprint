@@ -25,8 +25,7 @@ from filmprint.db import (
     init_db, get_or_prompt_user, get_user_ratings, get_user_watchlist,
     get_seen_movie_ids, get_taste_profile, save_taste_profile,
     is_profile_stale, upsert_movie, update_feature_vector,
-    log_recommendation, get_recent_recommendation_ids,
-    get_recent_ratings, get_recommendation_history,
+    log_recommendation, get_recent_ratings, get_recommendation_history,
     resolve_recommendation_outcomes, get_recommendation_boosts,
 )
 from filmprint.features import (
@@ -96,10 +95,6 @@ def _rebuild_state(user_id: int, username: str) -> None:
         [m for m in watchlist if m["id"] not in seen_ids and _above_floor(m)]
         + [d for d in discovered if d["id"] not in watchlist_ids and _above_floor(d)]
     )
-
-    recent_ids = get_recent_recommendation_ids(user_id)
-    if recent_ids:
-        all_candidates = [c for c in all_candidates if c["id"] not in recent_ids]
 
     ranked = rank_watchlist(profile_vec, all_candidates, keyword_vocab, affinity)
 
@@ -520,7 +515,7 @@ def get_recommendations(mood: MoodContext):
     # Augment with TMDB Discover when mood specifies genres
     if mood.required_genres:
         existing_ids = {m["id"] for m, _ in ranked}
-        excluded = _state.get("seen_ids", set()) | existing_ids
+        excluded = _state.get("seen_ids", set()) | existing_ids | session_ids
         quality_floor = _state.get("quality_floor", 6.0)
         discovered_raw = discover_by_mood(mood.required_genres, existing_ids=excluded)
         if discovered_raw:
