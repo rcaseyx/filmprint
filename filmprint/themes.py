@@ -259,11 +259,11 @@ def assign_new_keywords(keywords: list[str]) -> None:
 
         for kw, sim_row in zip(new_kws, sims):
             best_idx = int(np.argmax(sim_row))
-            theme = theme_names[best_idx] if sim_row[best_idx] >= ASSIGN_THRESHOLD else kw.title()
-            upsert_keyword_theme(kw, theme, source="auto")
-    else:
-        for kw in new_kws:
-            upsert_keyword_theme(kw, kw.title(), source="auto")
+            if sim_row[best_idx] >= ASSIGN_THRESHOLD:
+                upsert_keyword_theme(kw, theme_names[best_idx], source="auto")
+            # else: leave unmapped — sparse keywords that don't fit a cluster
+            # stay out of the table rather than cluttering it as singletons
+    # If no centroids exist yet, skip — build_clusters() will assign everything
 
 
 # ── startup backfill ─────────────────────────────────────────────────────────
@@ -329,20 +329,24 @@ The label is the most "central" keyword in each cluster — not always the best 
 Themes to review (each line: label, keyword count, up to 8 sample keywords):
 {theme_list}
 
-Your job:
-1. Fix poorly auto-labeled themes (e.g. "Primate" → "Wildlife Horror", "Murder By Gunshot" → "Gun Violence")
-2. Merge themes that clearly belong together by mapping both to the same new label
-3. Leave well-labeled themes out of your response entirely
+Your job — fix only clear problems:
+1. Rename labels that are obviously wrong or confusing (e.g. "Primate" → "Wildlife Horror")
+2. Merge themes that are genuinely duplicates or near-identical in meaning (e.g. "Satanism" + "Satanic Ritual" → "Satanic Horror")
+3. Leave everything else alone — when in doubt, do NOT change it
+
+Be conservative. Do NOT:
+- Merge themes that are related but meaningfully distinct (e.g. keep "Super Power" and "Superhero" separate)
+- Rename a label to something more generic just because it could be broader
+- Change labels that are already clear and accurate
 
 Label rules:
 - 1–4 words, title-cased
-- Describes a film subgenre, setting, or recurring theme — not a specific character
-- Prefer broad genre terms over franchise-specific names (e.g. "Sci-Fi Horror" not "Alien Films")
+- Describes a film subgenre, setting, or recurring theme
 
 Return ONLY a valid JSON object. Keys are current labels, values are corrected labels.
-Only include themes that need changes. No explanation, no markdown, just JSON.
+Only include themes that genuinely need changes. No explanation, no markdown, just JSON.
 
-Example: {{"Primate": "Wildlife Horror", "Santa Claus": "Christmas", "Old Hollywood": "Hollywood Nostalgia"}}"""
+Example: {{"Primate": "Wildlife Horror", "Satanism": "Satanic Horror", "Satanic Ritual": "Satanic Horror"}}"""
 
     client = anthropic.Anthropic()
     response = client.messages.create(
