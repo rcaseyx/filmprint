@@ -1,29 +1,43 @@
-"""Keyword-to-subgenre theme assignment using sentence embeddings.
+"""Keyword-to-subgenre theme discovery using co-occurrence + sentence embeddings.
 
-Assignment strategy: embed each new keyword and compare it to the embedding of
-every known theme NAME (not keyword centroids). Theme names are concise and
-semantically clean — comparing "film noir" to "Neo-noir" scores 0.80+, while
-comparing "pixar" to any existing noir/thriller theme scores <0.45, so it
-correctly seeds a new "Pixar" theme rather than being shoehorned into the
-wrong bucket.
+Clustering pipeline (build_clusters):
+  1. Build a keyword × film term-document matrix from the movies table
+  2. Co-occurrence similarity: normalize rows → dot product gives cosine sim
+     between keyword co-appearance patterns across the catalog
+  3. Embedding similarity: all-MiniLM-L6-v2 for semantic signal
+  4. Combined similarity (60% co-occurrence, 40% embedding), converted to distance
+  5. Agglomerative clustering with a distance threshold (data-driven n_clusters)
+  6. Label each cluster from its most central keyword, preferring seed theme names
+  7. Write to keyword_themes (never overwrite source=seed or source=claude)
+  8. Store centroid vectors in theme_centroids table for fast subsequent startups
+  9. Assign below-threshold keywords to nearest stored centroid
 
-As the theme table grows organically (auto + claude corrections), new theme
-names become part of the comparison pool, improving assignment quality over time.
+Startup (backfill_catalog_keywords):
+  - Load centroids from DB into memory — no re-embedding
+  - If no centroids exist yet, run build_clusters() first
+  - Assign any catalog keywords not yet in keyword_themes to nearest centroid
 
-source column: 'seed' = hand-curated, 'auto' = embedding-assigned,
-               'claude' = corrected by periodic Claude cleanup pass.
+source column: 'seed' = hand-curated  |  'auto' = cluster/embed-assigned
+               'claude' = corrected by periodic Claude cleanup pass
 """
 
-from collections import defaultdict
+import json
+from collections import Counter, defaultdict
 
 import numpy as np
 
-from .db import get_all_keyword_themes, upsert_keyword_theme
+from .db import (
+    get_all_keyword_themes, get_all_keyword_themes_full, get_connection,
+    load_theme_centroids, save_theme_centroids, upsert_keyword_theme,
+)
 
-SIMILARITY_THRESHOLD = 0.65
-_MODEL_NAME = "all-MiniLM-L6-v2"
+# ── tunables ────────────────────────────────────────────────────────────────
 
-# TMDB metadata tags that aren't meaningful subgenre signals
+MIN_FILM_COUNT = 3      # keywords in fewer films are sparse-assigned, not clustered
+CO_WEIGHT = 0.6         # co-occurrence vs embedding weight in combined similarity
+CLUSTER_DISTANCE = 0.55 # agglomerative linkage cutoff (distance = 1 − similarity)
+ASSIGN_THRESHOLD = 0.35 # min cosine to nearest centroid to join it vs own theme
+
 _NOISE_KEYWORDS: frozenset[str] = frozenset({
     "aftercreditsstinger", "duringcreditsstinger",
     "based on novel or book", "based on novel", "based on comic",
@@ -33,92 +47,252 @@ _NOISE_KEYWORDS: frozenset[str] = frozenset({
     "independent film", "cult film",
 })
 
+# ── module-level cache ───────────────────────────────────────────────────────
+
 _model = None
+_centroids: dict[str, np.ndarray] = {}   # theme → mean embedding vector
 
 
 def _get_model():
     global _model
     if _model is None:
         from sentence_transformers import SentenceTransformer
-        _model = SentenceTransformer(_MODEL_NAME)
+        _model = SentenceTransformer("all-MiniLM-L6-v2")
     return _model
 
 
-def _cosine(a: np.ndarray, b: np.ndarray) -> float:
-    denom = np.linalg.norm(a) * np.linalg.norm(b)
-    return float(np.dot(a, b) / denom) if denom > 0 else 0.0
+# ── centroid helpers ─────────────────────────────────────────────────────────
 
+def _load_centroids_from_db() -> None:
+    """Populate the in-memory centroid cache from the theme_centroids table."""
+    global _centroids
+    stored = load_theme_centroids()
+    _centroids = {theme: np.array(vec, dtype=np.float32) for theme, vec in stored.items()}
+
+
+def _store_centroids(centroids: dict[str, np.ndarray]) -> None:
+    global _centroids
+    _centroids = centroids
+    save_theme_centroids({t: v.tolist() for t, v in centroids.items()})
+
+
+def _compute_centroids_from_table() -> dict[str, np.ndarray]:
+    """Embed all keywords grouped by theme, return mean vector per theme."""
+    theme_map = get_all_keyword_themes()
+    theme_keywords: dict[str, list[str]] = defaultdict(list)
+    for kw, theme in theme_map.items():
+        theme_keywords[theme].append(kw)
+
+    model = _get_model()
+    result: dict[str, np.ndarray] = {}
+    all_themes = list(theme_keywords.keys())
+    all_kws = [theme_keywords[t] for t in all_themes]
+
+    for theme, kws in zip(all_themes, all_kws):
+        embs = model.encode(kws, show_progress_bar=False, batch_size=256)
+        result[theme] = embs.mean(axis=0)
+    return result
+
+
+# ── catalog keyword extraction ───────────────────────────────────────────────
+
+def _get_catalog_keyword_films() -> dict[str, set[int]]:
+    """Return {keyword: set_of_film_ids} for all non-noise keywords in movies."""
+    kw_films: dict[str, set[int]] = defaultdict(set)
+    with get_connection() as conn:
+        for row in conn.execute(
+            "SELECT id, keywords FROM movies WHERE keywords IS NOT NULL"
+        ).fetchall():
+            try:
+                kw_data = json.loads(row["keywords"])
+                if isinstance(kw_data, dict):
+                    kw_data = kw_data.get("keywords", [])
+                seen: set[str] = set()
+                for k in kw_data:
+                    name = k["name"] if isinstance(k, dict) else k
+                    if name and name.lower() not in _NOISE_KEYWORDS and name not in seen:
+                        kw_films[name].add(row["id"])
+                        seen.add(name)
+            except Exception:
+                pass
+    return kw_films
+
+
+# ── full clustering ──────────────────────────────────────────────────────────
+
+def build_clusters() -> int:
+    """Cluster catalog keywords via co-occurrence + embeddings, write to DB.
+
+    Only processes keywords with >= MIN_FILM_COUNT appearances (enough signal
+    for co-occurrence). Keywords below that threshold are sparse-assigned to the
+    nearest centroid afterward.
+
+    Never overwrites source='seed' or source='claude' entries.
+    Returns the number of distinct themes after clustering.
+    """
+    from sklearn.preprocessing import normalize
+    from sklearn.cluster import AgglomerativeClustering
+
+    kw_films = _get_catalog_keyword_films()
+
+    qualified = {kw: films for kw, films in kw_films.items() if len(films) >= MIN_FILM_COUNT}
+    sparse_kws = [kw for kw, films in kw_films.items() if len(films) < MIN_FILM_COUNT]
+
+    if len(qualified) < 2:
+        return 0
+
+    keywords = list(qualified.keys())
+    n_kw = len(keywords)
+    kw_index = {kw: i for i, kw in enumerate(keywords)}
+
+    all_film_ids = sorted({fid for films in qualified.values() for fid in films})
+    film_index = {fid: i for i, fid in enumerate(all_film_ids)}
+
+    # ── term-document matrix (keywords × films) ──────────────────────────────
+    from scipy.sparse import lil_matrix
+    td = lil_matrix((n_kw, len(all_film_ids)), dtype=np.float32)
+    for kw, films in qualified.items():
+        row = kw_index[kw]
+        for fid in films:
+            td[row, film_index[fid]] = 1.0
+    td = td.tocsr()
+
+    # Co-occurrence similarity: normalized rows → cosine similarity matrix
+    td_norm = normalize(td, norm="l2")
+    cooc_sim = np.asarray((td_norm @ td_norm.T).todense(), dtype=np.float32)
+
+    # ── embedding similarity ─────────────────────────────────────────────────
+    model = _get_model()
+    embs = model.encode(keywords, show_progress_bar=False, batch_size=256)
+    embs_norm = embs / (np.linalg.norm(embs, axis=1, keepdims=True) + 1e-8)
+    emb_sim = (embs_norm @ embs_norm.T).astype(np.float32)
+
+    # ── combined distance matrix ─────────────────────────────────────────────
+    combined = CO_WEIGHT * cooc_sim + (1.0 - CO_WEIGHT) * emb_sim
+    np.fill_diagonal(combined, 1.0)
+    distance = np.clip(1.0 - combined, 0.0, 2.0).astype(np.float64)
+
+    # ── agglomerative clustering ─────────────────────────────────────────────
+    clustering = AgglomerativeClustering(
+        n_clusters=None,
+        metric="precomputed",
+        linkage="average",
+        distance_threshold=CLUSTER_DISTANCE,
+    )
+    labels = clustering.fit_predict(distance)
+
+    # ── label each cluster ───────────────────────────────────────────────────
+    clusters: dict[int, list[int]] = defaultdict(list)
+    for i, label in enumerate(labels):
+        clusters[label].append(i)
+
+    existing_full = {r["keyword"]: r for r in get_all_keyword_themes_full()}
+
+    theme_assignments: dict[str, str] = {}   # keyword → theme name
+    cluster_centroids: dict[str, np.ndarray] = {}  # theme name → centroid embedding
+
+    for label, indices in clusters.items():
+        # Prefer seed theme name if any cluster member is seeded
+        seed_themes = [
+            existing_full[keywords[i]]["theme"]
+            for i in indices
+            if keywords[i] in existing_full and existing_full[keywords[i]]["source"] == "seed"
+        ]
+        if seed_themes:
+            theme_name = Counter(seed_themes).most_common(1)[0][0]
+        elif len(indices) == 1:
+            theme_name = keywords[indices[0]].title()
+        else:
+            # Most central = highest average similarity to other cluster members
+            sub_sim = combined[np.ix_(indices, indices)]
+            center_local = int(np.argmax(sub_sim.sum(axis=1)))
+            theme_name = keywords[indices[center_local]].title()
+
+        for i in indices:
+            theme_assignments[keywords[i]] = theme_name
+
+        cluster_centroids[theme_name] = embs[indices].mean(axis=0)
+
+    # ── write to DB (preserve seed + claude) ────────────────────────────────
+    for kw, theme in theme_assignments.items():
+        src = existing_full.get(kw, {}).get("source")
+        if src in ("seed", "claude"):
+            continue
+        upsert_keyword_theme(kw, theme, source="auto")
+
+    # ── store centroids, then assign sparse keywords ─────────────────────────
+    _store_centroids(cluster_centroids)
+    assign_new_keywords(sparse_kws)
+
+    return len(cluster_centroids)
+
+
+# ── incremental assignment ───────────────────────────────────────────────────
 
 def assign_new_keywords(keywords: list[str]) -> None:
-    """Embed new keywords and assign each to the most similar theme name.
+    """Assign keywords not yet in keyword_themes to the nearest cluster centroid.
 
-    If no theme name scores above SIMILARITY_THRESHOLD the keyword seeds a
-    new theme named after itself (title-cased). Comparison targets include all
-    currently known theme names so auto-created themes (like "Animation") become
-    valid targets for future imports.
+    Uses the in-memory centroid cache built by build_clusters() or loaded from
+    the theme_centroids DB table. Falls back to a standalone theme when no
+    centroid scores above ASSIGN_THRESHOLD.
     """
     if not keywords:
         return
 
     existing = get_all_keyword_themes()
-    new_kws = [kw for kw in keywords if kw not in existing and kw.lower() not in _NOISE_KEYWORDS]
+    new_kws = [
+        kw for kw in keywords
+        if kw not in existing and kw.lower() not in _NOISE_KEYWORDS
+    ]
     if not new_kws:
         return
 
     model = _get_model()
+    kw_embs = model.encode(new_kws, show_progress_bar=False, batch_size=256)
+    kw_norm = kw_embs / (np.linalg.norm(kw_embs, axis=1, keepdims=True) + 1e-8)
 
-    # Embed all distinct theme names currently in the table
-    theme_names = list({t for t in existing.values()})
-    if theme_names:
-        theme_name_embs = dict(zip(theme_names, model.encode(theme_names, show_progress_bar=False)))
+    if _centroids:
+        theme_names = list(_centroids.keys())
+        centroid_matrix = np.stack([_centroids[t] for t in theme_names])
+        c_norm = centroid_matrix / (np.linalg.norm(centroid_matrix, axis=1, keepdims=True) + 1e-8)
+        sims = kw_norm @ c_norm.T  # (n_new, n_themes)
+
+        for kw, sim_row in zip(new_kws, sims):
+            best_idx = int(np.argmax(sim_row))
+            theme = theme_names[best_idx] if sim_row[best_idx] >= ASSIGN_THRESHOLD else kw.title()
+            upsert_keyword_theme(kw, theme, source="auto")
     else:
-        theme_name_embs = {}
+        for kw in new_kws:
+            upsert_keyword_theme(kw, kw.title(), source="auto")
 
-    kw_embeddings = model.encode(new_kws, show_progress_bar=False)
 
-    for kw, emb in zip(new_kws, kw_embeddings):
-        if theme_name_embs:
-            best_theme = max(theme_name_embs, key=lambda t: _cosine(emb, theme_name_embs[t]))
-            score = _cosine(emb, theme_name_embs[best_theme])
-            theme = best_theme if score >= SIMILARITY_THRESHOLD else kw.title()
-        else:
-            theme = kw.title()
-
-        upsert_keyword_theme(kw, theme, source="auto")
-
+# ── startup backfill ─────────────────────────────────────────────────────────
 
 def backfill_catalog_keywords() -> int:
-    """Assign any keywords present in the movies table that aren't yet in keyword_themes.
+    """Called at API startup. Fast path after first run.
 
-    Safe to call repeatedly — only processes genuinely new keywords each time.
-    Returns the number of keywords newly assigned.
+    First run (no centroids in DB): runs build_clusters() — ~10–15s.
+    Subsequent runs: loads centroids from DB, assigns only new keywords — ~1s.
+
+    Returns number of distinct themes.
     """
-    import json
-    from .db import get_connection
+    _load_centroids_from_db()
 
+    if not _centroids:
+        # First run — build clusters from scratch
+        n = build_clusters()
+        return n
+
+    # Fast path: assign any catalog keywords not yet in keyword_themes
+    kw_films = _get_catalog_keyword_films()
     existing = get_all_keyword_themes()
-
-    all_kws: set[str] = set()
-    with get_connection() as conn:
-        for row in conn.execute("SELECT keywords FROM movies WHERE keywords IS NOT NULL").fetchall():
-            try:
-                kw_data = json.loads(row["keywords"])
-                if isinstance(kw_data, dict):
-                    kw_data = kw_data.get("keywords", [])
-                for k in kw_data:
-                    name = k["name"] if isinstance(k, dict) else k
-                    if name:
-                        all_kws.add(name)
-            except Exception:
-                pass
-
-    new_kws = [kw for kw in all_kws if kw not in existing]
-    if not new_kws:
-        return 0
-
+    new_kws = [kw for kw in kw_films if kw not in existing]
     assign_new_keywords(new_kws)
-    return len(new_kws)
 
+    return len({v for v in get_all_keyword_themes().values()})
+
+
+# ── user subgenre axes ───────────────────────────────────────────────────────
 
 def build_user_subgenre_axes(keyword_vocab: list[str]) -> dict[str, list[str]]:
     """Map a user's keyword vocab through the shared lookup table.
