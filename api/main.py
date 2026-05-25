@@ -75,18 +75,18 @@ def _rebuild_state(user_id: int, username: str) -> None:
     affinity = build_affinity_scores(rated_movies, ratings)
 
     if is_profile_stale(user_id, PROFILE_VERSION):
-        profile_vec = build_taste_profile(rated_movies, ratings, keyword_vocab, affinity, outcome_boosts)
-        clusters = build_taste_clusters(rated_movies, ratings, keyword_vocab, affinity, outcome_boosts)
+        profile_vec = build_taste_profile(rated_movies, ratings, keyword_vocab, affinity, outcome_boosts, user_subgenre_axes)
+        clusters = build_taste_clusters(rated_movies, ratings, keyword_vocab, affinity, outcome_boosts, user_subgenre_axes)
         save_taste_profile(user_id, profile_vec.tolist(), len(ratings), PROFILE_VERSION,
                            [c.tolist() for c in clusters])
     else:
         profile_data = get_taste_profile(user_id)
         profile_vec = np.array(profile_data["vector"])
         clusters = [np.array(c) for c in profile_data.get("clusters") or []]
-        expected_len = 35 + len(keyword_vocab) + 2 + len(SUBGENRE_AXES) + len(TONE_AXES)
+        expected_len = 35 + len(keyword_vocab) + 2 + len(user_subgenre_axes) + len(TONE_AXES)
         if len(profile_vec) != expected_len:
-            profile_vec = build_taste_profile(rated_movies, ratings, keyword_vocab, affinity)
-            clusters = build_taste_clusters(rated_movies, ratings, keyword_vocab, affinity)
+            profile_vec = build_taste_profile(rated_movies, ratings, keyword_vocab, affinity, subgenre_axes=user_subgenre_axes)
+            clusters = build_taste_clusters(rated_movies, ratings, keyword_vocab, affinity, subgenre_axes=user_subgenre_axes)
             save_taste_profile(user_id, profile_vec.tolist(), len(ratings), PROFILE_VERSION,
                                [c.tolist() for c in clusters])
 
@@ -112,7 +112,7 @@ def _rebuild_state(user_id: int, username: str) -> None:
         + [d for d in discovered if d["id"] not in watchlist_ids and _above_floor(d)]
     )
 
-    ranked = rank_watchlist(profile_vec, all_candidates, keyword_vocab, affinity)
+    ranked = rank_watchlist(profile_vec, all_candidates, keyword_vocab, affinity, user_subgenre_axes)
 
     _user_states[user_id] = {
         "user_id": user_id,
@@ -130,7 +130,7 @@ def _rebuild_state(user_id: int, username: str) -> None:
         "quality_floor": quality_floor,
         "critic_alignment": critic["alignment"],
         "neutral": critic["neutral"],
-        "summary": taste_summary(profile_vec, keyword_vocab),
+        "summary": taste_summary(profile_vec, keyword_vocab, user_subgenre_axes),
         "user_subgenre_axes": user_subgenre_axes,
     }
 
@@ -191,6 +191,50 @@ class MoodContext(BaseModel):
 
 
 # --- helpers ---
+
+_MOOD_TONE_KEYWORDS: dict[str, list[str]] = {
+    "dark": TONE_AXES["Dark"],
+    "light": TONE_AXES["Warm"],
+}
+_MOOD_PACING_KEYWORDS: dict[str, list[str]] = {
+    "fast": TONE_AXES["Intense"],
+    "slow": TONE_AXES["Cerebral"],
+}
+_MOOD_FAMILIARITY_KEYWORDS: dict[str, list[str]] = {
+    "challenging": TONE_AXES["Cerebral"] + TONE_AXES["Fantastical"],
+    # "familiar" needs no direction — the base profile already captures what the user knows they like
+}
+_MOOD_BOOST_WEIGHT = 0.3
+
+
+def _apply_mood_to_vector(
+    vec: "np.ndarray",
+    mood: "MoodContext",
+    keyword_vocab: list[str],
+    subgenre_axes: dict,
+) -> "np.ndarray":
+    """Blend a mood direction into a profile vector before ranking.
+
+    Constructs a synthetic 'ideal mood film' using the relevant tone-axis
+    keywords, builds its feature vector, then blends it in so ranking
+    actually reflects tone/pacing/familiarity — not just the Claude prompt.
+    """
+    synthetic_kws: set[str] = set()
+    if mood.tone:
+        synthetic_kws.update(_MOOD_TONE_KEYWORDS.get(mood.tone, []))
+    if mood.pacing:
+        synthetic_kws.update(_MOOD_PACING_KEYWORDS.get(mood.pacing, []))
+    if mood.familiarity:
+        synthetic_kws.update(_MOOD_FAMILIARITY_KEYWORDS.get(mood.familiarity, []))
+    if not synthetic_kws:
+        return vec
+
+    synthetic_movie = {"raw_tmdb": {"keywords": [{"name": kw} for kw in synthetic_kws]}}
+    mood_dir = build_feature_vector(synthetic_movie, keyword_vocab, subgenre_axes=subgenre_axes)
+    blended = vec + _MOOD_BOOST_WEIGHT * mood_dir
+    norm = np.linalg.norm(blended)
+    return blended / norm if norm > 0 else blended
+
 
 _LIGHTWEIGHT_GENRES = {"Animation", "Family", "Documentary", "Music", "Western", "Romance"}
 _SERIOUS_GENRES = {"Thriller", "Crime", "Drama", "Horror", "Mystery", "War", "History", "Science Fiction", "Action", "Adventure"}
@@ -630,14 +674,20 @@ def get_recommendations(mood: MoodContext, current_user: dict = Depends(get_curr
     profile_vec = state["profile_vec"]
     watchlist_ids = state["watchlist_ids"]
 
+    user_subgenre_axes = state.get("user_subgenre_axes") or {}
     cluster = _select_cluster(mood, state)
     active_vec = cluster if cluster is not None else profile_vec
     if cluster is not None:
         all_candidates = [m for m, _ in ranked]
-        ranked = rank_watchlist(cluster, all_candidates, keyword_vocab, affinity)
-        active_summary = taste_summary(cluster, keyword_vocab)
+        ranked = rank_watchlist(cluster, all_candidates, keyword_vocab, affinity, user_subgenre_axes)
+        active_summary = taste_summary(cluster, keyword_vocab, user_subgenre_axes)
     else:
         active_summary = state["summary"]
+
+    active_vec = _apply_mood_to_vector(active_vec, mood, keyword_vocab, user_subgenre_axes)
+    if mood.tone or mood.pacing or mood.familiarity:
+        all_candidates = [m for m, _ in ranked]
+        ranked = rank_watchlist(active_vec, all_candidates, keyword_vocab, affinity, user_subgenre_axes)
 
     # Augment with TMDB Discover when mood specifies genres
     if mood.required_genres:
@@ -653,11 +703,11 @@ def get_recommendations(mood: MoodContext, current_user: dict = Depends(get_curr
             for d in discovered_raw:
                 upsert_movie(d)
             discovered = ensure_feature_vectors([{**d, "raw_tmdb": d} for d in discovered_raw])
-            new_ranked = rank_watchlist(active_vec, discovered, keyword_vocab, affinity)
+            new_ranked = rank_watchlist(active_vec, discovered, keyword_vocab, affinity, user_subgenre_axes)
             ranked = sorted(ranked + new_ranked, key=lambda x: x[1], reverse=True)
 
     filtered = _apply_filters(ranked, mood)
-    diverse = diversify(filtered, ranked, keyword_vocab, affinity)
+    diverse = diversify(filtered, ranked, keyword_vocab, affinity, user_subgenre_axes)
 
     # Hard-enforce the quality floor using IMDb scores.
     # _above_floor checks TMDB vote_average (a cheap pre-screen), but quality_floor
@@ -970,11 +1020,6 @@ def admin_theme_breakdown(_admin: dict = Depends(get_admin_user)):
         )
     }
 
-
-@app.post("/api/admin/cleanup-themes")
-def admin_cleanup_themes(_admin: dict = Depends(get_admin_user)):
-    changes = claude_cleanup_themes()
-    return {"changes": changes}
 
 
 @app.delete("/api/admin/users/{user_id}")

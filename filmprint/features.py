@@ -184,8 +184,10 @@ def build_feature_vector(
     movie: dict,
     keyword_vocab: list[str] | None = None,
     affinity: dict | None = None,
+    subgenre_axes: dict | None = None,
 ) -> np.ndarray:
     """Combine all feature components into a single normalized vector."""
+    axes = subgenre_axes if subgenre_axes is not None else SUBGENRE_AXES
     vec = (
         _genre_vector(movie)
         + _decade_vector(movie)
@@ -195,7 +197,7 @@ def build_feature_vector(
         + _critic_scores_vector(movie)
         + _keyword_vector(movie, keyword_vocab or [])
         + _affinity_vector(movie, affinity or {})
-        + _axis_vector(movie, SUBGENRE_AXES)
+        + _axis_vector(movie, axes)
         + _axis_vector(movie, TONE_AXES)
     )
     arr = np.array(vec, dtype=float)
@@ -203,7 +205,8 @@ def build_feature_vector(
     return arr / norm if norm > 0 else arr
 
 
-def feature_labels(keyword_vocab: list[str] | None = None) -> list[str]:
+def feature_labels(keyword_vocab: list[str] | None = None, subgenre_axes: dict | None = None) -> list[str]:
+    axes = subgenre_axes if subgenre_axes is not None else SUBGENRE_AXES
     return (
         [f"genre:{g}" for g in GENRES]
         + [f"decade:{d}" for d in DECADES]
@@ -211,7 +214,7 @@ def feature_labels(keyword_vocab: list[str] | None = None) -> list[str]:
         + ["score", "popularity", "critic:imdb", "critic:rt", "critic:metacritic"]
         + [f"keyword:{k}" for k in (keyword_vocab or [])]
         + ["affinity:director", "affinity:actor"]
-        + [f"subgenre:{ax}" for ax in SUBGENRE_AXES]
+        + [f"subgenre:{ax}" for ax in axes]
         + [f"tone:{ax}" for ax in TONE_AXES]
     )
 
@@ -311,7 +314,7 @@ def compute_axis_scores(
     )
 
 
-def taste_summary(profile: np.ndarray, keyword_vocab: list[str] | None = None) -> str:
-    labels = feature_labels(keyword_vocab)
+def taste_summary(profile: np.ndarray, keyword_vocab: list[str] | None = None, subgenre_axes: dict | None = None) -> str:
+    labels = feature_labels(keyword_vocab, subgenre_axes)
     top = sorted(zip(labels, profile), key=lambda x: x[1], reverse=True)[:8]
     return ", ".join(f"{label} ({score:.2f})" for label, score in top)
