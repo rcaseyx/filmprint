@@ -15,6 +15,8 @@ import json
 import sqlite3
 from pathlib import Path
 
+import bcrypt
+
 DB_PATH = Path(__file__).parent.parent / "data" / "filmprint.db"
 
 
@@ -150,6 +152,7 @@ def init_db(seed_data: dict | None = None) -> None:
             "ALTER TABLE taste_profile ADD COLUMN ratings_hash TEXT",
             "ALTER TABLE recommendations ADD COLUMN outcome TEXT",
             "ALTER TABLE recommendations ADD COLUMN resolved_at TEXT",
+            "ALTER TABLE users ADD COLUMN password_hash TEXT",
         ]:
             try:
                 conn.execute(migration)
@@ -230,6 +233,30 @@ def load_theme_centroids() -> dict[str, list[float]]:
         return {row["theme"]: json.loads(row["centroid"]) for row in rows}
 
 
+def get_user_by_username(username: str) -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT id, email, letterboxd_username FROM users WHERE letterboxd_username = ?", (username,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def search_users_by_username(q: str) -> list[dict]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT u.id, u.letterboxd_username,
+                      COUNT(DISTINCT r.movie_id) AS ratings_count
+               FROM users u
+               LEFT JOIN user_ratings r ON r.user_id = u.id
+               WHERE u.letterboxd_username LIKE ?
+               GROUP BY u.id
+               ORDER BY u.letterboxd_username
+               LIMIT 20""",
+            (f"%{q}%",),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
 def get_or_create_user_by_email(email: str) -> tuple[int, str | None]:
     """Return (user_id, letterboxd_username). Creates the user row if new."""
     with get_connection() as conn:
@@ -240,6 +267,32 @@ def get_or_create_user_by_email(email: str) -> tuple[int, str | None]:
             return row["id"], row["letterboxd_username"]
         cur = conn.execute("INSERT INTO users (email) VALUES (?)", (email,))
         return cur.lastrowid, None
+
+
+def create_user_with_password(email: str, password: str) -> int:
+    """Create a credentials-based user. Raises ValueError if email is taken."""
+    password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    with get_connection() as conn:
+        try:
+            cur = conn.execute(
+                "INSERT INTO users (email, password_hash) VALUES (?, ?)", (email, password_hash)
+            )
+            return cur.lastrowid
+        except sqlite3.IntegrityError:
+            raise ValueError("Email already registered")
+
+
+def verify_user_password(email: str, password: str) -> tuple[int, str | None] | None:
+    """Return (user_id, letterboxd_username) if credentials are valid, else None."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT id, letterboxd_username, password_hash FROM users WHERE email = ?", (email,)
+        ).fetchone()
+    if not row or not row["password_hash"]:
+        return None
+    if bcrypt.checkpw(password.encode(), row["password_hash"].encode()):
+        return row["id"], row["letterboxd_username"]
+    return None
 
 
 def update_user_username(user_id: int, username: str) -> None:
