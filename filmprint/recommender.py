@@ -10,6 +10,7 @@ def rank_watchlist(
     candidates: list[dict],
     keyword_vocab: list[str] | None = None,
     affinity: dict | None = None,
+    subgenre_axes: dict | None = None,
 ) -> list[tuple[dict, float]]:
     """
     Score each candidate against the taste profile.
@@ -18,7 +19,7 @@ def rank_watchlist(
     """
     scored = []
     for movie in candidates:
-        vec = build_feature_vector(movie, keyword_vocab, affinity)
+        vec = build_feature_vector(movie, keyword_vocab, affinity, subgenre_axes)
         score = cosine_similarity([taste_profile], [vec])[0][0]
         scored.append((movie, float(score)))
 
@@ -31,6 +32,7 @@ def diversify(
     full_ranked: list[tuple[dict, float]] | None = None,
     keyword_vocab: list[str] | None = None,
     affinity: dict | None = None,
+    subgenre_axes: dict | None = None,
     lam: float = 0.7,
     top_n: int = 20,
 ) -> list[tuple[dict, float]]:
@@ -57,7 +59,7 @@ def diversify(
         return pool
 
     vecs = np.array([
-        build_feature_vector(movie, keyword_vocab, affinity)
+        build_feature_vector(movie, keyword_vocab, affinity, subgenre_axes)
         for movie, _ in pool
     ])
     scores = np.array([score for _, score in pool])
