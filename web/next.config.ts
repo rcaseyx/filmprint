@@ -6,6 +6,9 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "image.tmdb.org" },
     ],
   },
+  experimental: {
+    turbopackFileSystemCacheForDev: false,
+  },
 };
 
 export default nextConfig;

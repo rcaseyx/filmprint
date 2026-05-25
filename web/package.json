@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently --names \"next,api\" --prefix-colors \"cyan,yellow\" \"bash -c 'trap exit INT TERM; while true; do next dev; sleep 2; done'\" \"bash -c 'trap exit INT TERM; while true; do (cd .. && .venv/bin/uvicorn api.main:app --port 8000 --reload --reload-dir api --reload-dir filmprint); sleep 2; done'\"",
+    "dev": "concurrently --names \"next,api\" --prefix-colors \"cyan,yellow\" \"next dev\" \"cd .. && .venv/bin/uvicorn api.main:app --port 8000 --reload --reload-dir api --reload-dir filmprint\"",
     "build": "next build",
     "start": "next start"
   },
