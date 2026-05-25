@@ -36,6 +36,7 @@ export function Header() {
         <nav className="flex items-center gap-5">
           {navLink("/", "Picks")}
           {navLink("/profile", "Profile")}
+          {navLink("/search", "People")}
         </nav>
       </div>
       <div className="flex items-center gap-4 text-sm">

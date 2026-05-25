@@ -1,4 +1,5 @@
 anthropic
+bcrypt
 beautifulsoup4
 fastapi
 feedparser

@@ -64,9 +64,27 @@ export function UserTable({ initialUsers }: { initialUsers: AdminUser[] }) {
                 <td className="px-4 py-3 text-neutral-600 tabular-nums">{user.id}</td>
                 <td className="px-4 py-3 text-neutral-300">{user.email ?? <span className="text-neutral-600">—</span>}</td>
                 <td className="px-4 py-3 text-neutral-400">
-                  {user.letterboxd_username
-                    ? <span className="font-mono text-xs">{user.letterboxd_username}</span>
-                    : <span className="text-neutral-600">—</span>}
+                  {user.letterboxd_username ? (
+                    <span className="inline-flex items-center gap-2">
+                      <a
+                        href={`/profile/${user.letterboxd_username}`}
+                        className="font-mono text-xs hover:text-neutral-200 transition-colors"
+                      >
+                        {user.letterboxd_username}
+                      </a>
+                      <a
+                        href={`https://letterboxd.com/${user.letterboxd_username}/`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-neutral-600 hover:text-neutral-400 transition-colors text-xs"
+                        title="View on Letterboxd"
+                      >
+                        ↗
+                      </a>
+                    </span>
+                  ) : (
+                    <span className="text-neutral-600">—</span>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-right tabular-nums text-neutral-300">{user.ratings_count}</td>
                 <td className="px-4 py-3 text-right tabular-nums text-neutral-400">{user.watchlist_count}</td>

@@ -24,6 +24,8 @@ load_dotenv(override=True)
 
 from filmprint.db import (
     init_db, get_or_create_user_by_email, update_user_username,
+    create_user_with_password, verify_user_password,
+    get_user_by_username, search_users_by_username,
     get_user_ratings, get_user_watchlist,
     get_seen_movie_ids, get_taste_profile, save_taste_profile,
     is_profile_stale, upsert_movie, update_feature_vector,
@@ -334,6 +336,31 @@ For each reason:
     return picks
 
 
+# --- auth endpoints (no X-User-Email required) ---
+
+class CredentialsPayload(BaseModel):
+    email: str
+    password: str
+
+
+@app.post("/api/auth/register")
+def register(payload: CredentialsPayload):
+    try:
+        user_id = create_user_with_password(payload.email, payload.password)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return {"user_id": user_id}
+
+
+@app.post("/api/auth/verify")
+def verify_credentials(payload: CredentialsPayload):
+    result = verify_user_password(payload.email, payload.password)
+    if not result:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    user_id, username = result
+    return {"user_id": user_id, "email": payload.email, "username": username}
+
+
 # --- endpoints ---
 
 @app.get("/api/user")
@@ -347,6 +374,7 @@ def get_user(current_user: dict = Depends(get_current_user)):
     return {
         "has_profile": ratings_count > 0,
         "needs_username": not username,
+        "username": username or None,
         "summary": state.get("summary"),
         "ratings_count": ratings_count,
         "watchlist_count": len(state.get("watchlist_ids") or []),
@@ -743,6 +771,166 @@ async def import_csv(
         "watchlist_count": len(new_state.get("watchlist_ids") or []),
         "candidates_count": len(new_state.get("ranked") or []),
     }
+
+
+# --- public user endpoints (no auth required) ---
+
+@app.get("/api/users/search")
+def user_search(q: str = ""):
+    if not q:
+        return {"users": []}
+    return {"users": search_users_by_username(q)}
+
+
+def _public_profile_response(user_id: int, username: str) -> dict:
+    """Build the same response shape as /api/profile for any user."""
+    state = _get_or_build_state(user_id, username)
+    if not state:
+        raise HTTPException(status_code=404, detail="No profile yet")
+
+    profile_vec = state.get("profile_vec")
+    rated_movies = state.get("rated_movies") or []
+
+    genre_counts: dict[str, int] = {g: 0 for g in GENRES}
+    for movie in rated_movies:
+        for g in _genre_names(movie):
+            if g in genre_counts:
+                genre_counts[g] += 1
+
+    if profile_vec is not None:
+        genre_weights = {GENRES[i]: float(profile_vec[i]) for i in range(len(GENRES))}
+        decade_weights = {DECADES[i]: float(profile_vec[len(GENRES) + i]) for i in range(len(DECADES))}
+    else:
+        genre_weights = {}
+        decade_weights = {}
+
+    genres = [
+        {"name": g, "count": genre_counts[g], "weight": genre_weights.get(g, 0.0)}
+        for g in GENRES if genre_counts[g] > 0
+    ]
+    genres.sort(key=lambda x: x["weight"], reverse=True)
+
+    ratings = state.get("ratings") or []
+    avg_rating = round(sum(ratings) / len(ratings), 1) if ratings else 0.0
+    neutral = state.get("neutral", 3.0)
+    critic = build_critic_profile(rated_movies, ratings)
+
+    tone = compute_axis_scores(rated_movies, ratings, TONE_AXES)
+    all_subgenres = compute_axis_scores(
+        rated_movies, ratings, state.get("user_subgenre_axes") or SUBGENRE_AXES
+    )
+
+    return {
+        "letterboxd_username": username,
+        "ratings_count": len(ratings),
+        "watchlist_count": len(state.get("watchlist_ids") or []),
+        "avg_rating": avg_rating,
+        "summary": state.get("summary"),
+        "genres": genres,
+        "tone": tone,
+        "subgenres": [s for s in all_subgenres if s["weight"] > 0][:8],
+        "critic_alignment": critic["alignment"],
+        "quality_floor": round(critic["quality_floor"] - FLOOR_TOLERANCE, 2),
+        "neutral": neutral,
+    }
+
+
+@app.get("/api/users/{username}")
+def get_public_profile(username: str):
+    user = get_user_by_username(username)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return _public_profile_response(user["id"], username)
+
+
+@app.get("/api/users/{username}/examples")
+def get_public_examples(username: str):
+    user = get_user_by_username(username)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user_id = user["id"]
+    state = _get_or_build_state(user_id, username)
+    if not state:
+        return {"genre": {}, "subgenre": {}}
+
+    rated_movies = state.get("rated_movies") or []
+    ratings = state.get("ratings") or []
+
+    def _serialize(m: dict, r: float) -> dict:
+        return {
+            "id": m["id"],
+            "title": m["title"],
+            "year": m.get("year"),
+            "rating": r,
+            "poster_path": (m.get("raw_tmdb") or {}).get("poster_path"),
+        }
+
+    def pick_examples(axes: list[str], match_fn) -> dict[str, list[dict]]:
+        used_ids: set[int] = set()
+        result: dict[str, list[dict]] = {}
+        for name in axes:
+            candidates = sorted(
+                [(m, r) for m, r in zip(rated_movies, ratings)
+                 if match_fn(name, m) and m["id"] not in used_ids],
+                key=lambda x: x[1], reverse=True,
+            )
+            for m, r in candidates[:3]:
+                used_ids.add(m["id"])
+            result[name] = [_serialize(m, r) for m, r in candidates[:3]]
+        return result
+
+    profile_vec = state.get("profile_vec")
+    genre_weights = {GENRES[i]: float(profile_vec[i]) for i in range(len(GENRES))} if profile_vec is not None else {}
+    genre_counts: dict[str, int] = {g: 0 for g in GENRES}
+    for movie in rated_movies:
+        for g in _genre_names(movie):
+            if g in genre_counts:
+                genre_counts[g] += 1
+    top_genres = sorted(
+        [g for g in GENRES if genre_counts.get(g, 0) > 0],
+        key=lambda g: genre_weights.get(g, 0.0), reverse=True,
+    )[:8]
+    genre_ex = pick_examples(top_genres, lambda name, m: name in set(_genre_names(m)))
+
+    user_subgenre_axes = state.get("user_subgenre_axes") or SUBGENRE_AXES
+    all_subgenres = compute_axis_scores(rated_movies, ratings, user_subgenre_axes)
+    top_subgenres = [s["name"] for s in all_subgenres if s["weight"] > 0][:8]
+
+    def subgenre_match(name: str, m: dict) -> bool:
+        kws = set(SUBGENRE_AXES.get(name) or TONE_AXES.get(name) or user_subgenre_axes.get(name) or [])
+        return bool(_movie_keywords(m) & kws)
+
+    subgenre_ex = pick_examples(top_subgenres, subgenre_match)
+    return {"genre": genre_ex, "subgenre": subgenre_ex}
+
+
+@app.get("/api/users/{username}/history")
+def get_public_history(username: str):
+    user = get_user_by_username(username)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    rows = get_recommendation_history(user["id"], limit=20)
+    result = []
+    for m in rows:
+        raw = m.get("raw_tmdb") or {}
+        mood = m.get("mood_context") or {}
+        mood_filters = mood.get("filters") or {}
+        result.append({
+            "id": m["id"],
+            "movie_id": m["movie_id"],
+            "title": m["title"],
+            "year": m.get("year"),
+            "recommended_at": m.get("recommended_at"),
+            "poster_path": raw.get("poster_path"),
+            "genres": json.loads(m["genres"]) if isinstance(m.get("genres"), str) else (m.get("genres") or []),
+            "runtime": m.get("runtime"),
+            "score": m.get("score"),
+            "followed_through": bool(m.get("followed_through")),
+            "follow_up_rating": m.get("follow_up_rating"),
+            "mood_genres": mood_filters.get("required_genres") or [],
+            "mood_tone": mood_filters.get("tone"),
+        })
+    return {"history": result}
 
 
 # --- admin endpoints ---

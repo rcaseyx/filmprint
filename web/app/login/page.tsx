@@ -1,17 +1,78 @@
 "use client"
 
 import { signIn } from "next-auth/react"
+import { useState } from "react"
+import Link from "next/link"
 
 export default function LoginPage() {
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [error, setError] = useState("")
+  const [loading, setLoading] = useState(false)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setError("")
+    setLoading(true)
+    const result = await signIn("credentials", { email, password, redirect: false })
+    setLoading(false)
+    if (result?.error) {
+      setError("Invalid email or password")
+    } else {
+      window.location.href = "/"
+    }
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center">
-      <div className="text-center space-y-6">
-        <div>
+      <div className="w-full max-w-sm space-y-6">
+        <div className="text-center">
           <h1 className="text-2xl font-semibold tracking-tight">filmprint</h1>
           <p className="text-neutral-400 mt-1 text-sm">
             Personalized picks from your Letterboxd taste
           </p>
         </div>
+
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            required
+            className="w-full px-4 py-2.5 bg-neutral-900 border border-neutral-800 rounded-lg text-sm placeholder:text-neutral-500 focus:outline-none focus:border-neutral-600"
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            required
+            className="w-full px-4 py-2.5 bg-neutral-900 border border-neutral-800 rounded-lg text-sm placeholder:text-neutral-500 focus:outline-none focus:border-neutral-600"
+          />
+          {error && <p className="text-red-400 text-xs">{error}</p>}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-2.5 bg-amber-400 text-neutral-950 rounded-lg font-medium text-sm hover:bg-amber-300 transition-colors disabled:opacity-50"
+          >
+            {loading ? "Signing in…" : "Sign in"}
+          </button>
+        </form>
+
+        <p className="text-center text-xs text-neutral-500">
+          Don&apos;t have an account?{" "}
+          <Link href="/signup" className="text-neutral-300 hover:text-white transition-colors">
+            Sign up
+          </Link>
+        </p>
+
+        <div className="flex items-center gap-3">
+          <div className="flex-1 h-px bg-neutral-800" />
+          <span className="text-xs text-neutral-500">or</span>
+          <div className="flex-1 h-px bg-neutral-800" />
+        </div>
+
         <button
           onClick={() => signIn("google", { callbackUrl: "/" })}
           className="flex items-center gap-3 px-5 py-2.5 bg-neutral-100 text-neutral-900 rounded-lg font-medium text-sm hover:bg-white transition-colors mx-auto"
@@ -22,7 +83,7 @@ export default function LoginPage() {
             <path d="M3.964 10.706A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.706V4.962H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.038l3.007-2.332z" fill="#FBBC05"/>
             <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0 5.482 0 2.438 2.017.957 4.962L3.964 6.294C4.672 4.167 6.656 3.58 9 3.58z" fill="#EA4335"/>
           </svg>
-          Sign in with Google
+          Continue with Google
         </button>
       </div>
     </div>
