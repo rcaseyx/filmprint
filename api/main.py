@@ -50,6 +50,10 @@ import requests as _requests
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 
+# Buffer subtracted from the computed quality_floor when enforcing and displaying it.
+# Gives under-reviewed films breathing room without changing the floor's derivation.
+FLOOR_TOLERANCE = 0.5
+
 # Per-user pipeline state, keyed by user_id, built lazily on first request
 _user_states: dict[int, dict[str, Any]] = {}
 
@@ -439,7 +443,7 @@ def get_profile(current_user: dict = Depends(get_current_user)):
         "tone": tone,
         "subgenres": subgenres,
         "critic_alignment": state.get("critic_alignment", 0.0),
-        "quality_floor": state.get("quality_floor", 6.0),
+        "quality_floor": round(state.get("quality_floor", 6.0) - FLOOR_TOLERANCE, 2),
         "neutral": neutral,
     }
 
@@ -626,6 +630,18 @@ def get_recommendations(mood: MoodContext, current_user: dict = Depends(get_curr
 
     filtered = _apply_filters(ranked, mood)
     diverse = diversify(filtered, ranked, keyword_vocab, affinity)
+
+    # Hard-enforce the quality floor using IMDb scores.
+    # _above_floor checks TMDB vote_average (a cheap pre-screen), but quality_floor
+    # is derived from IMDb scores, so a film can pass TMDB but fail IMDb.
+    quality_floor = state.get("quality_floor", 6.0)
+    imdb_filtered = []
+    for m, s in diverse:
+        raw = m.get("raw_tmdb") or m
+        imdb_str = get_scores(raw.get("imdb_id", "")).get("imdb")
+        if imdb_str is None or float(imdb_str) >= quality_floor - FLOOR_TOLERANCE:
+            imdb_filtered.append((m, s))
+    diverse = imdb_filtered or diverse  # fallback if no candidates have IMDb scores
 
     mood_summary = _mood_to_summary(mood)
     picks = _explain_recommendations(diverse, mood_summary, active_summary, watchlist_ids)
