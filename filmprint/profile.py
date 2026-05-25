@@ -24,7 +24,7 @@ def build_critic_profile(rated_movies: list[dict], ratings: list[float]) -> dict
     Returns:
         alignment: mean delta between user rating (normalised 0-10) and IMDb score.
                    Positive = user rates higher than critics, negative = harsher.
-        quality_floor: inferred minimum TMDB vote_average for candidates.
+        quality_floor: minimum IMDb score for candidates.
                        Derived from the 25th-percentile IMDb score of films the user
                        clearly liked (>= personal neutral + 1.0), minus a 1-point
                        buffer for IMDb score compression. Contrarian users get a
