@@ -749,18 +749,20 @@ def get_recommendations(mood: MoodContext, current_user: dict = Depends(get_curr
     diverse = diversify(filtered, ranked, keyword_vocab, affinity, user_subgenre_axes)
 
     # Hard-enforce the quality floor using IMDb scores — only for movies whose
-    # scores are already cached. Fetching OMDB live per-candidate is too slow in
-    # production; the TMDB vote_average pre-screen (_above_floor) handles cold paths.
+    # scores are already in the DB cache. Fetching OMDB live per-candidate is too
+    # slow; the TMDB vote_average pre-screen (_above_floor) handles cold paths.
     quality_floor = state.get("quality_floor", 6.0)
-    from filmprint.omdb import CACHE_DIR as _OMDB_CACHE_DIR
+    from filmprint.db import get_api_cache as _get_api_cache
     imdb_filtered = []
     for m, s in diverse:
         raw = m.get("raw_tmdb") or m
         imdb_id = raw.get("imdb_id", "")
-        if imdb_id and (_OMDB_CACHE_DIR / f"omdb_{imdb_id}.json").exists():
-            imdb_str = get_scores(imdb_id).get("imdb")
-            if imdb_str is not None and float(imdb_str) < quality_floor - FLOOR_TOLERANCE:
-                continue
+        if imdb_id:
+            cached_scores = _get_api_cache(f"omdb_{imdb_id}")
+            if cached_scores:
+                imdb_str = cached_scores.get("imdb")
+                if imdb_str is not None and float(imdb_str) < quality_floor - FLOOR_TOLERANCE:
+                    continue
         imdb_filtered.append((m, s))
     diverse = imdb_filtered or diverse
 
