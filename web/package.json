@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "concurrently --names \"next,api\" --prefix-colors \"cyan,yellow\" \"next dev\" \"cd .. && .venv/bin/uvicorn api.main:app --port 8000 --reload --reload-dir api --reload-dir filmprint\"",
     "build": "next build",
-    "start": "next start"
+    "start": "next start -p ${PORT:-3000}"
   },
   "dependencies": {
     "next": "16.2.6",
