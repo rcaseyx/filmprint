@@ -17,8 +17,9 @@ interface Props {
 }
 
 export function Avatar({ name, size = 36 }: Props) {
-  const initials = name.slice(0, 2).toUpperCase()
-  const bg = hashColor(name)
+  const safe = name || "?"
+  const initials = safe.slice(0, 2).toUpperCase()
+  const bg = hashColor(safe)
   return (
     <div
       style={{ width: size, height: size, background: bg, fontSize: size * 0.38 }}

@@ -17,6 +17,7 @@ async function getUserStatus() {
 async function getProfile(): Promise<ProfileData | null> {
   try {
     const res = await apiFetch("/api/profile", { cache: "no-store" })
+    if (!res.ok) return null
     return res.json()
   } catch {
     return null
