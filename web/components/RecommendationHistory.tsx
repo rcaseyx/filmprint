@@ -24,7 +24,7 @@ function Stars({ rating }: { rating: number }) {
   const full = Math.floor(rating)
   const half = rating % 1 >= 0.5
   return (
-    <span className="text-xs text-amber-400 tracking-tight">
+    <span className="text-xs text-brand tracking-tight">
       {"★".repeat(full)}
       {half ? "½" : ""}
     </span>

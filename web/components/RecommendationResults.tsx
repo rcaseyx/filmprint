@@ -95,7 +95,7 @@ export function RecommendationResults({ picks, onReset, onRefresh, refreshing }:
             target="_blank"
             rel="noopener noreferrer"
             style={{ animationDelay: `${index * 80}ms` }}
-            className="animate-fade-in-up flex gap-5 bg-neutral-900/50 border border-neutral-800/70 rounded-xl p-4 hover:-translate-y-0.5 hover:border-amber-400/40 hover:bg-neutral-900/80 hover:shadow-lg hover:shadow-amber-900/20 transition-[transform,border-color,background-color,box-shadow] duration-200 cursor-pointer"
+            className="animate-fade-in-up flex gap-5 bg-neutral-900/50 border border-neutral-800/70 rounded-xl p-4 hover:-translate-y-0.5 hover:border-brand/40 hover:bg-neutral-900/80 hover:shadow-lg hover:shadow-amber-900/20 transition-[transform,border-color,background-color,box-shadow] duration-200 cursor-pointer"
           >
             {/* Poster */}
             <PosterImage path={pick.poster_path} title={pick.title} />
@@ -109,7 +109,7 @@ export function RecommendationResults({ picks, onReset, onRefresh, refreshing }:
                   <span className="text-neutral-500">{pick.year}</span>
                   <span className={`text-xs px-2 py-0.5 rounded-full border ${
                     pick.source === "watchlist"
-                      ? "border-amber-800 text-amber-400"
+                      ? "border-amber-800 text-brand"
                       : "border-neutral-700 text-neutral-500"
                   }`}>
                     {pick.source}

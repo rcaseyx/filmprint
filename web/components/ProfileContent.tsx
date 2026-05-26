@@ -125,7 +125,7 @@ export function ProfileContent({ profile, examples, history, username, isOwner }
                 <span className="text-sm text-neutral-300 w-28 shrink-0">{g.name}</span>
                 <div className="flex-1 bg-neutral-800 rounded-full h-1.5">
                   <div
-                    className="bg-amber-400 h-1.5 rounded-full genre-bar"
+                    className="bg-brand h-1.5 rounded-full genre-bar"
                     style={{ width: `${(g.weight / maxGenreWeight) * 100}%` }}
                   />
                 </div>
@@ -149,7 +149,7 @@ export function ProfileContent({ profile, examples, history, username, isOwner }
           </div>
           <div className="bg-neutral-900 rounded-xl p-4 border border-neutral-800">
             <div className="text-xs text-neutral-500 uppercase tracking-wider mb-1">{isOwner ? "Your neutral" : "Their neutral"}</div>
-            <div className="text-xl font-semibold text-amber-400">{profile.neutral.toFixed(1)}★</div>
+            <div className="text-xl font-semibold text-brand">{profile.neutral.toFixed(1)}★</div>
             <div className="text-xs text-neutral-600 mt-0.5">Calibrated from your ratings</div>
           </div>
         </section>

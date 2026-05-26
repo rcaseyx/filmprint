@@ -102,7 +102,7 @@ export function GenreRadar({ data, label = "", initialExamples = {} }: Props) {
                   ) : null}
                 </div>
                 <span className="text-xs text-neutral-400 text-center leading-tight line-clamp-2 w-full">{ex.title}</span>
-                <span className="text-xs text-amber-400 mt-auto">★{ex.rating}</span>
+                <span className="text-xs text-brand mt-auto">★{ex.rating}</span>
               </div>
             ))}
           </div>
@@ -147,9 +147,9 @@ export function GenreRadar({ data, label = "", initialExamples = {} }: Props) {
           >
             <circle cx={p.x} cy={p.y} r={14} fill="transparent" />
             <circle cx={p.x} cy={p.y} r={6}
-              fill={hovered === i ? "rgba(251,191,36,0.45)" : "rgba(251,191,36,0.18)"} />
+              fill={hovered === i ? "color-mix(in srgb, var(--brand) 45%, transparent)" : "color-mix(in srgb, var(--brand) 18%, transparent)"} />
             <circle cx={p.x} cy={p.y} r={hovered === i ? 4 : 3}
-              fill="#fbbf24" />
+              fill="var(--brand)" />
           </g>
         ))}
         {top.map((d, i) => {

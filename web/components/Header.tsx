@@ -23,7 +23,7 @@ export function Header() {
         }`}
       >
         {label}
-        {active && <span className="block h-px bg-amber-400 mt-px rounded-full" />}
+        {active && <span className="block h-px bg-brand mt-px rounded-full" />}
       </Link>
     )
   }

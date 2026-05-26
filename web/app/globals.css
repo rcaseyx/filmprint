@@ -1,7 +1,11 @@
 @import "tailwindcss";
 
+@theme {
+  --color-brand: #fbbf24; /* change here to retheme the whole app */
+}
+
 :root {
-  --brand: oklch(82.8% 0.189 84.429); /* amber-400 — change here to retheme the whole app */
+  --brand: var(--color-brand);
 }
 
 html {

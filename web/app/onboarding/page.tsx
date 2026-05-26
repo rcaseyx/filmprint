@@ -9,11 +9,11 @@ export default function OnboardingPage() {
           filmprint builds a taste profile from your rated films and uses it to surface
           movies you&rsquo;ll actually want to watch. To do that, it needs your ratings data.
         </p>
-        <div className="mt-5 rounded-xl border border-amber-400/20 bg-amber-400/5 px-4 py-3">
+        <div className="mt-5 rounded-xl border border-brand/20 bg-brand/5 px-4 py-3">
           <p className="text-sm text-amber-300 font-medium">
             A full CSV export is required for personalized recommendations.
           </p>
-          <p className="text-xs text-amber-400/70 mt-1">
+          <p className="text-xs text-brand/70 mt-1">
             filmprint analyzes every rating you&rsquo;ve made — the more ratings, the better the
             recommendations. A partial import won&rsquo;t produce meaningful results.
           </p>

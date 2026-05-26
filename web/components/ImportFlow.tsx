@@ -103,7 +103,7 @@ export function ImportFlow({ isOnboarding, needsUsername }: Props) {
   if (isOnboarding && status === "uploading") {
     return (
       <div className="flex flex-col items-center gap-5 py-12">
-        <div className="h-10 w-10 rounded-full border-2 border-neutral-700 border-t-amber-400 animate-spin" />
+        <div className="h-10 w-10 rounded-full border-2 border-neutral-700 border-t-brand animate-spin" />
         <div className="text-center space-y-1">
           <p className="text-sm text-neutral-300">Building your taste profile…</p>
           <p className="text-xs text-neutral-500">This may take a minute — enriching your films against TMDB</p>

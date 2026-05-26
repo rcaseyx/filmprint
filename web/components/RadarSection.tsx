@@ -49,7 +49,7 @@ export function RadarSection({ genres, subgenres, decades, tone, examples }: Pro
             onClick={() => setActive(tab)}
             className={`text-xs pb-2.5 transition-colors ${
               active === tab
-                ? "text-neutral-100 border-b border-amber-400 -mb-px"
+                ? "text-neutral-100 border-b border-brand -mb-px"
                 : "text-neutral-500 hover:text-neutral-300"
             }`}
           >
