@@ -1,5 +1,6 @@
 """Expand the candidate pool beyond the watchlist using taste-seeded TMDB discovery."""
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from .tmdb import get_similar, get_recommendations, get_movie_details, discover_movies, TMDB_GENRE_IDS
 
 
@@ -10,6 +11,7 @@ def expand_candidates(
     min_rating: float = 4.0,
     max_seeds: int = 15,
     max_candidates: int = 300,
+    known_raw: dict[int, dict] | None = None,
 ) -> list[dict]:
     """
     Seed from top-rated films, fetch similar + recommended from TMDB,
@@ -18,8 +20,9 @@ def expand_candidates(
     min_rating: only use films rated at or above this as seeds
     max_seeds: cap how many seed films we expand from (limits API calls)
     max_candidates: cap total discovered films returned
+    known_raw: pre-fetched {tmdb_id: raw_tmdb} for movies already in the DB —
+               these are returned directly without a TMDB API call
     """
-    # Sort by rating descending, take the top seeds
     seeds = sorted(
         [(m, r) for m, r in zip(rated_movies, ratings) if r >= min_rating],
         key=lambda x: x[1],
@@ -29,26 +32,47 @@ def expand_candidates(
     if not seeds:
         return []
 
-    seen_ids = set(seen_ids)  # copy so we don't mutate the caller's set
-    candidates = []
+    seen_ids = set(seen_ids)
+    seed_ids = [movie["id"] for movie, _ in seeds]
 
-    for movie, _ in seeds:
-        seed_id = movie["id"]
-        raw = get_similar(seed_id) + get_recommendations(seed_id)
+    # Stage 1: fetch similar + recommendations for all seeds in parallel
+    def _fetch_seed(seed_id: int) -> list[dict]:
+        return get_similar(seed_id) + get_recommendations(seed_id)
 
-        for result in raw:
+    with ThreadPoolExecutor(max_workers=min(len(seed_ids), 8)) as pool:
+        seed_results = list(pool.map(_fetch_seed, seed_ids))
+
+    # Collect unique candidate IDs preserving discovery order
+    candidate_ids: list[int] = []
+    for results in seed_results:
+        for result in results:
             tmdb_id = result["id"]
-            if tmdb_id in seen_ids:
-                continue
+            if tmdb_id not in seen_ids:
+                seen_ids.add(tmdb_id)
+                candidate_ids.append(tmdb_id)
+                if len(candidate_ids) >= max_candidates:
+                    break
+        if len(candidate_ids) >= max_candidates:
+            break
 
-            seen_ids.add(tmdb_id)
-            enriched = get_movie_details(tmdb_id)
-            candidates.append(enriched)
+    if not candidate_ids:
+        return []
 
-            if len(candidates) >= max_candidates:
-                return candidates
+    # Stage 2: use DB-cached raw_tmdb where available; fetch the rest in parallel
+    result_map: dict[int, dict] = {}
+    if known_raw:
+        for tid in candidate_ids:
+            if tid in known_raw:
+                result_map[tid] = known_raw[tid]
 
-    return candidates
+    to_fetch = [tid for tid in candidate_ids if tid not in result_map]
+    if to_fetch:
+        with ThreadPoolExecutor(max_workers=10) as pool:
+            futures = {pool.submit(get_movie_details, tid): tid for tid in to_fetch}
+            for future in as_completed(futures):
+                result_map[futures[future]] = future.result()
+
+    return [result_map[tid] for tid in candidate_ids if tid in result_map]
 
 
 def discover_by_mood(
@@ -83,4 +107,12 @@ def discover_by_mood(
         if len(raw_results) >= max_results:
             break
 
-    return [get_movie_details(r["id"]) for r in raw_results]
+    # Enrich in parallel
+    ids = [r["id"] for r in raw_results]
+    fetched: dict[int, dict] = {}
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        futures = {pool.submit(get_movie_details, tid): tid for tid in ids}
+        for future in as_completed(futures):
+            fetched[futures[future]] = future.result()
+
+    return [fetched[tid] for tid in ids if tid in fetched]
