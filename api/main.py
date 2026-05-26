@@ -15,6 +15,7 @@ import zipfile
 
 import anthropic
 import numpy as np
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
@@ -360,26 +361,37 @@ For each reason:
         stripped = reply.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         raw = json.loads(stripped)
 
-    picks = []
+    selected = []
     for item in raw:
         idx = item["idx"]
         if idx >= len(candidates):
             continue
         movie, score = candidates[idx]
-        picks.append({
+        selected.append((movie, score, item["reason"]))
+
+    def _enrich(args):
+        movie, score, reason = args
+        return {
             "id": movie["id"],
             "title": movie["title"],
             "year": movie.get("year") or (movie.get("release_date", "") or "")[:4],
             "source": "watchlist" if movie["id"] in watchlist_ids else "discovered",
             "score": score,
-            "reason": item["reason"],
+            "reason": reason,
             "poster_path": (movie.get("raw_tmdb") or {}).get("poster_path"),
             "genres": _genre_names(movie),
             "runtime": movie.get("runtime"),
             "streaming": get_watch_providers(movie["id"]),
             "scores": get_scores((movie.get("raw_tmdb") or movie).get("imdb_id", "")),
-        })
-    return picks
+        }
+
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        futures = {pool.submit(_enrich, args): i for i, args in enumerate(selected)}
+        ordered = [None] * len(selected)
+        for future in as_completed(futures):
+            ordered[futures[future]] = future.result()
+
+    return [p for p in ordered if p is not None]
 
 
 # --- auth endpoints (no X-User-Email required) ---
@@ -736,17 +748,21 @@ def get_recommendations(mood: MoodContext, current_user: dict = Depends(get_curr
     filtered = _apply_filters(ranked, mood)
     diverse = diversify(filtered, ranked, keyword_vocab, affinity, user_subgenre_axes)
 
-    # Hard-enforce the quality floor using IMDb scores.
-    # _above_floor checks TMDB vote_average (a cheap pre-screen), but quality_floor
-    # is derived from IMDb scores, so a film can pass TMDB but fail IMDb.
+    # Hard-enforce the quality floor using IMDb scores — only for movies whose
+    # scores are already cached. Fetching OMDB live per-candidate is too slow in
+    # production; the TMDB vote_average pre-screen (_above_floor) handles cold paths.
     quality_floor = state.get("quality_floor", 6.0)
+    from filmprint.omdb import CACHE_DIR as _OMDB_CACHE_DIR
     imdb_filtered = []
     for m, s in diverse:
         raw = m.get("raw_tmdb") or m
-        imdb_str = get_scores(raw.get("imdb_id", "")).get("imdb")
-        if imdb_str is None or float(imdb_str) >= quality_floor - FLOOR_TOLERANCE:
-            imdb_filtered.append((m, s))
-    diverse = imdb_filtered or diverse  # fallback if no candidates have IMDb scores
+        imdb_id = raw.get("imdb_id", "")
+        if imdb_id and (_OMDB_CACHE_DIR / f"omdb_{imdb_id}.json").exists():
+            imdb_str = get_scores(imdb_id).get("imdb")
+            if imdb_str is not None and float(imdb_str) < quality_floor - FLOOR_TOLERANCE:
+                continue
+        imdb_filtered.append((m, s))
+    diverse = imdb_filtered or diverse
 
     mood_summary = _mood_to_summary(mood)
     picks = _explain_recommendations(diverse, mood_summary, active_summary, watchlist_ids)
