@@ -1,4 +1,4 @@
-import { GenreRadar } from "@/components/GenreRadar"
+import { RadarSection } from "@/components/RadarSection"
 import { ProfileStats } from "@/components/ProfileStats"
 import { RecommendationHistory } from "@/components/RecommendationHistory"
 import { SyncButton } from "@/components/SyncButton"
@@ -20,6 +20,7 @@ export interface ProfileData {
   avg_rating: number
   summary: string
   genres: Genre[]
+  decades: ToneAxis[]
   tone: ToneAxis[]
   subgenres: ToneAxis[]
   critic_alignment: number
@@ -105,11 +106,14 @@ export function ProfileContent({ profile, examples, history, username, isOwner }
         />
       </div>
 
-      <div className="max-w-3xl mx-auto px-8">
-        <div className="grid grid-cols-2 gap-8">
-          <GenreRadar data={topGenres} label="Genre" initialExamples={examples.genre} />
-          <GenreRadar data={profile.subgenres} label="Sub-genre" initialExamples={examples.subgenre} />
-        </div>
+      <div className="max-w-2xl mx-auto px-6 w-full">
+        <RadarSection
+          genres={topGenres}
+          subgenres={profile.subgenres}
+          decades={profile.decades}
+          tone={profile.tone}
+          examples={examples}
+        />
       </div>
 
       <div className="max-w-2xl mx-auto px-6 space-y-10">
