@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth"
 import { apiFetch } from "@/lib/api"
 import { UserTable, type AdminUser } from "./UserTable"
 import { ThemeManager } from "./ThemeManager"
+import { CacheWarmer } from "./CacheWarmer"
 
 export default async function AdminPage() {
   const session = await getServerSession(authOptions)
@@ -42,6 +43,11 @@ export default async function AdminPage() {
       <section className="space-y-4">
         <h2 className="text-xs uppercase tracking-wider text-neutral-500">Themes</h2>
         <ThemeManager initialStats={themeStats} />
+      </section>
+
+      <section className="space-y-4">
+        <h2 className="text-xs uppercase tracking-wider text-neutral-500">Cache</h2>
+        <CacheWarmer />
       </section>
     </div>
   )

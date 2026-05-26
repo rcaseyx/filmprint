@@ -1184,3 +1184,45 @@ def admin_recluster(_admin: dict = Depends(get_admin_user)):
     """Re-run full co-occurrence + embedding clustering on the catalog."""
     n_themes = build_clusters()
     return {"themes": n_themes}
+
+
+@app.post("/api/admin/warm-cache")
+def warm_cache(_admin: dict = Depends(get_admin_user)):
+    """Pre-populate the disk cache from DB and TMDB/OMDB APIs.
+
+    Writes movie detail files directly from the raw_tmdb column (no API calls),
+    then fetches watch providers and OMDB scores in parallel for all known movies.
+    Run once after mounting a persistent volume to survive restarts.
+    """
+    import threading
+    from filmprint.tmdb import CACHE_DIR as TMDB_CACHE_DIR
+    from filmprint.omdb import CACHE_DIR as OMDB_CACHE_DIR
+    from filmprint.db import get_all_movies_with_vectors
+
+    movies = get_all_movies_with_vectors()
+
+    def _run(movies):
+        # Write movie_{id}.json directly from DB — no TMDB API calls needed
+        TMDB_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        for m in movies:
+            raw = m.get("raw_tmdb") or {}
+            if not raw:
+                continue
+            cache_file = TMDB_CACHE_DIR / f"movie_{m['id']}.json"
+            if not cache_file.exists():
+                cache_file.write_text(json.dumps(raw))
+
+        imdb_ids = [iid for iid in (
+            (m.get("raw_tmdb") or {}).get("imdb_id", "") for m in movies
+        ) if iid]
+        tmdb_ids = [m["id"] for m in movies]
+
+        # Fetch OMDB scores and watch providers in parallel
+        OMDB_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            pool.map(get_scores, imdb_ids)
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            pool.map(get_watch_providers, tmdb_ids)
+
+    threading.Thread(target=_run, args=(movies,), daemon=True).start()
+    return {"status": "warming cache in background", "movies": len(movies)}
