@@ -113,11 +113,6 @@ def init_db(seed_data: dict | None = None) -> None:
             centroid   TEXT NOT NULL,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )""",
-        """CREATE TABLE IF NOT EXISTS api_cache (
-            key        TEXT PRIMARY KEY,
-            value      TEXT NOT NULL,
-            cached_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )""",
     ]
     with get_connection() as conn:
         cur = conn.cursor()
@@ -202,25 +197,6 @@ def save_theme_centroids(centroids: dict[str, list[float]]) -> None:
         cur.executemany(
             "INSERT INTO theme_centroids (theme, centroid) VALUES (%s, %s)",
             [(theme, json.dumps(vec)) for theme, vec in centroids.items()],
-        )
-
-
-def get_api_cache(key: str) -> dict | None:
-    with get_connection() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT value FROM api_cache WHERE key = %s", (key,))
-        row = cur.fetchone()
-        return json.loads(row["value"]) if row else None
-
-
-def set_api_cache(key: str, value: dict) -> None:
-    with get_connection() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            """INSERT INTO api_cache (key, value)
-               VALUES (%s, %s)
-               ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, cached_at = NOW()""",
-            (key, json.dumps(value)),
         )
 
 
@@ -385,6 +361,27 @@ def update_feature_vector(tmdb_id: int, vector: list[float]) -> None:
             "UPDATE movies SET feature_vector = %s WHERE id = %s",
             (json.dumps(vector), tmdb_id),
         )
+
+
+def get_candidate_movies(exclude_ids: set[int], limit: int = 500) -> list[dict]:
+    """Return movies with feature vectors not in exclude_ids, for candidate ranking.
+
+    Used on non-stale rebuilds to avoid re-running TMDB discovery.
+    """
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT * FROM movies WHERE feature_vector IS NOT NULL AND NOT (id = ANY(%s)) LIMIT %s",
+            (list(exclude_ids) if exclude_ids else [], limit),
+        )
+        rows = cur.fetchall()
+    movies = []
+    for row in rows:
+        m = dict(row)
+        m["feature_vector"] = json.loads(m["feature_vector"])
+        m["raw_tmdb"] = json.loads(m["raw_tmdb"]) if m["raw_tmdb"] else {}
+        movies.append(m)
+    return movies
 
 
 def get_all_movies_with_vectors() -> list[dict]:
