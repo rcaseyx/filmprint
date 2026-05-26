@@ -34,6 +34,7 @@ from filmprint.db import (
     resolve_recommendation_outcomes, get_recommendation_boosts,
     get_ratings_count, get_all_users_with_stats, delete_user,
     get_all_keyword_themes_full, get_candidate_movies,
+    compute_ratings_hash, get_movies_by_ids,
 )
 from filmprint.features import (
     build_feature_vector, taste_summary, build_keyword_vocab,
@@ -44,7 +45,7 @@ from filmprint.profile import build_taste_profile, build_taste_clusters, build_c
 from filmprint.recommender import rank_watchlist, diversify
 from filmprint.discovery import expand_candidates, discover_by_mood
 from filmprint.app import ensure_feature_vectors
-from filmprint.tmdb import get_watch_providers
+from filmprint.tmdb import get_watch_providers, CACHE_DIR as _TMDB_CACHE_DIR
 from filmprint.omdb import get_scores
 from filmprint.sync import sync_ratings_csv, sync_watchlist_csv, sync_watched_csv, sync_rss, sync_scrape
 from filmprint.letterboxd import validate_username
@@ -62,6 +63,80 @@ _user_states: dict[int, dict[str, Any]] = {}
 
 # Lightweight profile-only state — no candidate discovery, used by profile/genres endpoints
 _user_profile_states: dict[int, dict[str, Any]] = {}
+
+# Volume-persisted state files — survive restarts
+_STATE_DIR = _TMDB_CACHE_DIR / "states"
+
+
+def _save_state_to_volume(user_id: int, state: dict) -> None:
+    """Write ranking state to the persistent volume so cold restarts skip full rebuild."""
+    try:
+        _STATE_DIR.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "ratings_hash": compute_ratings_hash(user_id),
+            "profile_version": PROFILE_VERSION,
+            "keyword_vocab": state["keyword_vocab"],
+            "affinity": state["affinity"],
+            "user_subgenre_axes": state["user_subgenre_axes"],
+            "ranked": [[m["id"], float(s)] for m, s in state["ranked"]],
+            "quality_floor": float(state["quality_floor"]),
+            "critic_alignment": float(state["critic_alignment"]),
+            "neutral": float(state["neutral"]),
+            "summary": state["summary"],
+        }
+        (_STATE_DIR / f"{user_id}.json").write_text(json.dumps(payload))
+    except Exception:
+        pass  # never let a save failure break a recommendation response
+
+
+def _restore_state_from_volume(user_id: int, username: str) -> bool:
+    """Restore _user_states from a volume-persisted file. Returns True if successful."""
+    state_file = _STATE_DIR / f"{user_id}.json"
+    if not state_file.exists():
+        return False
+    try:
+        payload = json.loads(state_file.read_text())
+    except Exception:
+        return False
+
+    if payload.get("profile_version") != PROFILE_VERSION:
+        return False
+    if payload.get("ratings_hash") != compute_ratings_hash(user_id):
+        return False
+
+    ranked_pairs = payload.get("ranked") or []
+    if not ranked_pairs:
+        return False
+
+    movie_map = get_movies_by_ids([pair[0] for pair in ranked_pairs])
+    ranked = [(movie_map[mid], float(score)) for mid, score in ranked_pairs if mid in movie_map]
+    if not ranked:
+        return False
+
+    profile_data = get_taste_profile(user_id)
+    if not profile_data:
+        return False
+
+    _user_states[user_id] = {
+        "user_id": user_id,
+        "username": username,
+        "rated_movies": [],
+        "ratings": [],
+        "profile_vec": np.array(profile_data["vector"]),
+        "clusters": [np.array(c) for c in profile_data.get("clusters") or []],
+        "keyword_vocab": payload["keyword_vocab"],
+        "affinity": payload["affinity"],
+        "ranked": ranked,
+        "watchlist_ids": {m["id"] for m in get_user_watchlist(user_id)},
+        "seen_ids": get_seen_movie_ids(user_id),
+        "session_recommended_ids": set(),
+        "quality_floor": payload["quality_floor"],
+        "critic_alignment": payload["critic_alignment"],
+        "neutral": payload["neutral"],
+        "summary": payload["summary"],
+        "user_subgenre_axes": payload["user_subgenre_axes"],
+    }
+    return True
 
 
 def _rebuild_state(user_id: int, username: str) -> None:
@@ -146,6 +221,7 @@ def _rebuild_state(user_id: int, username: str) -> None:
         "summary": taste_summary(profile_vec, keyword_vocab, user_subgenre_axes),
         "user_subgenre_axes": user_subgenre_axes,
     }
+    _save_state_to_volume(user_id, _user_states[user_id])
     # Full state supersedes the lightweight profile-only cache
     _user_profile_states.pop(user_id, None)
 
@@ -220,14 +296,29 @@ def _get_or_build_profile(user_id: int, username: str) -> dict:
 def _get_or_build_state(user_id: int, username: str) -> dict:
     """Return cached state for user, building it lazily if they have data in the DB."""
     if user_id not in _user_states and username and get_ratings_count(user_id) > 0:
-        _rebuild_state(user_id, username)
+        if not _restore_state_from_volume(user_id, username):
+            _rebuild_state(user_id, username)
     return _user_states.get(user_id, {})
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import threading
     init_db(seed_data=SUBGENRE_AXES)
     backfill_catalog_keywords()
+
+    def _prewarm():
+        for user in get_all_users_with_stats():
+            uid = user["id"]
+            uname = user.get("letterboxd_username") or ""
+            if user.get("ratings_count", 0) > 0 and uid not in _user_states:
+                try:
+                    if not _restore_state_from_volume(uid, uname):
+                        _rebuild_state(uid, uname)
+                except Exception:
+                    pass
+
+    threading.Thread(target=_prewarm, daemon=True).start()
     yield
 
 

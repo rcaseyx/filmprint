@@ -398,6 +398,23 @@ def get_raw_tmdb_for_ids(ids: list[int]) -> dict[int, dict]:
     return {row["id"]: json.loads(row["raw_tmdb"]) for row in rows}
 
 
+def get_movies_by_ids(ids: list[int]) -> dict[int, dict]:
+    """Batch-fetch movie objects by TMDB ID, returning {id: movie_dict}."""
+    if not ids:
+        return {}
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM movies WHERE id = ANY(%s)", (ids,))
+        rows = cur.fetchall()
+    result = {}
+    for row in rows:
+        m = dict(row)
+        m["feature_vector"] = json.loads(m["feature_vector"]) if m.get("feature_vector") else None
+        m["raw_tmdb"] = json.loads(m["raw_tmdb"]) if m.get("raw_tmdb") else {}
+        result[m["id"]] = m
+    return result
+
+
 def get_all_movies_with_vectors() -> list[dict]:
     with get_connection() as conn:
         cur = conn.cursor()
