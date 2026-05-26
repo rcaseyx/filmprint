@@ -62,8 +62,8 @@ export function PrintLogo({ className, duration = DRAW_DURATION, step = STEP, ho
           <path
             key={i}
             d={d}
-            fill="#fbbf24"
-            stroke="#fbbf24"
+            fill="var(--brand)"
+            stroke="var(--brand)"
             strokeWidth={STROKE_WIDTH}
             strokeLinecap="round"
             strokeLinejoin="round"

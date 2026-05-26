@@ -54,7 +54,7 @@ function VibeBlock({
       onClick={onClick}
       className={`p-4 rounded-xl text-left border transition-all duration-200 ${
         selected
-          ? "bg-amber-400 text-neutral-950 border-amber-400"
+          ? "bg-brand text-neutral-950 border-brand"
           : "border-neutral-800 hover:bg-neutral-900/60 hover:border-neutral-600"
       }`}
     >
@@ -146,7 +146,7 @@ export function MoodSelector({ genres }: Props) {
               style={{ animationDelay: `${i * 35}ms` }}
               className={`animate-fade-in-up px-4 py-2 rounded-full text-sm transition-all duration-150 border active:scale-95 ${
                 selectedGenres.includes(g.name)
-                  ? "bg-amber-400 text-neutral-950 border-amber-400 font-medium scale-105"
+                  ? "bg-brand text-neutral-950 border-brand font-medium scale-105"
                   : "border-neutral-800 text-neutral-400 hover:border-neutral-600 hover:text-neutral-200"
               }`}
             >
