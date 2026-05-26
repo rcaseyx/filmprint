@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useSession, signOut } from "next-auth/react"
+import { PrintLogo } from "./PrintLogo"
 
 export function Header() {
   const { data: session } = useSession()
@@ -28,10 +29,10 @@ export function Header() {
   }
 
   return (
-    <header className="border-b border-neutral-800/60 px-6 py-5 flex items-center justify-between">
-      <div className="flex items-center gap-7">
-        <Link href="/" className="text-amber-400 font-semibold text-lg tracking-tight hover:text-amber-300 transition-colors">
-          filmprint
+    <header className="border-b border-neutral-800/60 px-6 h-20 flex items-center justify-between">
+      <div className="flex items-center gap-4">
+        <Link href="/">
+          <PrintLogo className="h-14 w-auto" />
         </Link>
         <nav className="flex items-center gap-5">
           {navLink("/", "Picks")}

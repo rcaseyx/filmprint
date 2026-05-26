@@ -91,6 +91,12 @@ body {
   display: none;
 }
 
+@keyframes fp-draw {
+  0%   { stroke-dashoffset: 1; fill-opacity: 0; }
+  70%  { stroke-dashoffset: 0; fill-opacity: 0; }
+  100% { stroke-dashoffset: 0; fill-opacity: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-in-up,
   .animate-fade-in {
