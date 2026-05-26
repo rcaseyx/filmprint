@@ -113,6 +113,11 @@ def init_db(seed_data: dict | None = None) -> None:
             centroid   TEXT NOT NULL,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )""",
+        """CREATE TABLE IF NOT EXISTS api_cache (
+            key        TEXT PRIMARY KEY,
+            value      TEXT NOT NULL,
+            cached_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )""",
     ]
     with get_connection() as conn:
         cur = conn.cursor()
@@ -197,6 +202,25 @@ def save_theme_centroids(centroids: dict[str, list[float]]) -> None:
         cur.executemany(
             "INSERT INTO theme_centroids (theme, centroid) VALUES (%s, %s)",
             [(theme, json.dumps(vec)) for theme, vec in centroids.items()],
+        )
+
+
+def get_api_cache(key: str) -> dict | None:
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT value FROM api_cache WHERE key = %s", (key,))
+        row = cur.fetchone()
+        return json.loads(row["value"]) if row else None
+
+
+def set_api_cache(key: str, value: dict) -> None:
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO api_cache (key, value)
+               VALUES (%s, %s)
+               ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, cached_at = NOW()""",
+            (key, json.dumps(value)),
         )
 
 

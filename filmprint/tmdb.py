@@ -23,18 +23,19 @@ def _cache_path(key: str) -> Path:
 
 
 def _cached_get(cache_key: str, endpoint: str, params: dict = {}) -> dict:
-    """Fetch from cache if available, otherwise hit the API and cache the result."""
-    path = _cache_path(cache_key)
-    if path.exists():
-        return json.loads(path.read_text())
+    """Fetch from DB cache if available, otherwise hit the API and cache the result."""
+    from filmprint.db import get_api_cache, set_api_cache
+
+    cached = get_api_cache(cache_key)
+    if cached is not None:
+        return cached
 
     params = {**params, "api_key": os.environ["TMDB_API_KEY"]}
     response = requests.get(f"{BASE_URL}{endpoint}", params=params)
     response.raise_for_status()
     data = response.json()
 
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data))
+    set_api_cache(cache_key, data)
     return data
 
 
