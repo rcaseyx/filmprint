@@ -1225,4 +1225,8 @@ def warm_cache(_admin: dict = Depends(get_admin_user)):
             pool.map(get_watch_providers, tmdb_ids)
 
     threading.Thread(target=_run, args=(movies,), daemon=True).start()
-    return {"status": "warming cache in background", "movies": len(movies)}
+    return {
+        "status": "warming cache in background",
+        "movies": len(movies),
+        "cache_dir": str(TMDB_CACHE_DIR.resolve()),
+    }
