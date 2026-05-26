@@ -33,13 +33,13 @@ async function getHistory() {
   }
 }
 
-async function getExamples(): Promise<{ genre: RadarExamples; subgenre: RadarExamples }> {
+async function getExamples(): Promise<{ genre: RadarExamples; subgenre: RadarExamples; era: RadarExamples; tone: RadarExamples }> {
   try {
     const res = await apiFetch("/api/profile/examples", { cache: "no-store" })
-    if (!res.ok) return { genre: {}, subgenre: {} }
+    if (!res.ok) return { genre: {}, subgenre: {}, era: {}, tone: {} }
     return res.json()
   } catch {
-    return { genre: {}, subgenre: {} }
+    return { genre: {}, subgenre: {}, era: {}, tone: {} }
   }
 }
 

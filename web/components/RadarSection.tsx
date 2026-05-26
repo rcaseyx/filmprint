@@ -20,7 +20,7 @@ interface Props {
   subgenres: DataPoint[]
   decades: DataPoint[]
   tone: DataPoint[]
-  examples: { genre: RadarExamples; subgenre: RadarExamples }
+  examples: { genre: RadarExamples; subgenre: RadarExamples; era: RadarExamples; tone: RadarExamples }
 }
 
 export function RadarSection({ genres, subgenres, decades, tone, examples }: Props) {
@@ -36,8 +36,8 @@ export function RadarSection({ genres, subgenres, decades, tone, examples }: Pro
   const examplesMap: Record<Tab, RadarExamples> = {
     "Genre": examples.genre,
     "Sub-genre": examples.subgenre,
-    "Era": {},
-    "Tone": {},
+    "Era": examples.era,
+    "Tone": examples.tone,
   }
 
   return (
@@ -57,7 +57,7 @@ export function RadarSection({ genres, subgenres, decades, tone, examples }: Pro
           </button>
         ))}
       </div>
-      <div className="w-full max-w-sm mx-auto">
+      <div className="w-full max-w-md mx-auto">
         <GenreRadar
           key={active}
           data={datasets[active]}

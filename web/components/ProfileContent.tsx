@@ -40,7 +40,7 @@ export type RadarExamples = Record<string, Example[]>
 
 interface Props {
   profile: ProfileData
-  examples: { genre: RadarExamples; subgenre: RadarExamples }
+  examples: { genre: RadarExamples; subgenre: RadarExamples; era: RadarExamples; tone: RadarExamples }
   history: unknown[]
   username: string | null
   isOwner: boolean

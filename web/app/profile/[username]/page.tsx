@@ -19,15 +19,15 @@ async function getPublicProfile(username: string): Promise<ProfileData | null> {
   }
 }
 
-async function getPublicExamples(username: string): Promise<{ genre: RadarExamples; subgenre: RadarExamples }> {
+async function getPublicExamples(username: string): Promise<{ genre: RadarExamples; subgenre: RadarExamples; era: RadarExamples; tone: RadarExamples }> {
   try {
     const res = await fetch(`${API}/api/users/${encodeURIComponent(username)}/examples`, {
       cache: "no-store",
     })
-    if (!res.ok) return { genre: {}, subgenre: {} }
+    if (!res.ok) return { genre: {}, subgenre: {}, era: {}, tone: {} }
     return res.json()
   } catch {
-    return { genre: {}, subgenre: {} }
+    return { genre: {}, subgenre: {}, era: {}, tone: {} }
   }
 }
 
