@@ -141,9 +141,9 @@ def _get_catalog_keyword_films() -> dict[str, set[int]]:
     """Return {keyword: set_of_film_ids} for all non-noise keywords in movies."""
     kw_films: dict[str, set[int]] = defaultdict(set)
     with get_connection() as conn:
-        for row in conn.execute(
-            "SELECT id, keywords FROM movies WHERE keywords IS NOT NULL"
-        ).fetchall():
+        cur = conn.cursor()
+        cur.execute("SELECT id, keywords FROM movies WHERE keywords IS NOT NULL")
+        for row in cur.fetchall():
             try:
                 kw_data = json.loads(row["keywords"])
                 if isinstance(kw_data, dict):
@@ -405,16 +405,18 @@ Example: {{"Primate": "Wildlife Horror", "Satanism": "Satanic Horror", "Satanic 
     # Apply to DB
     changes: list[dict] = []
     with get_connection() as conn:
+        cur = conn.cursor()
         for old_theme, new_theme in corrections.items():
             if old_theme == new_theme:
                 continue
-            row = conn.execute(
-                "SELECT COUNT(*) as n FROM keyword_themes WHERE theme = ?", (old_theme,)
-            ).fetchone()
+            cur.execute(
+                "SELECT COUNT(*) as n FROM keyword_themes WHERE theme = %s", (old_theme,)
+            )
+            row = cur.fetchone()
             if not row or row["n"] == 0:
                 continue
-            conn.execute(
-                "UPDATE keyword_themes SET theme = ?, source = 'claude' WHERE theme = ?",
+            cur.execute(
+                "UPDATE keyword_themes SET theme = %s, source = 'claude' WHERE theme = %s",
                 (new_theme, old_theme),
             )
             changes.append({"from": old_theme, "to": new_theme, "keywords": row["n"]})

@@ -1,0 +1,13 @@
+.venv
+web
+data
+.git
+.github
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+tests
+scripts
+.env
+.env.*
