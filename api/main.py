@@ -586,7 +586,28 @@ def profile_examples(current_user: dict = Depends(get_current_user)):
 
     subgenre_ex = pick_examples(top_subgenres, subgenre_match)
 
-    return {"genre": genre_ex, "subgenre": subgenre_ex}
+    # ── era: active decades (positive weight) ─────────────────────────────────
+    decade_weights = {DECADES[i]: float(profile_vec[len(GENRES) + i]) for i in range(len(DECADES))} if profile_vec is not None else {}
+    active_decades = [d for d in DECADES if decade_weights.get(d, 0.0) > 0]
+
+    def era_match(decade_name: str, m: dict) -> bool:
+        raw = m.get("raw_tmdb") or m
+        release = (raw.get("release_date", "") or "")
+        year = raw.get("year") or (int(release[:4]) if len(release) >= 4 else None)
+        if not year:
+            return False
+        return f"{(year // 10) * 10}s" == decade_name
+
+    era_ex = pick_examples(active_decades, era_match)
+
+    # ── tone: all 5 axes ───────────────────────────────────────────────────────
+    def tone_match(axis_name: str, m: dict) -> bool:
+        kws = set(TONE_AXES.get(axis_name, []))
+        return bool(_movie_keywords(m) & kws)
+
+    tone_ex = pick_examples(list(TONE_AXES.keys()), tone_match)
+
+    return {"genre": genre_ex, "subgenre": subgenre_ex, "era": era_ex, "tone": tone_ex}
 
 
 @app.get("/api/genres")
@@ -961,7 +982,27 @@ def get_public_examples(username: str):
         return bool(_movie_keywords(m) & kws)
 
     subgenre_ex = pick_examples(top_subgenres, subgenre_match)
-    return {"genre": genre_ex, "subgenre": subgenre_ex}
+
+    decade_weights = {DECADES[i]: float(profile_vec[len(GENRES) + i]) for i in range(len(DECADES))} if profile_vec is not None else {}
+    active_decades = [d for d in DECADES if decade_weights.get(d, 0.0) > 0]
+
+    def era_match(decade_name: str, m: dict) -> bool:
+        raw = m.get("raw_tmdb") or m
+        release = (raw.get("release_date", "") or "")
+        year = raw.get("year") or (int(release[:4]) if len(release) >= 4 else None)
+        if not year:
+            return False
+        return f"{(year // 10) * 10}s" == decade_name
+
+    era_ex = pick_examples(active_decades, era_match)
+
+    def tone_match(axis_name: str, m: dict) -> bool:
+        kws = set(TONE_AXES.get(axis_name, []))
+        return bool(_movie_keywords(m) & kws)
+
+    tone_ex = pick_examples(list(TONE_AXES.keys()), tone_match)
+
+    return {"genre": genre_ex, "subgenre": subgenre_ex, "era": era_ex, "tone": tone_ex}
 
 
 @app.get("/api/users/{username}/history")
