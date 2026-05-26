@@ -1,7 +1,6 @@
-"""Tests for filmprint/db.py — uses a temp SQLite file, no real DB touched."""
+"""Tests for filmprint/db.py — runs against a real Postgres test database."""
 
 import pytest
-import filmprint.db as db_module
 from filmprint.db import (
     get_connection,
     get_seen_movie_ids,
@@ -13,20 +12,25 @@ from filmprint.db import (
     upsert_watchlist_entry,
     get_or_create_user_by_email,
 )
-
-
-def get_or_create_user(username: str) -> int:
-    """Test helper: create a user by username (via fake email)."""
-    user_id, _ = get_or_create_user_by_email(f"{username}@test.local")
-    return user_id
 from tests.conftest import make_movie
 
 
+def get_or_create_user(username: str) -> int:
+    user_id, _ = get_or_create_user_by_email(f"{username}@test.local")
+    return user_id
+
+
 @pytest.fixture(autouse=True)
-def isolated_db(tmp_path, monkeypatch):
-    """Redirect DB_PATH to a temp file for each test."""
-    monkeypatch.setattr(db_module, "DB_PATH", tmp_path / "test.db")
+def isolated_db():
+    """Ensure schema exists and wipe all rows between tests."""
     init_db()
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            TRUNCATE recommendations, user_ratings, user_watchlist, user_watched,
+                     taste_profile, keyword_themes, theme_centroids, movies, users
+            RESTART IDENTITY CASCADE
+        """)
 
 
 def _tmdb_data(movie: dict) -> dict:
@@ -40,9 +44,12 @@ def _tmdb_data(movie: dict) -> dict:
 
 def test_init_db_creates_tables():
     with get_connection() as conn:
-        tables = {row["name"] for row in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        ).fetchall()}
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT table_name FROM information_schema.tables
+            WHERE table_schema = 'public'
+        """)
+        tables = {row["table_name"] for row in cur.fetchall()}
     assert {"users", "movies", "user_ratings", "user_watchlist", "taste_profile", "recommendations"} <= tables
 
 
@@ -52,7 +59,9 @@ def test_upsert_movie_inserts():
     movie = make_movie(tmdb_id=42, title="Parasite")
     upsert_movie(_tmdb_data(movie))
     with get_connection() as conn:
-        row = conn.execute("SELECT title FROM movies WHERE id = 42").fetchone()
+        cur = conn.cursor()
+        cur.execute("SELECT title FROM movies WHERE id = 42")
+        row = cur.fetchone()
     assert row["title"] == "Parasite"
 
 
@@ -61,7 +70,9 @@ def test_upsert_movie_is_idempotent():
     upsert_movie(_tmdb_data(movie))
     upsert_movie(_tmdb_data(movie))
     with get_connection() as conn:
-        count = conn.execute("SELECT COUNT(*) as n FROM movies WHERE id = 42").fetchone()["n"]
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) as n FROM movies WHERE id = 42")
+        count = cur.fetchone()["n"]
     assert count == 1
 
 
@@ -71,7 +82,9 @@ def test_upsert_movie_updates_title():
     updated = make_movie(tmdb_id=42, title="New Title")
     upsert_movie(_tmdb_data(updated))
     with get_connection() as conn:
-        row = conn.execute("SELECT title FROM movies WHERE id = 42").fetchone()
+        cur = conn.cursor()
+        cur.execute("SELECT title FROM movies WHERE id = 42")
+        row = cur.fetchone()
     assert row["title"] == "New Title"
 
 
@@ -133,7 +146,6 @@ def test_is_profile_stale_false_after_save():
     from filmprint.db import save_taste_profile
     user_id = get_or_create_user("testuser")
     save_taste_profile(user_id, [0.1, 0.2], ratings_count=0, version="1.0")
-    # No ratings, so hash is stable — profile should not be stale
     assert is_profile_stale(user_id, current_version="1.0") is False
 
 
