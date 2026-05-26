@@ -20,7 +20,7 @@ interface Example {
 
 interface Props {
   data: DataPoint[]
-  label: string
+  label?: string
   initialExamples?: Record<string, Example[]>
 }
 
@@ -33,7 +33,7 @@ function splitLabel(text: string, maxLen = 10): [string, string | null] {
   return [text, null]
 }
 
-export function GenreRadar({ data, label, initialExamples = {} }: Props) {
+export function GenreRadar({ data, label = "", initialExamples = {} }: Props) {
   const [hovered, setHovered] = useState<number | null>(null)
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0, flipDown: false })
   const containerRef = useRef<HTMLDivElement>(null)
@@ -76,6 +76,7 @@ export function GenreRadar({ data, label, initialExamples = {} }: Props) {
 
   return (
     <div ref={containerRef} className="relative flex flex-col items-center gap-2">
+      {label && <span className="text-xs text-neutral-500 uppercase tracking-wider">{label}</span>}
       {hoveredPoint && (
         <div
           className="absolute z-10 pointer-events-none bg-neutral-950 border border-neutral-700 rounded-xl px-3 py-2.5 text-xs shadow-xl"
@@ -108,7 +109,6 @@ export function GenreRadar({ data, label, initialExamples = {} }: Props) {
         </div>
       )}
 
-      <span className="text-xs text-neutral-500 uppercase tracking-wider">{label}</span>
       <svg
         viewBox={`${-PAD} ${-PAD} ${SIZE + PAD * 2} ${SIZE + PAD * 2}`}
         className="w-full h-auto animate-fade-in"

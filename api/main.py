@@ -455,7 +455,11 @@ def get_profile(current_user: dict = Depends(get_current_user)):
     ]
     genres.sort(key=lambda x: x["weight"], reverse=True)
 
-    decades = [{"name": d, "weight": decade_weights.get(d, 0.0)} for d in DECADES]
+    decades = [
+        {"name": d, "weight": decade_weights.get(d, 0.0)}
+        for d in DECADES
+        if decade_weights.get(d, 0.0) > 0
+    ]
 
     neutral = state.get("neutral", 3.0)
     director_scores: dict[str, float] = dict((state.get("affinity") or {}).get("directors", {}))
@@ -865,6 +869,11 @@ def _public_profile_response(user_id: int, username: str) -> dict:
     neutral = state.get("neutral", 3.0)
     critic = build_critic_profile(rated_movies, ratings)
 
+    decades = [
+        {"name": d, "weight": decade_weights.get(d, 0.0)}
+        for d in DECADES
+        if decade_weights.get(d, 0.0) > 0
+    ]
     tone = compute_axis_scores(rated_movies, ratings, TONE_AXES)
     all_subgenres = compute_axis_scores(
         rated_movies, ratings, state.get("user_subgenre_axes") or SUBGENRE_AXES
@@ -877,6 +886,7 @@ def _public_profile_response(user_id: int, username: str) -> dict:
         "avg_rating": avg_rating,
         "summary": state.get("summary"),
         "genres": genres,
+        "decades": decades,
         "tone": tone,
         "subgenres": [s for s in all_subgenres if s["weight"] > 0][:8],
         "critic_alignment": critic["alignment"],

@@ -1,0 +1,69 @@
+"use client"
+
+import { useState } from "react"
+import { GenreRadar } from "@/components/GenreRadar"
+
+interface DataPoint {
+  name: string
+  weight: number
+  count?: number
+}
+
+type RadarExamples = Record<string, { id: number; title: string; year: number | null; rating: number; poster_path: string | null }[]>
+
+type Tab = "Genre" | "Sub-genre" | "Era" | "Tone"
+
+const TABS: Tab[] = ["Genre", "Sub-genre", "Era", "Tone"]
+
+interface Props {
+  genres: DataPoint[]
+  subgenres: DataPoint[]
+  decades: DataPoint[]
+  tone: DataPoint[]
+  examples: { genre: RadarExamples; subgenre: RadarExamples }
+}
+
+export function RadarSection({ genres, subgenres, decades, tone, examples }: Props) {
+  const [active, setActive] = useState<Tab>("Genre")
+
+  const datasets: Record<Tab, DataPoint[]> = {
+    "Genre": genres.slice(0, 8),
+    "Sub-genre": subgenres,
+    "Era": decades,
+    "Tone": tone,
+  }
+
+  const examplesMap: Record<Tab, RadarExamples> = {
+    "Genre": examples.genre,
+    "Sub-genre": examples.subgenre,
+    "Era": {},
+    "Tone": {},
+  }
+
+  return (
+    <div className="flex flex-col items-center gap-0">
+      <div className="flex gap-6 border-b border-neutral-800 w-full justify-center mb-2">
+        {TABS.map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActive(tab)}
+            className={`text-xs pb-2.5 transition-colors ${
+              active === tab
+                ? "text-neutral-100 border-b border-amber-400 -mb-px"
+                : "text-neutral-500 hover:text-neutral-300"
+            }`}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
+      <div className="w-full max-w-sm mx-auto">
+        <GenreRadar
+          key={active}
+          data={datasets[active]}
+          initialExamples={examplesMap[active]}
+        />
+      </div>
+    </div>
+  )
+}
