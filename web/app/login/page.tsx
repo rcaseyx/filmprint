@@ -3,6 +3,7 @@
 import { signIn } from "next-auth/react"
 import { useState } from "react"
 import Link from "next/link"
+import { PrintLogo } from "@/components/PrintLogo"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -26,14 +27,16 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center">
       <div className="w-full max-w-sm space-y-6">
-        <div className="text-center">
-          <h1 className="text-2xl font-semibold tracking-tight">filmprint</h1>
-          <p className="text-neutral-400 mt-1 text-sm">
-            Personalized picks from your Letterboxd taste
-          </p>
+        <div className="flex flex-col items-center gap-3">
+          <PrintLogo className="h-40 w-auto" duration={1} step={0.12} hover={false} />
+          <img src="/text_only.svg" alt="filmprint" className="h-14 w-auto mt-0" />
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-3">
+        <p className="text-center text-neutral-400 text-sm -mt-4">
+          Personalized picks from your Letterboxd taste
+        </p>
+
+        <form onSubmit={handleSubmit} className="space-y-3 -mt-2">
           <input
             type="email"
             placeholder="Email"
