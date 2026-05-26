@@ -1,176 +1,146 @@
 """
-Database layer — SQLite now, designed to port to Postgres.
+Database layer — PostgreSQL via psycopg2.
 
-SQLite → Postgres migration notes:
-  - Replace sqlite3 with psycopg2 or asyncpg
-  - INTEGER PRIMARY KEY AUTOINCREMENT → BIGSERIAL PRIMARY KEY
-  - TEXT (used for JSON) → JSONB
-  - PRAGMA foreign_keys = ON → Postgres enforces FKs by default
-  - datetime('now') → NOW()
-  - get_connection(): swap DB_PATH for a connection string
+Requires DATABASE_URL environment variable (standard Postgres connection string).
+JSON columns are stored as TEXT and serialized/deserialized in application code.
 """
 
 import hashlib
 import json
-import sqlite3
-from pathlib import Path
+import os
+from contextlib import contextmanager
 
 import bcrypt
-
-DB_PATH = Path(__file__).parent.parent / "data" / "filmprint.db"
-
-
-def get_connection() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+import psycopg2
+import psycopg2.extras
 
 
-def _migrate_users_nullable_username(conn: sqlite3.Connection) -> None:
-    """Make letterboxd_username nullable and email unique (one-time migration)."""
-    cols = {row["name"]: row["notnull"]
-            for row in conn.execute("PRAGMA table_info(users)").fetchall()}
-    if not cols.get("letterboxd_username", 0):
-        return  # Already nullable
-    conn.execute("PRAGMA foreign_keys = OFF")
-    conn.execute("""
-        CREATE TABLE users_new (
-            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-            email               TEXT UNIQUE,
-            letterboxd_username TEXT UNIQUE,
-            created_at          TEXT NOT NULL DEFAULT (datetime('now'))
-        )
-    """)
-    conn.execute("""
-        INSERT OR IGNORE INTO users_new (id, email, letterboxd_username, created_at)
-        SELECT id, email, letterboxd_username, created_at FROM users
-    """)
-    conn.execute("DROP TABLE users")
-    conn.execute("ALTER TABLE users_new RENAME TO users")
-    conn.execute("PRAGMA foreign_keys = ON")
+@contextmanager
+def get_connection():
+    conn = psycopg2.connect(
+        os.environ["DATABASE_URL"],
+        cursor_factory=psycopg2.extras.RealDictCursor,
+    )
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def init_db(seed_data: dict | None = None) -> None:
+    ddl = [
+        """CREATE TABLE IF NOT EXISTS users (
+            id                  BIGSERIAL PRIMARY KEY,
+            email               TEXT UNIQUE,
+            letterboxd_username TEXT UNIQUE,
+            password_hash       TEXT,
+            created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )""",
+        """CREATE TABLE IF NOT EXISTS movies (
+            id              BIGINT PRIMARY KEY,
+            title           TEXT NOT NULL,
+            year            INTEGER,
+            runtime         INTEGER,
+            genres          TEXT,
+            vote_average    REAL,
+            vote_count      INTEGER,
+            popularity      REAL,
+            origin_country  TEXT,
+            language        TEXT,
+            keywords        TEXT,
+            director        TEXT,
+            "cast"          TEXT,
+            raw_tmdb        TEXT,
+            feature_vector  TEXT,
+            last_fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )""",
+        """CREATE TABLE IF NOT EXISTS user_ratings (
+            id                BIGSERIAL PRIMARY KEY,
+            user_id           BIGINT NOT NULL REFERENCES users(id),
+            movie_id          BIGINT NOT NULL REFERENCES movies(id),
+            letterboxd_rating REAL NOT NULL,
+            rated_at          TIMESTAMPTZ,
+            source            TEXT NOT NULL DEFAULT 'csv',
+            UNIQUE(user_id, movie_id)
+        )""",
+        """CREATE TABLE IF NOT EXISTS user_watchlist (
+            id          BIGSERIAL PRIMARY KEY,
+            user_id     BIGINT NOT NULL REFERENCES users(id),
+            movie_id    BIGINT NOT NULL REFERENCES movies(id),
+            added_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(user_id, movie_id)
+        )""",
+        """CREATE TABLE IF NOT EXISTS user_watched (
+            id          BIGSERIAL PRIMARY KEY,
+            user_id     BIGINT NOT NULL REFERENCES users(id),
+            movie_id    BIGINT NOT NULL REFERENCES movies(id),
+            watched_at  TIMESTAMPTZ,
+            source      TEXT NOT NULL DEFAULT 'csv',
+            UNIQUE(user_id, movie_id)
+        )""",
+        """CREATE TABLE IF NOT EXISTS taste_profile (
+            id            BIGSERIAL PRIMARY KEY,
+            user_id       BIGINT NOT NULL UNIQUE REFERENCES users(id),
+            vector        TEXT NOT NULL,
+            built_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            ratings_count INTEGER NOT NULL,
+            version       TEXT NOT NULL DEFAULT '1.0',
+            clusters      TEXT,
+            ratings_hash  TEXT
+        )""",
+        """CREATE TABLE IF NOT EXISTS recommendations (
+            id              BIGSERIAL PRIMARY KEY,
+            user_id         BIGINT NOT NULL REFERENCES users(id),
+            movie_id        BIGINT NOT NULL REFERENCES movies(id),
+            recommended_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            mood_context    TEXT,
+            score           REAL,
+            outcome         TEXT,
+            resolved_at     TIMESTAMPTZ
+        )""",
+        """CREATE TABLE IF NOT EXISTS keyword_themes (
+            keyword    TEXT PRIMARY KEY,
+            theme      TEXT NOT NULL,
+            source     TEXT NOT NULL DEFAULT 'auto',
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )""",
+        """CREATE TABLE IF NOT EXISTS theme_centroids (
+            theme      TEXT PRIMARY KEY,
+            centroid   TEXT NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )""",
+    ]
     with get_connection() as conn:
-        conn.executescript("""
-            CREATE TABLE IF NOT EXISTS users (
-                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-                email               TEXT UNIQUE,
-                letterboxd_username TEXT UNIQUE,
-                created_at          TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-
-            CREATE TABLE IF NOT EXISTS movies (
-                id              INTEGER PRIMARY KEY,  -- TMDB id
-                title           TEXT NOT NULL,
-                year            INTEGER,
-                runtime         INTEGER,
-                genres          TEXT,                 -- JSON array of genre names
-                vote_average    REAL,
-                vote_count      INTEGER,
-                popularity      REAL,
-                origin_country  TEXT,
-                language        TEXT,
-                keywords        TEXT,                 -- JSON array of keyword names
-                director        TEXT,
-                cast            TEXT,                 -- JSON array of top-billed names
-                raw_tmdb        TEXT,                 -- full TMDB response, for rebuilding vectors
-                feature_vector  TEXT,                 -- JSON array of floats
-                last_fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-
-            CREATE TABLE IF NOT EXISTS user_ratings (
-                id                INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id           INTEGER NOT NULL REFERENCES users(id),
-                movie_id          INTEGER NOT NULL REFERENCES movies(id),
-                letterboxd_rating REAL NOT NULL,
-                rated_at          TEXT,
-                source            TEXT NOT NULL DEFAULT 'csv',  -- csv | rss
-                UNIQUE(user_id, movie_id)
-            );
-
-            CREATE TABLE IF NOT EXISTS user_watchlist (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id     INTEGER NOT NULL REFERENCES users(id),
-                movie_id    INTEGER NOT NULL REFERENCES movies(id),
-                added_at    TEXT NOT NULL DEFAULT (datetime('now')),
-                UNIQUE(user_id, movie_id)
-            );
-
-            CREATE TABLE IF NOT EXISTS user_watched (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id     INTEGER NOT NULL REFERENCES users(id),
-                movie_id    INTEGER NOT NULL REFERENCES movies(id),
-                watched_at  TEXT,
-                source      TEXT NOT NULL DEFAULT 'csv',  -- csv | rss
-                UNIQUE(user_id, movie_id)
-            );
-
-            CREATE TABLE IF NOT EXISTS taste_profile (
-                id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id       INTEGER NOT NULL UNIQUE REFERENCES users(id),
-                vector        TEXT NOT NULL,  -- JSON array of floats
-                built_at      TEXT NOT NULL DEFAULT (datetime('now')),
-                ratings_count INTEGER NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS recommendations (
-                id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id         INTEGER NOT NULL REFERENCES users(id),
-                movie_id        INTEGER NOT NULL REFERENCES movies(id),
-                recommended_at  TEXT NOT NULL DEFAULT (datetime('now')),
-                mood_context    TEXT,   -- JSON object of mood answers
-                score           REAL
-            );
-
-            CREATE TABLE IF NOT EXISTS keyword_themes (
-                keyword    TEXT PRIMARY KEY,
-                theme      TEXT NOT NULL,
-                source     TEXT NOT NULL DEFAULT 'auto',  -- seed | auto | claude
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-
-            CREATE TABLE IF NOT EXISTS theme_centroids (
-                theme      TEXT PRIMARY KEY,
-                centroid   TEXT NOT NULL,  -- JSON array of floats
-                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-        """)
-        _migrate_users_nullable_username(conn)
+        cur = conn.cursor()
+        for stmt in ddl:
+            cur.execute(stmt)
         if seed_data:
             for theme, keywords in seed_data.items():
                 for kw in keywords:
-                    conn.execute(
-                        "INSERT OR IGNORE INTO keyword_themes (keyword, theme, source) VALUES (?, ?, 'seed')",
+                    cur.execute(
+                        """INSERT INTO keyword_themes (keyword, theme, source)
+                           VALUES (%s, %s, 'seed') ON CONFLICT DO NOTHING""",
                         (kw, theme),
                     )
-        # Migrations: add columns if not present
-        for migration in [
-            "ALTER TABLE taste_profile ADD COLUMN version TEXT NOT NULL DEFAULT '1.0'",
-            "ALTER TABLE taste_profile ADD COLUMN clusters TEXT",
-            "ALTER TABLE taste_profile ADD COLUMN ratings_hash TEXT",
-            "ALTER TABLE recommendations ADD COLUMN outcome TEXT",
-            "ALTER TABLE recommendations ADD COLUMN resolved_at TEXT",
-            "ALTER TABLE users ADD COLUMN password_hash TEXT",
-        ]:
-            try:
-                conn.execute(migration)
-            except Exception:
-                pass
 
 
 # --- users ---
 
 def get_all_users() -> list[dict]:
     with get_connection() as conn:
-        rows = conn.execute("SELECT * FROM users").fetchall()
-        return [dict(row) for row in rows]
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM users")
+        return [dict(row) for row in cur.fetchall()]
 
 
 def get_all_users_with_stats() -> list[dict]:
     with get_connection() as conn:
-        rows = conn.execute("""
+        cur = conn.cursor()
+        cur.execute("""
             SELECT u.id, u.email, u.letterboxd_username, u.created_at,
                    COUNT(DISTINCT r.movie_id) AS ratings_count,
                    COUNT(DISTINCT w.movie_id) AS watchlist_count
@@ -179,15 +149,16 @@ def get_all_users_with_stats() -> list[dict]:
             LEFT JOIN user_watchlist w ON w.user_id = u.id
             GROUP BY u.id
             ORDER BY u.created_at DESC
-        """).fetchall()
-        return [dict(row) for row in rows]
+        """)
+        return [dict(row) for row in cur.fetchall()]
 
 
 def delete_user(user_id: int) -> None:
     with get_connection() as conn:
+        cur = conn.cursor()
         for table in ("recommendations", "user_ratings", "user_watchlist", "user_watched", "taste_profile"):
-            conn.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
-        conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            cur.execute(f"DELETE FROM {table} WHERE user_id = %s", (user_id,))
+        cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
 
 
 # --- keyword_themes ---
@@ -195,16 +166,18 @@ def delete_user(user_id: int) -> None:
 def get_all_keyword_themes() -> dict[str, str]:
     """Return {keyword: theme} for all known keywords."""
     with get_connection() as conn:
-        rows = conn.execute("SELECT keyword, theme FROM keyword_themes").fetchall()
-        return {row["keyword"]: row["theme"] for row in rows}
+        cur = conn.cursor()
+        cur.execute("SELECT keyword, theme FROM keyword_themes")
+        return {row["keyword"]: row["theme"] for row in cur.fetchall()}
 
 
 def upsert_keyword_theme(keyword: str, theme: str, source: str = "auto") -> None:
     with get_connection() as conn:
-        conn.execute(
+        cur = conn.cursor()
+        cur.execute(
             """INSERT INTO keyword_themes (keyword, theme, source)
-               VALUES (?, ?, ?)
-               ON CONFLICT(keyword) DO UPDATE SET theme = excluded.theme, source = excluded.source""",
+               VALUES (%s, %s, %s)
+               ON CONFLICT(keyword) DO UPDATE SET theme = EXCLUDED.theme, source = EXCLUDED.source""",
             (keyword, theme, source),
         )
 
@@ -212,82 +185,93 @@ def upsert_keyword_theme(keyword: str, theme: str, source: str = "auto") -> None
 def get_all_keyword_themes_full() -> list[dict]:
     """Return full rows for admin display."""
     with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT keyword, theme, source, created_at FROM keyword_themes ORDER BY theme, keyword"
-        ).fetchall()
-        return [dict(row) for row in rows]
+        cur = conn.cursor()
+        cur.execute("SELECT keyword, theme, source, created_at FROM keyword_themes ORDER BY theme, keyword")
+        return [dict(row) for row in cur.fetchall()]
 
 
 def save_theme_centroids(centroids: dict[str, list[float]]) -> None:
     with get_connection() as conn:
-        conn.execute("DELETE FROM theme_centroids")
-        conn.executemany(
-            "INSERT INTO theme_centroids (theme, centroid) VALUES (?, ?)",
+        cur = conn.cursor()
+        cur.execute("DELETE FROM theme_centroids")
+        cur.executemany(
+            "INSERT INTO theme_centroids (theme, centroid) VALUES (%s, %s)",
             [(theme, json.dumps(vec)) for theme, vec in centroids.items()],
         )
 
 
 def load_theme_centroids() -> dict[str, list[float]]:
     with get_connection() as conn:
-        rows = conn.execute("SELECT theme, centroid FROM theme_centroids").fetchall()
-        return {row["theme"]: json.loads(row["centroid"]) for row in rows}
+        cur = conn.cursor()
+        cur.execute("SELECT theme, centroid FROM theme_centroids")
+        return {row["theme"]: json.loads(row["centroid"]) for row in cur.fetchall()}
 
 
 def get_user_by_username(username: str) -> dict | None:
     with get_connection() as conn:
-        row = conn.execute(
-            "SELECT id, email, letterboxd_username FROM users WHERE letterboxd_username = ?", (username,)
-        ).fetchone()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, email, letterboxd_username FROM users WHERE letterboxd_username = %s",
+            (username,),
+        )
+        row = cur.fetchone()
         return dict(row) if row else None
 
 
 def search_users_by_username(q: str) -> list[dict]:
     with get_connection() as conn:
-        rows = conn.execute(
+        cur = conn.cursor()
+        cur.execute(
             """SELECT u.id, u.letterboxd_username,
                       COUNT(DISTINCT r.movie_id) AS ratings_count
                FROM users u
                LEFT JOIN user_ratings r ON r.user_id = u.id
-               WHERE u.letterboxd_username LIKE ?
+               WHERE u.letterboxd_username LIKE %s
                GROUP BY u.id
                ORDER BY u.letterboxd_username
                LIMIT 20""",
             (f"%{q}%",),
-        ).fetchall()
-        return [dict(row) for row in rows]
+        )
+        return [dict(row) for row in cur.fetchall()]
 
 
 def get_or_create_user_by_email(email: str) -> tuple[int, str | None]:
     """Return (user_id, letterboxd_username). Creates the user row if new."""
     with get_connection() as conn:
-        row = conn.execute(
-            "SELECT id, letterboxd_username FROM users WHERE email = ?", (email,)
-        ).fetchone()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, letterboxd_username FROM users WHERE email = %s", (email,)
+        )
+        row = cur.fetchone()
         if row:
             return row["id"], row["letterboxd_username"]
-        cur = conn.execute("INSERT INTO users (email) VALUES (?)", (email,))
-        return cur.lastrowid, None
+        cur.execute("INSERT INTO users (email) VALUES (%s) RETURNING id", (email,))
+        return cur.fetchone()["id"], None
 
 
 def create_user_with_password(email: str, password: str) -> int:
     """Create a credentials-based user. Raises ValueError if email is taken."""
     password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
     with get_connection() as conn:
+        cur = conn.cursor()
         try:
-            cur = conn.execute(
-                "INSERT INTO users (email, password_hash) VALUES (?, ?)", (email, password_hash)
+            cur.execute(
+                "INSERT INTO users (email, password_hash) VALUES (%s, %s) RETURNING id",
+                (email, password_hash),
             )
-            return cur.lastrowid
-        except sqlite3.IntegrityError:
+            return cur.fetchone()["id"]
+        except psycopg2.IntegrityError:
             raise ValueError("Email already registered")
 
 
 def verify_user_password(email: str, password: str) -> tuple[int, str | None] | None:
     """Return (user_id, letterboxd_username) if credentials are valid, else None."""
     with get_connection() as conn:
-        row = conn.execute(
-            "SELECT id, letterboxd_username, password_hash FROM users WHERE email = ?", (email,)
-        ).fetchone()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, letterboxd_username, password_hash FROM users WHERE email = %s", (email,)
+        )
+        row = cur.fetchone()
     if not row or not row["password_hash"]:
         return None
     if bcrypt.checkpw(password.encode(), row["password_hash"].encode()):
@@ -297,8 +281,9 @@ def verify_user_password(email: str, password: str) -> tuple[int, str | None] | 
 
 def update_user_username(user_id: int, username: str) -> None:
     with get_connection() as conn:
-        conn.execute(
-            "UPDATE users SET letterboxd_username = ? WHERE id = ?", (username, user_id)
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE users SET letterboxd_username = %s WHERE id = %s", (username, user_id)
         )
 
 
@@ -306,7 +291,9 @@ def update_user_username(user_id: int, username: str) -> None:
 
 def get_movie(tmdb_id: int) -> dict | None:
     with get_connection() as conn:
-        row = conn.execute("SELECT * FROM movies WHERE id = ?", (tmdb_id,)).fetchone()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM movies WHERE id = %s", (tmdb_id,))
+        row = cur.fetchone()
         if not row:
             return None
         movie = dict(row)
@@ -325,28 +312,29 @@ def upsert_movie(tmdb_data: dict, feature_vector: list[float] | None = None) -> 
     release = tmdb_data.get("release_date", "") or ""
 
     with get_connection() as conn:
-        conn.execute("""
+        cur = conn.cursor()
+        cur.execute("""
             INSERT INTO movies (
                 id, title, year, runtime, genres, vote_average, vote_count,
-                popularity, origin_country, language, keywords, director, cast,
+                popularity, origin_country, language, keywords, director, "cast",
                 raw_tmdb, feature_vector, last_fetched_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
             ON CONFLICT(id) DO UPDATE SET
-                title           = excluded.title,
-                year            = excluded.year,
-                runtime         = excluded.runtime,
-                genres          = excluded.genres,
-                vote_average    = excluded.vote_average,
-                vote_count      = excluded.vote_count,
-                popularity      = excluded.popularity,
-                origin_country  = excluded.origin_country,
-                language        = excluded.language,
-                keywords        = excluded.keywords,
-                director        = excluded.director,
-                cast            = excluded.cast,
-                raw_tmdb        = excluded.raw_tmdb,
-                feature_vector  = COALESCE(excluded.feature_vector, movies.feature_vector),
-                last_fetched_at = datetime('now')
+                title           = EXCLUDED.title,
+                year            = EXCLUDED.year,
+                runtime         = EXCLUDED.runtime,
+                genres          = EXCLUDED.genres,
+                vote_average    = EXCLUDED.vote_average,
+                vote_count      = EXCLUDED.vote_count,
+                popularity      = EXCLUDED.popularity,
+                origin_country  = EXCLUDED.origin_country,
+                language        = EXCLUDED.language,
+                keywords        = EXCLUDED.keywords,
+                director        = EXCLUDED.director,
+                "cast"          = EXCLUDED."cast",
+                raw_tmdb        = EXCLUDED.raw_tmdb,
+                feature_vector  = COALESCE(EXCLUDED.feature_vector, movies.feature_vector),
+                last_fetched_at = NOW()
         """, (
             tmdb_data["id"],
             tmdb_data.get("title", ""),
@@ -368,17 +356,18 @@ def upsert_movie(tmdb_data: dict, feature_vector: list[float] | None = None) -> 
 
 def update_feature_vector(tmdb_id: int, vector: list[float]) -> None:
     with get_connection() as conn:
-        conn.execute(
-            "UPDATE movies SET feature_vector = ? WHERE id = ?",
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE movies SET feature_vector = %s WHERE id = %s",
             (json.dumps(vector), tmdb_id),
         )
 
 
 def get_all_movies_with_vectors() -> list[dict]:
     with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT * FROM movies WHERE feature_vector IS NOT NULL"
-        ).fetchall()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM movies WHERE feature_vector IS NOT NULL")
+        rows = cur.fetchall()
     movies = []
     for row in rows:
         m = dict(row)
@@ -392,24 +381,27 @@ def get_all_movies_with_vectors() -> list[dict]:
 
 def upsert_rating(user_id: int, movie_id: int, rating: float, rated_at: str | None, source: str = "csv") -> None:
     with get_connection() as conn:
-        conn.execute("""
+        cur = conn.cursor()
+        cur.execute("""
             INSERT INTO user_ratings (user_id, movie_id, letterboxd_rating, rated_at, source)
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s)
             ON CONFLICT(user_id, movie_id) DO UPDATE SET
-                letterboxd_rating = excluded.letterboxd_rating,
-                rated_at          = COALESCE(excluded.rated_at, user_ratings.rated_at),
-                source            = excluded.source
+                letterboxd_rating = EXCLUDED.letterboxd_rating,
+                rated_at          = COALESCE(EXCLUDED.rated_at, user_ratings.rated_at),
+                source            = EXCLUDED.source
         """, (user_id, movie_id, rating, rated_at, source))
 
 
 def get_user_ratings(user_id: int) -> list[dict]:
     with get_connection() as conn:
-        rows = conn.execute("""
+        cur = conn.cursor()
+        cur.execute("""
             SELECT r.letterboxd_rating, r.rated_at, m.*
             FROM user_ratings r
             JOIN movies m ON m.id = r.movie_id
-            WHERE r.user_id = ?
-        """, (user_id,)).fetchall()
+            WHERE r.user_id = %s
+        """, (user_id,))
+        rows = cur.fetchall()
     result = []
     for row in rows:
         m = dict(row)
@@ -421,29 +413,32 @@ def get_user_ratings(user_id: int) -> list[dict]:
 
 def get_ratings_count(user_id: int) -> int:
     with get_connection() as conn:
-        row = conn.execute(
-            "SELECT COUNT(*) as count FROM user_ratings WHERE user_id = ?", (user_id,)
-        ).fetchone()
-        return row["count"]
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) AS count FROM user_ratings WHERE user_id = %s", (user_id,))
+        return cur.fetchone()["count"]
 
 
 # --- user_watchlist ---
 
 def upsert_watchlist_entry(user_id: int, movie_id: int) -> None:
     with get_connection() as conn:
-        conn.execute("""
-            INSERT OR IGNORE INTO user_watchlist (user_id, movie_id) VALUES (?, ?)
-        """, (user_id, movie_id))
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO user_watchlist (user_id, movie_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+            (user_id, movie_id),
+        )
 
 
 def get_user_watchlist(user_id: int) -> list[dict]:
     with get_connection() as conn:
-        rows = conn.execute("""
+        cur = conn.cursor()
+        cur.execute("""
             SELECT m.*
             FROM user_watchlist w
             JOIN movies m ON m.id = w.movie_id
-            WHERE w.user_id = ?
-        """, (user_id,)).fetchall()
+            WHERE w.user_id = %s
+        """, (user_id,))
+        rows = cur.fetchall()
     result = []
     for row in rows:
         m = dict(row)
@@ -457,24 +452,24 @@ def get_user_watchlist(user_id: int) -> list[dict]:
 
 def upsert_watched(user_id: int, movie_id: int, watched_at: str | None, source: str = "csv") -> None:
     with get_connection() as conn:
-        conn.execute("""
+        cur = conn.cursor()
+        cur.execute("""
             INSERT INTO user_watched (user_id, movie_id, watched_at, source)
-            VALUES (?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s)
             ON CONFLICT(user_id, movie_id) DO UPDATE SET
-                watched_at = excluded.watched_at,
-                source     = excluded.source
+                watched_at = EXCLUDED.watched_at,
+                source     = EXCLUDED.source
         """, (user_id, movie_id, watched_at, source))
 
 
 def get_seen_movie_ids(user_id: int) -> set[int]:
     """Return all TMDB IDs the user has rated or watched — used to filter candidates."""
     with get_connection() as conn:
-        rated = conn.execute(
-            "SELECT movie_id FROM user_ratings WHERE user_id = ?", (user_id,)
-        ).fetchall()
-        watched = conn.execute(
-            "SELECT movie_id FROM user_watched WHERE user_id = ?", (user_id,)
-        ).fetchall()
+        cur = conn.cursor()
+        cur.execute("SELECT movie_id FROM user_ratings WHERE user_id = %s", (user_id,))
+        rated = cur.fetchall()
+        cur.execute("SELECT movie_id FROM user_watched WHERE user_id = %s", (user_id,))
+        watched = cur.fetchall()
     return {row["movie_id"] for row in rated + watched}
 
 
@@ -482,10 +477,12 @@ def get_seen_movie_ids(user_id: int) -> set[int]:
 
 def compute_ratings_hash(user_id: int) -> str:
     with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT movie_id, letterboxd_rating FROM user_ratings WHERE user_id = ? ORDER BY movie_id",
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT movie_id, letterboxd_rating FROM user_ratings WHERE user_id = %s ORDER BY movie_id",
             (user_id,),
-        ).fetchall()
+        )
+        rows = cur.fetchall()
     h = hashlib.sha256()
     for row in rows:
         h.update(f"{row['movie_id']}:{row['letterboxd_rating']}".encode())
@@ -494,9 +491,9 @@ def compute_ratings_hash(user_id: int) -> str:
 
 def get_taste_profile(user_id: int) -> dict | None:
     with get_connection() as conn:
-        row = conn.execute(
-            "SELECT * FROM taste_profile WHERE user_id = ?", (user_id,)
-        ).fetchone()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM taste_profile WHERE user_id = %s", (user_id,))
+        row = cur.fetchone()
         if not row:
             return None
         return {
@@ -517,16 +514,17 @@ def save_taste_profile(
 ) -> None:
     ratings_hash = compute_ratings_hash(user_id)
     with get_connection() as conn:
-        conn.execute("""
+        cur = conn.cursor()
+        cur.execute("""
             INSERT INTO taste_profile (user_id, vector, ratings_count, version, clusters, ratings_hash)
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT(user_id) DO UPDATE SET
-                vector        = excluded.vector,
-                built_at      = datetime('now'),
-                ratings_count = excluded.ratings_count,
-                version       = excluded.version,
-                clusters      = excluded.clusters,
-                ratings_hash  = excluded.ratings_hash
+                vector        = EXCLUDED.vector,
+                built_at      = NOW(),
+                ratings_count = EXCLUDED.ratings_count,
+                version       = EXCLUDED.version,
+                clusters      = EXCLUDED.clusters,
+                ratings_hash  = EXCLUDED.ratings_hash
         """, (user_id, json.dumps(vector), ratings_count, version,
               json.dumps(clusters) if clusters is not None else None, ratings_hash))
 
@@ -545,15 +543,17 @@ def is_profile_stale(user_id: int, current_version: str = "1.0") -> bool:
 
 def get_recent_ratings(user_id: int, limit: int = 20) -> list[dict]:
     with get_connection() as conn:
-        rows = conn.execute("""
+        cur = conn.cursor()
+        cur.execute("""
             SELECT r.letterboxd_rating, r.rated_at,
                    m.id, m.title, m.year, m.genres, m.runtime, m.raw_tmdb
             FROM user_ratings r
             JOIN movies m ON m.id = r.movie_id
-            WHERE r.user_id = ?
+            WHERE r.user_id = %s
             ORDER BY r.rated_at DESC
-            LIMIT ?
-        """, (user_id, limit)).fetchall()
+            LIMIT %s
+        """, (user_id, limit))
+        rows = cur.fetchall()
     result = []
     for row in rows:
         m = dict(row)
@@ -564,7 +564,8 @@ def get_recent_ratings(user_id: int, limit: int = 20) -> list[dict]:
 
 def get_recommendation_history(user_id: int, limit: int = 20) -> list[dict]:
     with get_connection() as conn:
-        rows = conn.execute("""
+        cur = conn.cursor()
+        cur.execute("""
             SELECT rec.id, rec.recommended_at, rec.mood_context, rec.score,
                    m.id as movie_id, m.title, m.year, m.genres, m.runtime, m.raw_tmdb,
                    CASE WHEN r.movie_id IS NOT NULL THEN 1 ELSE 0 END as followed_through,
@@ -573,10 +574,11 @@ def get_recommendation_history(user_id: int, limit: int = 20) -> list[dict]:
             JOIN movies m ON m.id = rec.movie_id
             LEFT JOIN user_ratings r
                    ON r.user_id = rec.user_id AND r.movie_id = rec.movie_id
-            WHERE rec.user_id = ?
+            WHERE rec.user_id = %s
             ORDER BY rec.recommended_at DESC
-            LIMIT ?
-        """, (user_id, limit)).fetchall()
+            LIMIT %s
+        """, (user_id, limit))
+        rows = cur.fetchall()
     result = []
     for row in rows:
         m = dict(row)
@@ -588,20 +590,23 @@ def get_recommendation_history(user_id: int, limit: int = 20) -> list[dict]:
 
 def log_recommendation(user_id: int, movie_id: int, score: float, mood_context: dict) -> None:
     with get_connection() as conn:
-        conn.execute("""
+        cur = conn.cursor()
+        cur.execute("""
             INSERT INTO recommendations (user_id, movie_id, score, mood_context)
-            VALUES (?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s)
         """, (user_id, movie_id, score, json.dumps(mood_context)))
 
 
 def get_recent_recommendation_ids(user_id: int, days: int = 14) -> set[int]:
     """Return movie IDs recommended to this user in the last N days."""
     with get_connection() as conn:
-        rows = conn.execute("""
+        cur = conn.cursor()
+        cur.execute("""
             SELECT DISTINCT movie_id FROM recommendations
-            WHERE user_id = ?
-              AND recommended_at >= datetime('now', ? || ' days')
-        """, (user_id, f"-{days}")).fetchall()
+            WHERE user_id = %s
+              AND recommended_at >= NOW() - INTERVAL '1 day' * %s
+        """, (user_id, days))
+        rows = cur.fetchall()
     return {row["movie_id"] for row in rows}
 
 
@@ -615,31 +620,30 @@ def resolve_recommendation_outcomes(user_id: int) -> None:
       watched      — in user_watched but no rating yet
     """
     with get_connection() as conn:
-        # Resolve via ratings first
-        conn.execute("""
+        cur = conn.cursor()
+        cur.execute("""
             UPDATE recommendations
             SET outcome = CASE
                 WHEN (SELECT letterboxd_rating FROM user_ratings
-                      WHERE user_id = ? AND movie_id = recommendations.movie_id) >= 3.5
+                      WHERE user_id = %s AND movie_id = recommendations.movie_id) >= 3.5
                     THEN 'enjoyed'
                 WHEN (SELECT letterboxd_rating FROM user_ratings
-                      WHERE user_id = ? AND movie_id = recommendations.movie_id) <= 2.5
+                      WHERE user_id = %s AND movie_id = recommendations.movie_id) <= 2.5
                     THEN 'disliked'
                 ELSE 'rated_neutral'
             END,
-            resolved_at = datetime('now')
-            WHERE user_id = ?
+            resolved_at = NOW()
+            WHERE user_id = %s
               AND outcome IS NULL
-              AND movie_id IN (SELECT movie_id FROM user_ratings WHERE user_id = ?)
+              AND movie_id IN (SELECT movie_id FROM user_ratings WHERE user_id = %s)
         """, (user_id, user_id, user_id, user_id))
 
-        # Resolve remaining via watched (no rating yet)
-        conn.execute("""
+        cur.execute("""
             UPDATE recommendations
-            SET outcome = 'watched', resolved_at = datetime('now')
-            WHERE user_id = ?
+            SET outcome = 'watched', resolved_at = NOW()
+            WHERE user_id = %s
               AND outcome IS NULL
-              AND movie_id IN (SELECT movie_id FROM user_watched WHERE user_id = ?)
+              AND movie_id IN (SELECT movie_id FROM user_watched WHERE user_id = %s)
         """, (user_id, user_id))
 
 
@@ -650,8 +654,10 @@ def get_recommendation_boosts(user_id: int) -> dict[int, float]:
     pulls more strongly toward validated wins and away from confirmed misses.
     """
     with get_connection() as conn:
-        rows = conn.execute("""
+        cur = conn.cursor()
+        cur.execute("""
             SELECT movie_id, outcome FROM recommendations
-            WHERE user_id = ? AND outcome IN ('enjoyed', 'disliked')
-        """, (user_id,)).fetchall()
+            WHERE user_id = %s AND outcome IN ('enjoyed', 'disliked')
+        """, (user_id,))
+        rows = cur.fetchall()
     return {row["movie_id"]: 1.5 for row in rows}
