@@ -1230,3 +1230,17 @@ def warm_cache(_admin: dict = Depends(get_admin_user)):
         "movies": len(movies),
         "cache_dir": str(TMDB_CACHE_DIR.resolve()),
     }
+
+
+@app.get("/api/admin/cache-stats")
+def cache_stats(_admin: dict = Depends(get_admin_user)):
+    from filmprint.tmdb import CACHE_DIR as TMDB_CACHE_DIR
+    from filmprint.omdb import CACHE_DIR as OMDB_CACHE_DIR
+    tmdb_files = list(TMDB_CACHE_DIR.glob("movie_*.json")) if TMDB_CACHE_DIR.exists() else []
+    omdb_files = list(OMDB_CACHE_DIR.glob("omdb_*.json")) if OMDB_CACHE_DIR.exists() else []
+    return {
+        "cache_dir": str(TMDB_CACHE_DIR.resolve()),
+        "movie_files": len(tmdb_files),
+        "omdb_files": len(omdb_files),
+        "total_size_mb": round(sum(f.stat().st_size for f in tmdb_files + omdb_files) / 1_000_000, 2),
+    }
