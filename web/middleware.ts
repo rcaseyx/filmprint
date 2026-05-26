@@ -3,7 +3,10 @@ import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 
 export async function middleware(request: NextRequest) {
-  const token = await getToken({ req: request, secureCookie: process.env.NEXTAUTH_URL?.startsWith("https://") })
+  const secureCookie =
+    request.headers.get("x-forwarded-proto") === "https" ||
+    process.env.NEXTAUTH_URL?.startsWith("https://") === true
+  const token = await getToken({ req: request, secureCookie })
 
   if (!token) {
     const loginUrl = new URL("/login", request.url)
