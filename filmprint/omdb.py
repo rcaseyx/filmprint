@@ -1,25 +1,26 @@
 """OMDB API client — RT, Metacritic, and IMDB scores by IMDB ID."""
 
+import json
 import os
 import requests
+from pathlib import Path
 
 BASE_URL = "https://www.omdbapi.com"
+CACHE_DIR = Path(__file__).parent.parent / "data" / "cache"
 
 
 def get_scores(imdb_id: str) -> dict:
     """Return critic scores for a film by IMDB ID.
 
     Returns a dict with keys: imdb, rt, metacritic (any may be None).
-    Results are cached to the DB.
+    Results are cached to disk.
     """
     if not imdb_id:
         return {"imdb": None, "rt": None, "metacritic": None}
 
-    from filmprint.db import get_api_cache, set_api_cache
-    cache_key = f"omdb_{imdb_id}"
-    cached = get_api_cache(cache_key)
-    if cached is not None:
-        return cached
+    cache_path = CACHE_DIR / f"omdb_{imdb_id}.json"
+    if cache_path.exists():
+        return json.loads(cache_path.read_text())
 
     try:
         resp = requests.get(
@@ -46,5 +47,6 @@ def get_scores(imdb_id: str) -> dict:
     }
     result = {k: (None if v in (None, "N/A") else v) for k, v in result.items()}
 
-    set_api_cache(cache_key, result)
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text(json.dumps(result))
     return result

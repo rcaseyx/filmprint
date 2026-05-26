@@ -33,7 +33,7 @@ from filmprint.db import (
     log_recommendation, get_recent_ratings, get_recommendation_history,
     resolve_recommendation_outcomes, get_recommendation_boosts,
     get_ratings_count, get_all_users_with_stats, delete_user,
-    get_all_keyword_themes_full,
+    get_all_keyword_themes_full, get_candidate_movies,
 )
 from filmprint.features import (
     build_feature_vector, taste_summary, build_keyword_vocab,
@@ -75,7 +75,9 @@ def _rebuild_state(user_id: int, username: str) -> None:
     user_subgenre_axes = build_user_subgenre_axes(keyword_vocab)
     affinity = build_affinity_scores(rated_movies, ratings)
 
-    if is_profile_stale(user_id, PROFILE_VERSION):
+    stale = is_profile_stale(user_id, PROFILE_VERSION)
+
+    if stale:
         profile_vec = build_taste_profile(rated_movies, ratings, keyword_vocab, affinity, outcome_boosts, user_subgenre_axes)
         clusters = build_taste_clusters(rated_movies, ratings, keyword_vocab, affinity, outcome_boosts, user_subgenre_axes)
         save_taste_profile(user_id, profile_vec.tolist(), len(ratings), PROFILE_VERSION,
@@ -86,6 +88,7 @@ def _rebuild_state(user_id: int, username: str) -> None:
         clusters = [np.array(c) for c in profile_data.get("clusters") or []]
         expected_len = 35 + len(keyword_vocab) + 2 + len(user_subgenre_axes) + len(TONE_AXES)
         if len(profile_vec) != expected_len:
+            stale = True
             profile_vec = build_taste_profile(rated_movies, ratings, keyword_vocab, affinity, subgenre_axes=user_subgenre_axes)
             clusters = build_taste_clusters(rated_movies, ratings, keyword_vocab, affinity, subgenre_axes=user_subgenre_axes)
             save_taste_profile(user_id, profile_vec.tolist(), len(ratings), PROFILE_VERSION,
@@ -95,11 +98,14 @@ def _rebuild_state(user_id: int, username: str) -> None:
     watchlist = ensure_feature_vectors(get_user_watchlist(user_id))
     watchlist_ids = {m["id"] for m in watchlist}
 
-    raw_rated = [m.get("raw_tmdb") or m for m in rated_movies]
-    discovered_raw = expand_candidates(raw_rated, ratings, seen_ids)
-    for d in discovered_raw:
-        upsert_movie(d)
-    discovered = ensure_feature_vectors([{**d, "raw_tmdb": d} for d in discovered_raw])
+    if stale:
+        raw_rated = [m.get("raw_tmdb") or m for m in rated_movies]
+        discovered_raw = expand_candidates(raw_rated, ratings, seen_ids)
+        for d in discovered_raw:
+            upsert_movie(d)
+        discovered = ensure_feature_vectors([{**d, "raw_tmdb": d} for d in discovered_raw])
+    else:
+        discovered = get_candidate_movies(seen_ids | watchlist_ids)
 
     critic = build_critic_profile(rated_movies, ratings)
     quality_floor = critic["quality_floor"]
@@ -749,20 +755,18 @@ def get_recommendations(mood: MoodContext, current_user: dict = Depends(get_curr
     diverse = diversify(filtered, ranked, keyword_vocab, affinity, user_subgenre_axes)
 
     # Hard-enforce the quality floor using IMDb scores — only for movies whose
-    # scores are already in the DB cache. Fetching OMDB live per-candidate is too
-    # slow; the TMDB vote_average pre-screen (_above_floor) handles cold paths.
+    # scores are already disk-cached. Fetching OMDB live per-candidate is too slow;
+    # the TMDB vote_average pre-screen (_above_floor) handles cold paths.
     quality_floor = state.get("quality_floor", 6.0)
-    from filmprint.db import get_api_cache as _get_api_cache
+    from filmprint.omdb import CACHE_DIR as _OMDB_CACHE_DIR
     imdb_filtered = []
     for m, s in diverse:
         raw = m.get("raw_tmdb") or m
         imdb_id = raw.get("imdb_id", "")
-        if imdb_id:
-            cached_scores = _get_api_cache(f"omdb_{imdb_id}")
-            if cached_scores:
-                imdb_str = cached_scores.get("imdb")
-                if imdb_str is not None and float(imdb_str) < quality_floor - FLOOR_TOLERANCE:
-                    continue
+        if imdb_id and (_OMDB_CACHE_DIR / f"omdb_{imdb_id}.json").exists():
+            imdb_str = get_scores(imdb_id).get("imdb")
+            if imdb_str is not None and float(imdb_str) < quality_floor - FLOOR_TOLERANCE:
+                continue
         imdb_filtered.append((m, s))
     diverse = imdb_filtered or diverse
 
