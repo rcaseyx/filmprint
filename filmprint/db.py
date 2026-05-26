@@ -384,6 +384,20 @@ def get_candidate_movies(exclude_ids: set[int], limit: int = 500) -> list[dict]:
     return movies
 
 
+def get_raw_tmdb_for_ids(ids: list[int]) -> dict[int, dict]:
+    """Return {tmdb_id: raw_tmdb_dict} for the given IDs that have raw_tmdb stored."""
+    if not ids:
+        return {}
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, raw_tmdb FROM movies WHERE id = ANY(%s) AND raw_tmdb IS NOT NULL",
+            (ids,),
+        )
+        rows = cur.fetchall()
+    return {row["id"]: json.loads(row["raw_tmdb"]) for row in rows}
+
+
 def get_all_movies_with_vectors() -> list[dict]:
     with get_connection() as conn:
         cur = conn.cursor()

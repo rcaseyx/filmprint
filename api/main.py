@@ -60,6 +60,9 @@ FLOOR_TOLERANCE = 0.5
 # Per-user pipeline state, keyed by user_id, built lazily on first request
 _user_states: dict[int, dict[str, Any]] = {}
 
+# Lightweight profile-only state — no candidate discovery, used by profile/genres endpoints
+_user_profile_states: dict[int, dict[str, Any]] = {}
+
 
 def _rebuild_state(user_id: int, username: str) -> None:
     """Rebuild profile and ranking from whatever is currently in the DB. No sync."""
@@ -100,7 +103,10 @@ def _rebuild_state(user_id: int, username: str) -> None:
 
     if stale:
         raw_rated = [m.get("raw_tmdb") or m for m in rated_movies]
-        discovered_raw = expand_candidates(raw_rated, ratings, seen_ids)
+        # Pre-fetch all known raw_tmdb from DB so expand_candidates can skip TMDB API
+        # calls for movies we already have. Matters most on cold starts after a restart.
+        all_known_raw = {m["id"]: m["raw_tmdb"] for m in get_candidate_movies(set(), limit=2000)}
+        discovered_raw = expand_candidates(raw_rated, ratings, seen_ids, known_raw=all_known_raw)
         for d in discovered_raw:
             upsert_movie(d)
         discovered = ensure_feature_vectors([{**d, "raw_tmdb": d} for d in discovered_raw])
@@ -140,6 +146,75 @@ def _rebuild_state(user_id: int, username: str) -> None:
         "summary": taste_summary(profile_vec, keyword_vocab, user_subgenre_axes),
         "user_subgenre_axes": user_subgenre_axes,
     }
+    # Full state supersedes the lightweight profile-only cache
+    _user_profile_states.pop(user_id, None)
+
+
+def _rebuild_profile_only(user_id: int, username: str) -> None:
+    """Build and cache profile state without candidate discovery.
+
+    Significantly faster than _rebuild_state — only hits the DB and runs pure
+    computation. Used by profile/genres endpoints that don't need ranked candidates.
+    """
+    resolve_recommendation_outcomes(user_id)
+    outcome_boosts = get_recommendation_boosts(user_id)
+
+    rated_rows = get_user_ratings(user_id)
+    rated_movies = ensure_feature_vectors(list(rated_rows))
+    ratings = [r["letterboxd_rating"] for r in rated_rows]
+
+    keyword_vocab = build_keyword_vocab(rated_movies)
+    assign_new_keywords(keyword_vocab)
+    user_subgenre_axes = build_user_subgenre_axes(keyword_vocab)
+    affinity = build_affinity_scores(rated_movies, ratings)
+
+    stale = is_profile_stale(user_id, PROFILE_VERSION)
+    if stale:
+        profile_vec = build_taste_profile(rated_movies, ratings, keyword_vocab, affinity, outcome_boosts, user_subgenre_axes)
+        clusters = build_taste_clusters(rated_movies, ratings, keyword_vocab, affinity, outcome_boosts, user_subgenre_axes)
+        save_taste_profile(user_id, profile_vec.tolist(), len(ratings), PROFILE_VERSION,
+                           [c.tolist() for c in clusters])
+    else:
+        profile_data = get_taste_profile(user_id)
+        profile_vec = np.array(profile_data["vector"])
+        clusters = [np.array(c) for c in profile_data.get("clusters") or []]
+        expected_len = 35 + len(keyword_vocab) + 2 + len(user_subgenre_axes) + len(TONE_AXES)
+        if len(profile_vec) != expected_len:
+            profile_vec = build_taste_profile(rated_movies, ratings, keyword_vocab, affinity, subgenre_axes=user_subgenre_axes)
+            clusters = build_taste_clusters(rated_movies, ratings, keyword_vocab, affinity, subgenre_axes=user_subgenre_axes)
+            save_taste_profile(user_id, profile_vec.tolist(), len(ratings), PROFILE_VERSION,
+                               [c.tolist() for c in clusters])
+
+    watchlist_ids = {m["id"] for m in get_user_watchlist(user_id)}
+    seen_ids = get_seen_movie_ids(user_id)
+    critic = build_critic_profile(rated_movies, ratings)
+
+    _user_profile_states[user_id] = {
+        "user_id": user_id,
+        "username": username,
+        "rated_movies": rated_movies,
+        "ratings": ratings,
+        "profile_vec": profile_vec,
+        "clusters": clusters,
+        "keyword_vocab": keyword_vocab,
+        "affinity": affinity,
+        "watchlist_ids": watchlist_ids,
+        "seen_ids": seen_ids,
+        "quality_floor": critic["quality_floor"],
+        "critic_alignment": critic["alignment"],
+        "neutral": critic["neutral"],
+        "summary": taste_summary(profile_vec, keyword_vocab, user_subgenre_axes),
+        "user_subgenre_axes": user_subgenre_axes,
+    }
+
+
+def _get_or_build_profile(user_id: int, username: str) -> dict:
+    """Return profile state — uses full state if already built, otherwise fast profile-only path."""
+    if user_id in _user_states:
+        return _user_states[user_id]
+    if user_id not in _user_profile_states and username and get_ratings_count(user_id) > 0:
+        _rebuild_profile_only(user_id, username)
+    return _user_profile_states.get(user_id, {})
 
 
 def _get_or_build_state(user_id: int, username: str) -> dict:
@@ -451,7 +526,7 @@ def get_profile(current_user: dict = Depends(get_current_user)):
     """All data needed for the profile page in one call."""
     user_id = current_user["user_id"]
     username = current_user["username"]
-    state = _get_or_build_state(user_id, username)
+    state = _get_or_build_profile(user_id, username)
 
     profile_vec = state.get("profile_vec")
     rated_movies = state.get("rated_movies") or []
@@ -553,7 +628,7 @@ def profile_examples(current_user: dict = Depends(get_current_user)):
     """
     user_id = current_user["user_id"]
     username = current_user["username"]
-    state = _get_or_build_state(user_id, username)
+    state = _get_or_build_profile(user_id, username)
     rated_movies = state.get("rated_movies") or []
     ratings = state.get("ratings") or []
 
@@ -635,7 +710,7 @@ def get_genres(current_user: dict = Depends(get_current_user)):
     """Return genres present in the user's rated films, with profile weights."""
     user_id = current_user["user_id"]
     username = current_user["username"]
-    state = _get_or_build_state(user_id, username)
+    state = _get_or_build_profile(user_id, username)
     profile_vec = state.get("profile_vec")
     rated_movies = state.get("rated_movies") or []
 
@@ -883,7 +958,7 @@ def user_search(q: str = ""):
 
 def _public_profile_response(user_id: int, username: str) -> dict:
     """Build the same response shape as /api/profile for any user."""
-    state = _get_or_build_state(user_id, username)
+    state = _get_or_build_profile(user_id, username)
     if not state:
         raise HTTPException(status_code=404, detail="No profile yet")
 
@@ -954,7 +1029,7 @@ def get_public_examples(username: str):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     user_id = user["id"]
-    state = _get_or_build_state(user_id, username)
+    state = _get_or_build_profile(user_id, username)
     if not state:
         return {"genre": {}, "subgenre": {}}
 
