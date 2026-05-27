@@ -363,8 +363,11 @@ def _prewarm_profile_cache(user_id: int, username: str) -> None:
         print(f"[prewarm] dim mismatch for user {user_id}: {len(profile_vec)} vs {expected_len} — skipping cache", flush=True)
         return
 
-    watchlist_ids = {m["id"] for m in get_user_watchlist(user_id)}
-    seen_ids = get_seen_movie_ids(user_id)
+    # Reuse watchlist_ids and seen_ids already loaded by _restore_state_from_volume —
+    # avoids re-fetching large movie JOIN just to get IDs we already have in memory.
+    vol_state = _user_states.get(user_id, {})
+    watchlist_ids = vol_state.get("watchlist_ids") or {m["id"] for m in get_user_watchlist(user_id)}
+    seen_ids = vol_state.get("seen_ids") or get_seen_movie_ids(user_id)
     critic = build_critic_profile(rated_movies, ratings)
     print(f"[prewarm] user {user_id}: profile/watchlist/critic in {time.time()-t1:.1f}s", flush=True)
     t1 = time.time()
