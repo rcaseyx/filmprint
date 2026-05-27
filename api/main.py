@@ -294,7 +294,6 @@ def _get_or_build_profile(user_id: int, username: str) -> dict:
     if state and state.get("rated_movies"):
         return state
     if user_id not in _user_profile_states and username and get_ratings_count(user_id) > 0:
-        print(f"[profile] user {user_id} — rebuilding profile-only state", flush=True)
         _rebuild_profile_only(user_id, username)
     return _user_profile_states.get(user_id, {})
 
@@ -325,6 +324,7 @@ async def lifespan(app: FastAPI):
             try:
                 if _restore_state_from_volume(uid, uname):
                     restored += 1
+                    _rebuild_profile_only(uid, uname)
                 else:
                     _rebuild_state(uid, uname)
                     rebuilt += 1
@@ -935,19 +935,20 @@ def get_recommendations(mood: MoodContext, current_user: dict = Depends(get_curr
     filtered = _apply_filters(ranked, mood)
     diverse = diversify(filtered, ranked, keyword_vocab, affinity, user_subgenre_axes)
 
-    # Hard-enforce the quality floor using IMDb scores — only for movies whose
-    # scores are already disk-cached. Fetching OMDB live per-candidate is too slow;
-    # the TMDB vote_average pre-screen (_above_floor) handles cold paths.
+    # Hard-enforce the quality floor using IMDb scores from the DB.
+    # Never makes live API calls — only filters if scores are already stored.
     quality_floor = state.get("quality_floor", 6.0)
-    from filmprint.omdb import CACHE_DIR as _OMDB_CACHE_DIR
+    from filmprint.db import get_movie_omdb_scores as _get_movie_omdb_scores
     imdb_filtered = []
     for m, s in diverse:
         raw = m.get("raw_tmdb") or m
         imdb_id = raw.get("imdb_id", "")
-        if imdb_id and (_OMDB_CACHE_DIR / f"omdb_{imdb_id}.json").exists():
-            imdb_str = get_scores(imdb_id).get("imdb")
-            if imdb_str is not None and float(imdb_str) < quality_floor - FLOOR_TOLERANCE:
-                continue
+        if imdb_id:
+            scores = _get_movie_omdb_scores(imdb_id)
+            if scores:
+                imdb_str = scores.get("imdb")
+                if imdb_str is not None and float(imdb_str) < quality_floor - FLOOR_TOLERANCE:
+                    continue
         imdb_filtered.append((m, s))
     diverse = imdb_filtered or diverse
 
@@ -1294,16 +1295,14 @@ def admin_recluster(_admin: dict = Depends(get_admin_user)):
 
 @app.post("/api/admin/warm-cache")
 def warm_cache(_admin: dict = Depends(get_admin_user)):
-    """Pre-populate the disk cache from DB and TMDB/OMDB APIs.
+    """Pre-populate caches from DB data.
 
-    Writes movie detail files directly from the raw_tmdb column (no API calls),
-    then fetches watch providers and OMDB scores in parallel for all known movies.
-    Run once after mounting a persistent volume to survive restarts.
+    Writes TMDB movie files to the persistent volume and fetches OMDB scores +
+    watch providers for any movies that don't have them yet.
     """
     import threading
     from filmprint.tmdb import CACHE_DIR as TMDB_CACHE_DIR
-    from filmprint.omdb import CACHE_DIR as OMDB_CACHE_DIR
-    from filmprint.db import get_all_movies_with_vectors
+    from filmprint.db import get_all_movies_with_vectors, get_imdb_ids_missing_omdb
 
     movies = get_all_movies_with_vectors()
 
@@ -1318,15 +1317,12 @@ def warm_cache(_admin: dict = Depends(get_admin_user)):
             if not cache_file.exists():
                 cache_file.write_text(json.dumps(raw))
 
-        imdb_ids = [iid for iid in (
-            (m.get("raw_tmdb") or {}).get("imdb_id", "") for m in movies
-        ) if iid]
+        # Fetch OMDB scores only for movies not yet in the DB
+        imdb_ids_to_fetch = get_imdb_ids_missing_omdb()
         tmdb_ids = [m["id"] for m in movies]
 
-        # Fetch OMDB scores and watch providers in parallel
-        OMDB_CACHE_DIR.mkdir(parents=True, exist_ok=True)
         with ThreadPoolExecutor(max_workers=5) as pool:
-            pool.map(get_scores, imdb_ids)
+            pool.map(get_scores, imdb_ids_to_fetch)
         with ThreadPoolExecutor(max_workers=5) as pool:
             pool.map(get_watch_providers, tmdb_ids)
 
@@ -1341,12 +1337,12 @@ def warm_cache(_admin: dict = Depends(get_admin_user)):
 @app.get("/api/admin/cache-stats")
 def cache_stats(_admin: dict = Depends(get_admin_user)):
     from filmprint.tmdb import CACHE_DIR as TMDB_CACHE_DIR
-    from filmprint.omdb import CACHE_DIR as OMDB_CACHE_DIR
+    from filmprint.db import get_imdb_ids_missing_omdb
     tmdb_files = list(TMDB_CACHE_DIR.glob("movie_*.json")) if TMDB_CACHE_DIR.exists() else []
-    omdb_files = list(OMDB_CACHE_DIR.glob("omdb_*.json")) if OMDB_CACHE_DIR.exists() else []
+    omdb_pending = len(get_imdb_ids_missing_omdb())
     return {
         "cache_dir": str(TMDB_CACHE_DIR.resolve()),
         "movie_files": len(tmdb_files),
-        "omdb_files": len(omdb_files),
-        "total_size_mb": round(sum(f.stat().st_size for f in tmdb_files + omdb_files) / 1_000_000, 2),
+        "omdb_pending": omdb_pending,
+        "total_size_mb": round(sum(f.stat().st_size for f in tmdb_files) / 1_000_000, 2),
     }

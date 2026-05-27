@@ -6,7 +6,7 @@ import { useSession } from "next-auth/react"
 interface CacheStats {
   cache_dir: string
   movie_files: number
-  omdb_files: number
+  omdb_pending: number
   total_size_mb: number
 }
 
@@ -87,7 +87,7 @@ export function CacheWarmer() {
       {stats && (
         <div className="rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3 space-y-1">
           <p className="text-sm text-neutral-300">
-            {stats.movie_files} movie files · {stats.omdb_files} OMDB files · {stats.total_size_mb} MB
+            {stats.movie_files} movie files · {stats.omdb_pending} OMDB pending · {stats.total_size_mb} MB
           </p>
           <p className="text-xs text-neutral-500 font-mono">{stats.cache_dir}</p>
         </div>
