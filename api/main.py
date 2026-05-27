@@ -126,14 +126,23 @@ def _restore_state_from_volume(user_id: int, username: str) -> bool:
     if not profile_data:
         return False
 
+    profile_vec = np.array(profile_data["vector"])
+    keyword_vocab = payload["keyword_vocab"]
+    user_subgenre_axes = payload.get("user_subgenre_axes") or {}
+    expected_dim = 35 + len(keyword_vocab) + 2 + len(user_subgenre_axes) + len(TONE_AXES)
+    if len(profile_vec) != expected_dim:
+        # Volume file and DB profile are out of sync (e.g. _rebuild_profile_only ran
+        # after the last volume save and changed the feature space). Force a full rebuild.
+        return False
+
     _user_states[user_id] = {
         "user_id": user_id,
         "username": username,
         "rated_movies": [],
         "ratings": [],
-        "profile_vec": np.array(profile_data["vector"]),
+        "profile_vec": profile_vec,
         "clusters": [np.array(c) for c in profile_data.get("clusters") or []],
-        "keyword_vocab": payload["keyword_vocab"],
+        "keyword_vocab": keyword_vocab,
         "affinity": payload["affinity"],
         "ranked": ranked,
         "watchlist_ids": {m["id"] for m in get_user_watchlist(user_id)},
@@ -143,7 +152,7 @@ def _restore_state_from_volume(user_id: int, username: str) -> bool:
         "critic_alignment": payload["critic_alignment"],
         "neutral": payload["neutral"],
         "summary": payload["summary"],
-        "user_subgenre_axes": payload["user_subgenre_axes"],
+        "user_subgenre_axes": user_subgenre_axes,
     }
     return True
 
@@ -264,6 +273,7 @@ def _rebuild_profile_only(user_id: int, username: str) -> None:
         clusters = build_taste_clusters(rated_movies, ratings, keyword_vocab, affinity, outcome_boosts, user_subgenre_axes)
         save_taste_profile(user_id, profile_vec.tolist(), len(ratings), PROFILE_VERSION,
                            [c.tolist() for c in clusters])
+        (_STATE_DIR / f"{user_id}.json").unlink(missing_ok=True)
     else:
         rated_movies = list(rated_rows)
         keyword_vocab = build_keyword_vocab(rated_movies)
@@ -280,6 +290,7 @@ def _rebuild_profile_only(user_id: int, username: str) -> None:
             clusters = build_taste_clusters(rated_movies, ratings, keyword_vocab, affinity, subgenre_axes=user_subgenre_axes)
             save_taste_profile(user_id, profile_vec.tolist(), len(ratings), PROFILE_VERSION,
                                [c.tolist() for c in clusters])
+            (_STATE_DIR / f"{user_id}.json").unlink(missing_ok=True)
 
     watchlist_ids = {m["id"] for m in get_user_watchlist(user_id)}
     seen_ids = get_seen_movie_ids(user_id)
