@@ -64,6 +64,11 @@ _user_states: dict[int, dict[str, Any]] = {}
 # Lightweight profile-only state — no candidate discovery, used by profile/genres endpoints
 _user_profile_states: dict[int, dict[str, Any]] = {}
 
+# Per-user lock so concurrent requests don't double-run _rebuild_profile_only
+import threading as _threading
+_profile_build_locks: dict[int, _threading.Lock] = {}
+_profile_build_locks_mutex = _threading.Lock()
+
 # Volume-persisted state files — survive restarts
 _STATE_DIR = _TMDB_CACHE_DIR / "states"
 
@@ -294,7 +299,13 @@ def _get_or_build_profile(user_id: int, username: str) -> dict:
     if state and state.get("rated_movies"):
         return state
     if user_id not in _user_profile_states and username and get_ratings_count(user_id) > 0:
-        _rebuild_profile_only(user_id, username)
+        with _profile_build_locks_mutex:
+            if user_id not in _profile_build_locks:
+                _profile_build_locks[user_id] = _threading.Lock()
+            lock = _profile_build_locks[user_id]
+        with lock:
+            if user_id not in _user_profile_states:
+                _rebuild_profile_only(user_id, username)
     return _user_profile_states.get(user_id, {})
 
 
@@ -324,7 +335,6 @@ async def lifespan(app: FastAPI):
             try:
                 if _restore_state_from_volume(uid, uname):
                     restored += 1
-                    _rebuild_profile_only(uid, uname)
                 else:
                     _rebuild_state(uid, uname)
                     rebuilt += 1
