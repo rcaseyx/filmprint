@@ -24,6 +24,8 @@ from pydantic import BaseModel
 
 load_dotenv(override=True)
 
+_anthropic_client = anthropic.Anthropic()
+
 from filmprint.db import (
     init_db, get_or_create_user_by_email, update_user_username,
     create_user_with_password, verify_user_password,
@@ -632,7 +634,6 @@ def _explain_recommendations(
     active_summary: str,
     watchlist_ids: set,
 ) -> list[dict]:
-    client = anthropic.Anthropic()
     candidates = top_movies[:20]
 
     movie_list = "\n".join(
@@ -673,7 +674,7 @@ For each reason:
 - Reference what they want tonight
 - Do NOT reference taste profile labels or invent preferences they didn't mention"""
 
-    response = client.messages.create(
+    response = _anthropic_client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=1024,
         messages=[{"role": "user", "content": prompt}],
@@ -1037,7 +1038,9 @@ def recommendation_history(current_user: dict = Depends(get_current_user)):
 def get_recommendations(mood: MoodContext, current_user: dict = Depends(get_current_user)):
     user_id = current_user["user_id"]
     username = current_user["username"]
+    t0 = time.time()
     state = _get_or_build_state(user_id, username)
+    print(f"[rec] user {user_id}: get_or_build_state in {time.time()-t0:.1f}s (cached={user_id in _user_states})", flush=True)
 
     if not state:
         raise HTTPException(status_code=428, detail="Import your Letterboxd data first")
@@ -1063,6 +1066,7 @@ def get_recommendations(mood: MoodContext, current_user: dict = Depends(get_curr
     if mood.tone or mood.pacing or mood.familiarity:
         all_candidates = [m for m, _ in ranked]
         ranked = rank_watchlist(active_vec, all_candidates, keyword_vocab, affinity, user_subgenre_axes)
+    t1 = time.time()
 
     # Augment with TMDB Discover when mood specifies genres
     if mood.required_genres:
@@ -1080,6 +1084,8 @@ def get_recommendations(mood: MoodContext, current_user: dict = Depends(get_curr
             discovered = ensure_feature_vectors([{**d, "raw_tmdb": d} for d in discovered_raw])
             new_ranked = rank_watchlist(active_vec, discovered, keyword_vocab, affinity, user_subgenre_axes)
             ranked = sorted(ranked + new_ranked, key=lambda x: x[1], reverse=True)
+        print(f"[rec] user {user_id}: discover_by_mood ({len(mood.required_genres)} genres) in {time.time()-t1:.1f}s", flush=True)
+        t1 = time.time()
 
     filtered = _apply_filters(ranked, mood)
     diverse = diversify(filtered, ranked, keyword_vocab, affinity, user_subgenre_axes)
@@ -1100,15 +1106,19 @@ def get_recommendations(mood: MoodContext, current_user: dict = Depends(get_curr
                     continue
         imdb_filtered.append((m, s))
     diverse = imdb_filtered or diverse
+    print(f"[rec] user {user_id}: rank/filter/diversify in {time.time()-t1:.1f}s ({len(diverse)} candidates)", flush=True)
+    t1 = time.time()
 
     mood_summary = _mood_to_summary(mood)
     picks = _explain_recommendations(diverse, mood_summary, active_summary, watchlist_ids)
+    print(f"[rec] user {user_id}: explain in {time.time()-t1:.1f}s", flush=True)
 
     mood_context = {"summary": mood_summary, "filters": mood.model_dump()}
     for pick in picks:
         log_recommendation(user_id, pick["id"], pick["score"], mood_context)
         state["session_recommended_ids"].add(pick["id"])
 
+    print(f"[rec] user {user_id}: total {time.time()-t0:.1f}s", flush=True)
     return {"picks": picks, "mood_summary": mood_summary}
 
 
