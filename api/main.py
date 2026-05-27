@@ -308,15 +308,24 @@ async def lifespan(app: FastAPI):
     backfill_catalog_keywords()
 
     def _prewarm():
-        for user in get_all_users_with_stats():
+        users = [u for u in get_all_users_with_stats() if u.get("ratings_count", 0) > 0]
+        print(f"[prewarm] starting — {len(users)} user(s) to warm", flush=True)
+        restored, rebuilt, failed = 0, 0, 0
+        for user in users:
             uid = user["id"]
             uname = user.get("letterboxd_username") or ""
-            if user.get("ratings_count", 0) > 0 and uid not in _user_states:
-                try:
-                    if not _restore_state_from_volume(uid, uname):
-                        _rebuild_state(uid, uname)
-                except Exception:
-                    pass
+            if uid in _user_states:
+                continue
+            try:
+                if _restore_state_from_volume(uid, uname):
+                    restored += 1
+                else:
+                    _rebuild_state(uid, uname)
+                    rebuilt += 1
+            except Exception as e:
+                failed += 1
+                print(f"[prewarm] failed for user {uid} ({uname}): {e}", flush=True)
+        print(f"[prewarm] done — {restored} restored from volume, {rebuilt} rebuilt, {failed} failed", flush=True)
 
     threading.Thread(target=_prewarm, daemon=True).start()
     yield
