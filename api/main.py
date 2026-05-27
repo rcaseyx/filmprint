@@ -343,12 +343,16 @@ def _prewarm_profile_cache(user_id: int, username: str) -> None:
     rated_rows = get_user_ratings(user_id)
     if not rated_rows:
         return
+    print(f"[prewarm] user {user_id}: loaded {len(rated_rows)} ratings in {time.time()-t0:.1f}s", flush=True)
+    t1 = time.time()
     ratings = [r["letterboxd_rating"] for r in rated_rows]
     rated_movies = list(rated_rows)
 
     keyword_vocab = build_keyword_vocab(rated_movies)
     user_subgenre_axes = build_user_subgenre_axes(keyword_vocab)
     affinity = build_affinity_scores(rated_movies, ratings)
+    print(f"[prewarm] user {user_id}: vocab/axes/affinity in {time.time()-t1:.1f}s", flush=True)
+    t1 = time.time()
 
     profile_data = get_taste_profile(user_id)
     if not profile_data:
@@ -362,6 +366,8 @@ def _prewarm_profile_cache(user_id: int, username: str) -> None:
     watchlist_ids = {m["id"] for m in get_user_watchlist(user_id)}
     seen_ids = get_seen_movie_ids(user_id)
     critic = build_critic_profile(rated_movies, ratings)
+    print(f"[prewarm] user {user_id}: profile/watchlist/critic in {time.time()-t1:.1f}s", flush=True)
+    t1 = time.time()
 
     _user_profile_states[user_id] = {
         "user_id": user_id,
@@ -380,8 +386,10 @@ def _prewarm_profile_cache(user_id: int, username: str) -> None:
         "summary": taste_summary(profile_vec, keyword_vocab, user_subgenre_axes),
         "user_subgenre_axes": user_subgenre_axes,
     }
+    t1 = time.time()
     _build_profile_response(user_id, _user_profile_states[user_id])
     _build_examples_response(user_id, _user_profile_states[user_id])
+    print(f"[prewarm] user {user_id}: response cache build in {time.time()-t1:.1f}s", flush=True)
     print(f"[prewarm] profile cache warmed for user {user_id} in {time.time()-t0:.1f}s", flush=True)
 
 
