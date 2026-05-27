@@ -274,6 +274,7 @@ def _rebuild_profile_only(user_id: int, username: str) -> None:
         save_taste_profile(user_id, profile_vec.tolist(), len(ratings), PROFILE_VERSION,
                            [c.tolist() for c in clusters])
         (_STATE_DIR / f"{user_id}.json").unlink(missing_ok=True)
+        _user_states.pop(user_id, None)
     else:
         rated_movies = list(rated_rows)
         keyword_vocab = build_keyword_vocab(rated_movies)
@@ -291,6 +292,7 @@ def _rebuild_profile_only(user_id: int, username: str) -> None:
             save_taste_profile(user_id, profile_vec.tolist(), len(ratings), PROFILE_VERSION,
                                [c.tolist() for c in clusters])
             (_STATE_DIR / f"{user_id}.json").unlink(missing_ok=True)
+            _user_states.pop(user_id, None)
 
     watchlist_ids = {m["id"] for m in get_user_watchlist(user_id)}
     seen_ids = get_seen_movie_ids(user_id)
