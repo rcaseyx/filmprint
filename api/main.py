@@ -366,7 +366,7 @@ async def lifespan(app: FastAPI):
                 if _restore_state_from_volume(uid, uname):
                     restored += 1
                 else:
-                    _rebuild_state(uid, uname)
+                    _rebuild_profile_only(uid, uname)
                     rebuilt += 1
                 # Build and cache profile response data so the first user request
                 # is served from cache rather than paying the computation cost.
