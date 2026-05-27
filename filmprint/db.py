@@ -113,6 +113,15 @@ def init_db(seed_data: dict | None = None) -> None:
             centroid   TEXT NOT NULL,
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )""",
+        "ALTER TABLE movies ADD COLUMN IF NOT EXISTS imdb_id TEXT",
+        "ALTER TABLE movies ADD COLUMN IF NOT EXISTS imdb_score TEXT",
+        "ALTER TABLE movies ADD COLUMN IF NOT EXISTS rt_score TEXT",
+        "ALTER TABLE movies ADD COLUMN IF NOT EXISTS mc_score TEXT",
+        "ALTER TABLE movies ADD COLUMN IF NOT EXISTS omdb_fetched_at TIMESTAMPTZ",
+        "CREATE INDEX IF NOT EXISTS idx_movies_imdb_id ON movies(imdb_id)",
+        # Backfill imdb_id for existing rows from raw_tmdb JSON
+        """UPDATE movies SET imdb_id = (raw_tmdb::jsonb)->>'imdb_id'
+           WHERE imdb_id IS NULL AND raw_tmdb IS NOT NULL AND length(raw_tmdb) > 2""",
     ]
     with get_connection() as conn:
         cur = conn.cursor()
@@ -317,8 +326,8 @@ def upsert_movie(tmdb_data: dict, feature_vector: list[float] | None = None) -> 
             INSERT INTO movies (
                 id, title, year, runtime, genres, vote_average, vote_count,
                 popularity, origin_country, language, keywords, director, "cast",
-                raw_tmdb, feature_vector, last_fetched_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                raw_tmdb, feature_vector, imdb_id, last_fetched_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
             ON CONFLICT(id) DO UPDATE SET
                 title           = EXCLUDED.title,
                 year            = EXCLUDED.year,
@@ -334,6 +343,7 @@ def upsert_movie(tmdb_data: dict, feature_vector: list[float] | None = None) -> 
                 "cast"          = EXCLUDED."cast",
                 raw_tmdb        = EXCLUDED.raw_tmdb,
                 feature_vector  = COALESCE(EXCLUDED.feature_vector, movies.feature_vector),
+                imdb_id         = COALESCE(movies.imdb_id, EXCLUDED.imdb_id),
                 last_fetched_at = NOW()
         """, (
             tmdb_data["id"],
@@ -351,6 +361,7 @@ def upsert_movie(tmdb_data: dict, feature_vector: list[float] | None = None) -> 
             json.dumps(cast),
             json.dumps(tmdb_data),
             json.dumps(feature_vector) if feature_vector is not None else None,
+            tmdb_data.get("imdb_id"),
         ))
 
 
@@ -361,6 +372,41 @@ def update_feature_vector(tmdb_id: int, vector: list[float]) -> None:
             "UPDATE movies SET feature_vector = %s WHERE id = %s",
             (json.dumps(vector), tmdb_id),
         )
+
+
+def get_movie_omdb_scores(imdb_id: str) -> dict | None:
+    """Return cached OMDB scores for a movie, or None if never fetched."""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT imdb_score, rt_score, mc_score, omdb_fetched_at FROM movies WHERE imdb_id = %s",
+            (imdb_id,),
+        )
+        row = cur.fetchone()
+    if row is None or row["omdb_fetched_at"] is None:
+        return None
+    return {"imdb": row["imdb_score"], "rt": row["rt_score"], "metacritic": row["mc_score"]}
+
+
+def save_movie_omdb_scores(imdb_id: str, imdb_score, rt_score, mc_score) -> None:
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """UPDATE movies SET imdb_score = %s, rt_score = %s, mc_score = %s,
+               omdb_fetched_at = NOW() WHERE imdb_id = %s""",
+            (imdb_score, rt_score, mc_score, imdb_id),
+        )
+
+
+def get_imdb_ids_missing_omdb(limit: int = 2000) -> list[str]:
+    """Return imdb_ids for movies that have never had OMDB scores fetched."""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT imdb_id FROM movies WHERE imdb_id IS NOT NULL AND omdb_fetched_at IS NULL LIMIT %s",
+            (limit,),
+        )
+        return [row["imdb_id"] for row in cur.fetchall()]
 
 
 def get_candidate_movies(exclude_ids: set[int], limit: int = 500) -> list[dict]:
