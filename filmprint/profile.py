@@ -32,19 +32,25 @@ def build_critic_profile(rated_movies: list[dict], ratings: list[float]) -> dict
         neutral: the derived personal neutral rating point.
     """
     from .omdb import get_scores
+    from .db import batch_get_omdb_scores
 
     neutral = personal_neutral(ratings)
     liked_threshold = neutral + 1.0
 
+    # Collect all imdb_ids and batch-fetch DB cache in one query instead of N round-trips.
+    imdb_ids = []
+    for movie in rated_movies:
+        raw = movie.get("raw_tmdb") or movie
+        imdb_ids.append(raw.get("imdb_id", ""))
+    scores_cache = batch_get_omdb_scores([iid for iid in imdb_ids if iid])
+
     deltas: list[float] = []
     liked_scores: list[float] = []
 
-    for movie, user_rating in zip(rated_movies, ratings):
-        raw = movie.get("raw_tmdb") or movie
-        imdb_id = raw.get("imdb_id", "")
+    for movie, user_rating, imdb_id in zip(rated_movies, ratings, imdb_ids):
         if not imdb_id:
             continue
-        scores = get_scores(imdb_id)
+        scores = scores_cache.get(imdb_id) or get_scores(imdb_id)
         if scores["imdb"] is None:
             continue
 

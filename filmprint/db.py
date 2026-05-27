@@ -451,6 +451,28 @@ def update_feature_vector(tmdb_id: int, vector: list[float]) -> None:
         )
 
 
+def batch_get_omdb_scores(imdb_ids: list[str]) -> dict[str, dict]:
+    """Return cached OMDB scores for multiple movies in a single query.
+
+    Returns a dict keyed by imdb_id. Only includes movies that have been fetched
+    (omdb_fetched_at IS NOT NULL). Missing entries need individual API calls.
+    """
+    if not imdb_ids:
+        return {}
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT imdb_id, imdb_score, rt_score, mc_score
+               FROM movies
+               WHERE imdb_id = ANY(%s) AND omdb_fetched_at IS NOT NULL""",
+            (imdb_ids,),
+        )
+        return {
+            row["imdb_id"]: {"imdb": row["imdb_score"], "rt": row["rt_score"], "metacritic": row["mc_score"]}
+            for row in cur.fetchall()
+        }
+
+
 def get_movie_omdb_scores(imdb_id: str) -> dict | None:
     """Return cached OMDB scores for a movie, or None if never fetched."""
     with get_connection() as conn:
