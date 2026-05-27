@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useSession } from "next-auth/react"
+import { authHeader } from "@/lib/api"
 import { RecommendationResults } from "@/components/RecommendationResults"
 
 interface Pick {
@@ -82,8 +83,7 @@ export function MoodSelector({ genres }: Props) {
     setLoading(true)
     setError(null)
     try {
-      const headers: Record<string, string> = { "Content-Type": "application/json" }
-      if (session?.user?.email) headers["X-User-Email"] = session.user.email
+      const headers: Record<string, string> = { "Content-Type": "application/json", ...authHeader(session) }
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/recommendations`, {
         method: "POST",
         headers,

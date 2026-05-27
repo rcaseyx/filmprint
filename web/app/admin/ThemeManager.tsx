@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useSession } from "next-auth/react"
+import { authHeader } from "@/lib/api"
 import { ThemeBreakdown } from "./ThemeBreakdown"
 
 interface ThemeStats {
@@ -17,11 +18,7 @@ export function ThemeManager({ initialStats }: { initialStats: ThemeStats }) {
   const [reclustered, setReclustered] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const headers = (): Record<string, string> => {
-    const h: Record<string, string> = {}
-    if (session?.user?.email) h["X-User-Email"] = session.user.email
-    return h
-  }
+  const headers = () => authHeader(session)
 
   const refreshStats = async () => {
     try {

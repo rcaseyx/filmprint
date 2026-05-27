@@ -3,6 +3,7 @@ import GoogleProvider from "next-auth/providers/google"
 import CredentialsProvider from "next-auth/providers/credentials"
 
 const API = process.env.NEXT_PUBLIC_API_URL
+const INTERNAL_SECRET = process.env.INTERNAL_SECRET
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -26,13 +27,49 @@ export const authOptions: NextAuthOptions = {
           })
           if (!res.ok) return null
           const user = await res.json()
-          return { id: String(user.user_id), email: user.email, name: user.username || user.email }
+          return {
+            id: String(user.user_id),
+            email: user.email,
+            name: user.username || user.email,
+            backendToken: user.token,
+          }
         } catch {
           return null
         }
       },
     }),
   ],
+  callbacks: {
+    async jwt({ token, user, account }) {
+      if (user) {
+        if ((user as any).backendToken) {
+          // Credentials login — token returned directly from /api/auth/verify
+          token.backendToken = (user as any).backendToken
+        } else if (account?.provider === "google" && token.email) {
+          // Google OAuth — exchange verified email for a backend JWT server-to-server
+          try {
+            const res = await fetch(`${API}/api/auth/exchange`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-Internal-Secret": INTERNAL_SECRET || "",
+              },
+              body: JSON.stringify({ email: token.email }),
+            })
+            if (res.ok) {
+              const data = await res.json()
+              token.backendToken = data.token
+            }
+          } catch {}
+        }
+      }
+      return token
+    },
+    async session({ session, token }) {
+      session.backendToken = token.backendToken
+      return session
+    },
+  },
   pages: {
     signIn: "/login",
   },

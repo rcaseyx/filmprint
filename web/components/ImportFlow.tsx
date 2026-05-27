@@ -3,6 +3,7 @@
 import { useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useSession } from "next-auth/react"
+import { authHeader } from "@/lib/api"
 
 type Status = "idle" | "file_selected" | "uploading" | "done" | "error"
 
@@ -41,10 +42,7 @@ export function ImportFlow({ isOnboarding, needsUsername }: Props) {
     }
 
     try {
-      const headers: Record<string, string> = {}
-      if (session?.user?.email) {
-        headers["X-User-Email"] = session.user.email
-      }
+      const headers = authHeader(session)
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/import`, {
         method: "POST",
         headers,
