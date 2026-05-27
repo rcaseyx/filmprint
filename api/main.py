@@ -939,6 +939,11 @@ def _build_examples_response(user_id: int, state: dict) -> dict:
                  if match_fn(name, m) and m["id"] not in used_ids],
                 key=lambda x: x[1], reverse=True,
             )
+            if not candidates:
+                candidates = sorted(
+                    [(m, r) for m, r in zip(rated_movies, ratings) if match_fn(name, m)],
+                    key=lambda x: x[1], reverse=True,
+                )
             for m, r in candidates[:3]:
                 used_ids.add(m["id"])
             result[name] = [_serialize(m, r) for m, r in candidates[:3]]
@@ -1377,6 +1382,11 @@ def get_public_examples(username: str):
                  if match_fn(name, m) and m["id"] not in used_ids],
                 key=lambda x: x[1], reverse=True,
             )
+            if not candidates:
+                candidates = sorted(
+                    [(m, r) for m, r in zip(rated_movies, ratings) if match_fn(name, m)],
+                    key=lambda x: x[1], reverse=True,
+                )
             for m, r in candidates[:3]:
                 used_ids.add(m["id"])
             result[name] = [_serialize(m, r) for m, r in candidates[:3]]
