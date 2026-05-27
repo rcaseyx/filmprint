@@ -11,6 +11,7 @@ from typing import Any
 import json
 import os
 import tempfile
+import time
 import zipfile
 
 import anthropic
@@ -29,7 +30,7 @@ from filmprint.db import (
     get_user_by_username, search_users_by_username,
     get_user_ratings, get_user_watchlist,
     get_seen_movie_ids, get_taste_profile, save_taste_profile,
-    is_profile_stale, upsert_movie, update_feature_vector,
+    is_profile_stale, upsert_movie, batch_upsert_movies, update_feature_vector,
     log_recommendation, get_recent_ratings, get_recommendation_history,
     resolve_recommendation_outcomes, get_recommendation_boosts,
     get_ratings_count, get_all_users_with_stats, delete_user,
@@ -159,6 +160,8 @@ def _restore_state_from_volume(user_id: int, username: str) -> bool:
 
 def _rebuild_state(user_id: int, username: str) -> None:
     """Rebuild profile and ranking from whatever is currently in the DB. No sync."""
+    t0 = time.time()
+    print(f"[rebuild_state] starting for user {user_id}", flush=True)
     resolve_recommendation_outcomes(user_id)
     outcome_boosts = get_recommendation_boosts(user_id)
 
@@ -198,10 +201,15 @@ def _rebuild_state(user_id: int, username: str) -> None:
         raw_rated = [m.get("raw_tmdb") or m for m in rated_movies]
         # Pre-fetch all known raw_tmdb from DB so expand_candidates can skip TMDB API
         # calls for movies we already have. Matters most on cold starts after a restart.
+        t1 = time.time()
         all_known_raw = {m["id"]: m["raw_tmdb"] for m in get_candidate_movies(set(), limit=2000)}
+        print(f"[rebuild_state] loaded {len(all_known_raw)} known movies in {time.time()-t1:.1f}s", flush=True)
+        t1 = time.time()
         discovered_raw = expand_candidates(raw_rated, ratings, seen_ids, known_raw=all_known_raw)
-        for d in discovered_raw:
-            upsert_movie(d)
+        print(f"[rebuild_state] expand_candidates returned {len(discovered_raw)} in {time.time()-t1:.1f}s", flush=True)
+        t1 = time.time()
+        batch_upsert_movies(discovered_raw)
+        print(f"[rebuild_state] batch upserted {len(discovered_raw)} movies in {time.time()-t1:.1f}s", flush=True)
         discovered = ensure_feature_vectors([{**d, "raw_tmdb": d} for d in discovered_raw])
     else:
         discovered = get_candidate_movies(seen_ids | watchlist_ids)
@@ -244,6 +252,7 @@ def _rebuild_state(user_id: int, username: str) -> None:
     _user_profile_states.pop(user_id, None)
     _profile_response_cache.pop(user_id, None)
     _examples_response_cache.pop(user_id, None)
+    print(f"[rebuild_state] done for user {user_id} in {time.time()-t0:.1f}s (stale={stale})", flush=True)
 
 
 def _rebuild_profile_only(user_id: int, username: str) -> None:
@@ -252,6 +261,8 @@ def _rebuild_profile_only(user_id: int, username: str) -> None:
     Significantly faster than _rebuild_state — only hits the DB and runs pure
     computation. Used by profile/genres endpoints that don't need ranked candidates.
     """
+    t0 = time.time()
+    print(f"[rebuild_profile_only] starting for user {user_id}", flush=True)
     resolve_recommendation_outcomes(user_id)
     outcome_boosts = get_recommendation_boosts(user_id)
 
@@ -317,6 +328,61 @@ def _rebuild_profile_only(user_id: int, username: str) -> None:
     }
     _profile_response_cache.pop(user_id, None)
     _examples_response_cache.pop(user_id, None)
+    print(f"[rebuild_profile_only] done for user {user_id} in {time.time()-t0:.1f}s", flush=True)
+
+
+def _prewarm_profile_cache(user_id: int, username: str) -> None:
+    """Build profile display state for a volume-restored user without risking rec state eviction.
+
+    Unlike _rebuild_profile_only, this never calls assign_new_keywords (handled by
+    backfill_catalog_keywords at startup) and never touches _user_states. If the stored
+    profile vector has a dimension mismatch, we skip caching — the profile endpoint will
+    trigger a proper rebuild on first request.
+    """
+    t0 = time.time()
+    rated_rows = get_user_ratings(user_id)
+    if not rated_rows:
+        return
+    ratings = [r["letterboxd_rating"] for r in rated_rows]
+    rated_movies = list(rated_rows)
+
+    keyword_vocab = build_keyword_vocab(rated_movies)
+    user_subgenre_axes = build_user_subgenre_axes(keyword_vocab)
+    affinity = build_affinity_scores(rated_movies, ratings)
+
+    profile_data = get_taste_profile(user_id)
+    if not profile_data:
+        return
+    profile_vec = np.array(profile_data["vector"])
+    expected_len = 35 + len(keyword_vocab) + 2 + len(user_subgenre_axes) + len(TONE_AXES)
+    if len(profile_vec) != expected_len:
+        print(f"[prewarm] dim mismatch for user {user_id}: {len(profile_vec)} vs {expected_len} — skipping cache", flush=True)
+        return
+
+    watchlist_ids = {m["id"] for m in get_user_watchlist(user_id)}
+    seen_ids = get_seen_movie_ids(user_id)
+    critic = build_critic_profile(rated_movies, ratings)
+
+    _user_profile_states[user_id] = {
+        "user_id": user_id,
+        "username": username,
+        "rated_movies": rated_movies,
+        "ratings": ratings,
+        "profile_vec": profile_vec,
+        "clusters": [np.array(c) for c in profile_data.get("clusters") or []],
+        "keyword_vocab": keyword_vocab,
+        "affinity": affinity,
+        "watchlist_ids": watchlist_ids,
+        "seen_ids": seen_ids,
+        "quality_floor": critic["quality_floor"],
+        "critic_alignment": critic["alignment"],
+        "neutral": critic["neutral"],
+        "summary": taste_summary(profile_vec, keyword_vocab, user_subgenre_axes),
+        "user_subgenre_axes": user_subgenre_axes,
+    }
+    _build_profile_response(user_id, _user_profile_states[user_id])
+    _build_examples_response(user_id, _user_profile_states[user_id])
+    print(f"[prewarm] profile cache warmed for user {user_id} in {time.time()-t0:.1f}s", flush=True)
 
 
 def _get_or_build_profile(user_id: int, username: str) -> dict:
@@ -354,30 +420,45 @@ async def lifespan(app: FastAPI):
     backfill_catalog_keywords()
 
     def _prewarm():
+        import threading as _t
         users = [u for u in get_all_users_with_stats() if u.get("ratings_count", 0) > 0]
         print(f"[prewarm] starting — {len(users)} user(s) to warm", flush=True)
-        restored, rebuilt, failed = 0, 0, 0
-        for user in users:
+        t0 = time.time()
+        counters = {"restored": 0, "rebuilt": 0, "failed": 0}
+        counter_lock = _t.Lock()
+
+        def _warm_one(user):
             uid = user["id"]
             uname = user.get("letterboxd_username") or ""
             if uid in _user_states:
-                continue
+                return
             try:
                 if _restore_state_from_volume(uid, uname):
-                    restored += 1
+                    # Build profile cache without risking eviction of the restored rec state.
+                    _prewarm_profile_cache(uid, uname)
+                    with counter_lock:
+                        counters["restored"] += 1
                 else:
                     _rebuild_profile_only(uid, uname)
-                    rebuilt += 1
-                # Build and cache profile response data so the first user request
-                # is served from cache rather than paying the computation cost.
-                state = _get_or_build_profile(uid, uname)
-                if state:
-                    _build_profile_response(uid, state)
-                    _build_examples_response(uid, state)
+                    state = _user_profile_states.get(uid)
+                    if state:
+                        _build_profile_response(uid, state)
+                        _build_examples_response(uid, state)
+                    with counter_lock:
+                        counters["rebuilt"] += 1
             except Exception as e:
-                failed += 1
                 print(f"[prewarm] failed for user {uid} ({uname}): {e}", flush=True)
-        print(f"[prewarm] done — {restored} restored from volume, {rebuilt} rebuilt, {failed} failed", flush=True)
+                with counter_lock:
+                    counters["failed"] += 1
+
+        with ThreadPoolExecutor(max_workers=min(len(users) or 1, 4)) as pool:
+            list(pool.map(_warm_one, users))
+
+        print(
+            f"[prewarm] done in {time.time()-t0:.1f}s — "
+            f"{counters['restored']} restored, {counters['rebuilt']} rebuilt, {counters['failed']} failed",
+            flush=True,
+        )
 
     threading.Thread(target=_prewarm, daemon=True).start()
     yield

@@ -8,27 +8,46 @@ JSON columns are stored as TEXT and serialized/deserialized in application code.
 import hashlib
 import json
 import os
+import threading
 from contextlib import contextmanager
 
 import bcrypt
 import psycopg2
 import psycopg2.extras
+from psycopg2.pool import ThreadedConnectionPool
+
+_pool: ThreadedConnectionPool | None = None
+_pool_lock = threading.Lock()
+
+
+def _get_pool() -> ThreadedConnectionPool:
+    global _pool
+    if _pool is None:
+        with _pool_lock:
+            if _pool is None:
+                _pool = ThreadedConnectionPool(
+                    2, 20,
+                    os.environ["DATABASE_URL"],
+                    cursor_factory=psycopg2.extras.RealDictCursor,
+                )
+    return _pool
 
 
 @contextmanager
 def get_connection():
-    conn = psycopg2.connect(
-        os.environ["DATABASE_URL"],
-        cursor_factory=psycopg2.extras.RealDictCursor,
-    )
+    pool = _get_pool()
+    conn = pool.getconn()
     try:
         yield conn
         conn.commit()
     except Exception:
-        conn.rollback()
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         raise
     finally:
-        conn.close()
+        pool.putconn(conn)
 
 
 def init_db(seed_data: dict | None = None) -> None:
@@ -363,6 +382,64 @@ def upsert_movie(tmdb_data: dict, feature_vector: list[float] | None = None) -> 
             json.dumps(feature_vector) if feature_vector is not None else None,
             tmdb_data.get("imdb_id"),
         ))
+
+
+def batch_upsert_movies(movies: list[dict]) -> None:
+    """Upsert multiple TMDB movie records in a single transaction."""
+    if not movies:
+        return
+    rows = []
+    for tmdb_data in movies:
+        crew = tmdb_data.get("credits", {}).get("crew", [])
+        directors = [p["name"] for p in crew if p.get("job") == "Director"]
+        cast = [p["name"] for p in tmdb_data.get("credits", {}).get("cast", [])[:10]]
+        genres = [g["name"] for g in tmdb_data.get("genres", [])]
+        keywords = [k["name"] for k in tmdb_data.get("keywords", {}).get("keywords", [])]
+        countries = tmdb_data.get("production_countries", [])
+        release = tmdb_data.get("release_date", "") or ""
+        rows.append((
+            tmdb_data["id"],
+            tmdb_data.get("title", ""),
+            int(release[:4]) if len(release) >= 4 else None,
+            tmdb_data.get("runtime"),
+            json.dumps(genres),
+            tmdb_data.get("vote_average"),
+            tmdb_data.get("vote_count"),
+            tmdb_data.get("popularity"),
+            countries[0]["iso_3166_1"] if countries else None,
+            tmdb_data.get("original_language"),
+            json.dumps(keywords),
+            json.dumps(directors),
+            json.dumps(cast),
+            json.dumps(tmdb_data),
+            tmdb_data.get("imdb_id"),
+        ))
+    with get_connection() as conn:
+        cur = conn.cursor()
+        psycopg2.extras.execute_values(cur, """
+            INSERT INTO movies (
+                id, title, year, runtime, genres, vote_average, vote_count,
+                popularity, origin_country, language, keywords, director, "cast",
+                raw_tmdb, imdb_id, last_fetched_at
+            ) VALUES %s
+            ON CONFLICT(id) DO UPDATE SET
+                title           = EXCLUDED.title,
+                year            = EXCLUDED.year,
+                runtime         = EXCLUDED.runtime,
+                genres          = EXCLUDED.genres,
+                vote_average    = EXCLUDED.vote_average,
+                vote_count      = EXCLUDED.vote_count,
+                popularity      = EXCLUDED.popularity,
+                origin_country  = EXCLUDED.origin_country,
+                language        = EXCLUDED.language,
+                keywords        = EXCLUDED.keywords,
+                director        = EXCLUDED.director,
+                "cast"          = EXCLUDED."cast",
+                raw_tmdb        = EXCLUDED.raw_tmdb,
+                feature_vector  = COALESCE(movies.feature_vector, EXCLUDED.feature_vector),
+                imdb_id         = COALESCE(movies.imdb_id, EXCLUDED.imdb_id),
+                last_fetched_at = NOW()
+        """, rows)
 
 
 def update_feature_vector(tmdb_id: int, vector: list[float]) -> None:
