@@ -49,7 +49,7 @@ from filmprint.recommender import rank_watchlist, diversify
 from filmprint.discovery import expand_candidates, discover_by_mood
 from filmprint.app import ensure_feature_vectors
 from filmprint.tmdb import get_watch_providers, CACHE_DIR as _TMDB_CACHE_DIR
-from filmprint.omdb import get_scores
+from filmprint.omdb import get_scores, prime_score_cache
 from filmprint.sync import sync_ratings_csv, sync_watchlist_csv, sync_watched_csv, sync_rss, sync_scrape
 from filmprint.letterboxd import validate_username
 from filmprint.themes import assign_new_keywords, build_user_subgenre_axes, backfill_catalog_keywords, build_clusters, claude_cleanup_themes
@@ -124,6 +124,10 @@ def _restore_state_from_volume(user_id: int, username: str) -> bool:
     ranked = [(movie_map[mid], float(score)) for mid, score in ranked_pairs if mid in movie_map]
     if not ranked:
         return False
+
+    # One batch DB query for all OMDB scores so rank_watchlist calls don't hit the DB per movie.
+    imdb_ids = [(m.get("raw_tmdb") or m).get("imdb_id") for m, _ in ranked]
+    prime_score_cache([iid for iid in imdb_ids if iid])
 
     profile_data = get_taste_profile(user_id)
     if not profile_data:
@@ -227,6 +231,10 @@ def _rebuild_state(user_id: int, username: str) -> None:
         [m for m in watchlist if m["id"] not in seen_ids and _above_floor(m)]
         + [d for d in discovered if d["id"] not in watchlist_ids and _above_floor(d)]
     )
+
+    # One batch DB query for all OMDB scores so rank_watchlist doesn't hit the DB per movie.
+    imdb_ids = [(m.get("raw_tmdb") or m).get("imdb_id") for m in all_candidates]
+    prime_score_cache([iid for iid in imdb_ids if iid])
 
     ranked = rank_watchlist(profile_vec, all_candidates, keyword_vocab, affinity, user_subgenre_axes)
 

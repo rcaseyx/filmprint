@@ -17,14 +17,14 @@ def rank_watchlist(
     Always builds full vectors (including keywords + affinity) for consistency.
     Returns (movie, score) tuples sorted by score descending.
     """
-    scored = []
-    for movie in candidates:
-        vec = build_feature_vector(movie, keyword_vocab, affinity, subgenre_axes)
-        score = cosine_similarity([taste_profile], [vec])[0][0]
-        scored.append((movie, float(score)))
-
-    scored.sort(key=lambda x: x[1], reverse=True)
-    return scored
+    if not candidates:
+        return []
+    matrix = np.array([
+        build_feature_vector(m, keyword_vocab, affinity, subgenre_axes)
+        for m in candidates
+    ])
+    scores = cosine_similarity([taste_profile], matrix)[0]
+    return sorted(zip(candidates, scores.tolist()), key=lambda x: x[1], reverse=True)
 
 
 def diversify(
