@@ -294,6 +294,7 @@ def _get_or_build_profile(user_id: int, username: str) -> dict:
     if state and state.get("rated_movies"):
         return state
     if user_id not in _user_profile_states and username and get_ratings_count(user_id) > 0:
+        print(f"[profile] user {user_id} — rebuilding profile-only state", flush=True)
         _rebuild_profile_only(user_id, username)
     return _user_profile_states.get(user_id, {})
 
