@@ -285,9 +285,14 @@ def _rebuild_profile_only(user_id: int, username: str) -> None:
 
 
 def _get_or_build_profile(user_id: int, username: str) -> dict:
-    """Return profile state — uses full state if already built, otherwise fast profile-only path."""
-    if user_id in _user_states:
-        return _user_states[user_id]
+    """Return profile state — uses full state if already built, otherwise fast profile-only path.
+
+    Volume-restored states have rated_movies=[] intentionally (not needed for recs), so we
+    can't use them for profile display. Fall through to the profile-only rebuild in that case.
+    """
+    state = _user_states.get(user_id)
+    if state and state.get("rated_movies"):
+        return state
     if user_id not in _user_profile_states and username and get_ratings_count(user_id) > 0:
         _rebuild_profile_only(user_id, username)
     return _user_profile_states.get(user_id, {})
