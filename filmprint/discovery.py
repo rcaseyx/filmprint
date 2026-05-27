@@ -93,11 +93,15 @@ def discover_by_mood(
     seen = set(existing_ids)
     raw_results: list[dict] = []
 
-    mainstream = discover_movies(genre_ids=genre_ids, vote_average_gte=6.5, vote_count_gte=1000)
-    # Hidden gems: well-regarded but not widely seen — 500 vote floor prevents truly obscure picks
-    deep_cuts = discover_movies(
-        genre_ids=genre_ids, vote_average_gte=7.2, vote_count_gte=500, vote_count_lte=10000
-    )
+    # Fetch mainstream and hidden-gem slices in parallel — each is a separate TMDB Discover call.
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        f_mainstream = pool.submit(discover_movies, genre_ids=genre_ids, vote_average_gte=6.5, vote_count_gte=1000)
+        f_deep_cuts = pool.submit(
+            discover_movies, genre_ids=genre_ids, vote_average_gte=7.2, vote_count_gte=500, vote_count_lte=10000
+        )
+        mainstream = f_mainstream.result()
+        # Hidden gems: well-regarded but not widely seen — 500 vote floor prevents truly obscure picks
+        deep_cuts = f_deep_cuts.result()
 
     for result in mainstream + deep_cuts:
         if result["id"] in seen:

@@ -763,16 +763,20 @@ def get_recommendation_history(user_id: int, limit: int = 20) -> list[dict]:
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute("""
-            SELECT rec.id, rec.recommended_at, rec.mood_context, rec.score,
-                   m.id as movie_id, m.title, m.year, m.genres, m.runtime, m.raw_tmdb,
-                   CASE WHEN r.movie_id IS NOT NULL THEN 1 ELSE 0 END as followed_through,
-                   r.letterboxd_rating as follow_up_rating
-            FROM recommendations rec
-            JOIN movies m ON m.id = rec.movie_id
-            LEFT JOIN user_ratings r
-                   ON r.user_id = rec.user_id AND r.movie_id = rec.movie_id
-            WHERE rec.user_id = %s
-            ORDER BY rec.recommended_at DESC
+            SELECT * FROM (
+                SELECT DISTINCT ON (rec.movie_id)
+                       rec.id, rec.recommended_at, rec.mood_context, rec.score,
+                       m.id as movie_id, m.title, m.year, m.genres, m.runtime, m.raw_tmdb,
+                       CASE WHEN r.movie_id IS NOT NULL THEN 1 ELSE 0 END as followed_through,
+                       r.letterboxd_rating as follow_up_rating
+                FROM recommendations rec
+                JOIN movies m ON m.id = rec.movie_id
+                LEFT JOIN user_ratings r
+                       ON r.user_id = rec.user_id AND r.movie_id = rec.movie_id
+                WHERE rec.user_id = %s
+                ORDER BY rec.movie_id, rec.recommended_at DESC
+            ) deduped
+            ORDER BY recommended_at DESC
             LIMIT %s
         """, (user_id, limit))
         rows = cur.fetchall()
