@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useSession } from "next-auth/react"
+import { authHeader } from "@/lib/api"
 
 export interface AdminUser {
   id: number
@@ -23,8 +24,7 @@ export function UserTable({ initialUsers }: { initialUsers: AdminUser[] }) {
     setDeleting(userId)
     setError(null)
     try {
-      const headers: Record<string, string> = {}
-      if (session?.user?.email) headers["X-User-Email"] = session.user.email
+      const headers = authHeader(session)
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL}/api/admin/users/${userId}`,
         { method: "DELETE", headers }

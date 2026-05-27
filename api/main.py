@@ -14,7 +14,10 @@ import tempfile
 import time
 import zipfile
 
+import datetime
+
 import anthropic
+import jwt as pyjwt
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
@@ -25,6 +28,29 @@ from pydantic import BaseModel
 load_dotenv(override=True)
 
 _anthropic_client = anthropic.Anthropic()
+
+_JWT_SECRET = os.environ.get("JWT_SECRET", "")
+_JWT_ALGORITHM = "HS256"
+_JWT_EXPIRE_DAYS = 60
+_INTERNAL_SECRET = os.environ.get("INTERNAL_SECRET", "")
+
+
+def _create_jwt(user_id: int, email: str, username: str | None) -> str:
+    payload = {
+        "sub": str(user_id),
+        "email": email,
+        "username": username or "",
+        "exp": datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=_JWT_EXPIRE_DAYS),
+        "iat": datetime.datetime.now(datetime.timezone.utc),
+    }
+    return pyjwt.encode(payload, _JWT_SECRET, algorithm=_JWT_ALGORITHM)
+
+
+def _decode_jwt(token: str) -> dict | None:
+    try:
+        return pyjwt.decode(token, _JWT_SECRET, algorithms=[_JWT_ALGORITHM])
+    except pyjwt.InvalidTokenError:
+        return None
 
 from filmprint.db import (
     init_db, get_or_create_user_by_email, update_user_username,
@@ -500,11 +526,17 @@ app.add_middleware(
 # --- auth dependencies ---
 
 async def get_current_user(request: Request) -> dict:
-    email = request.headers.get("X-User-Email")
-    if not email:
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Unauthorized")
-    user_id, username = get_or_create_user_by_email(email)
-    return {"user_id": user_id, "username": username or "", "email": email}
+    payload = _decode_jwt(auth[7:])
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    return {
+        "user_id": int(payload["sub"]),
+        "username": payload.get("username", ""),
+        "email": payload.get("email", ""),
+    }
 
 
 _ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
@@ -728,11 +760,15 @@ For each reason:
     return [p for p in ordered if p is not None]
 
 
-# --- auth endpoints (no X-User-Email required) ---
+# --- auth endpoints (no Bearer token required) ---
 
 class CredentialsPayload(BaseModel):
     email: str
     password: str
+
+
+class ExchangePayload(BaseModel):
+    email: str
 
 
 @app.post("/api/auth/register")
@@ -750,7 +786,20 @@ def verify_credentials(payload: CredentialsPayload):
     if not result:
         raise HTTPException(status_code=401, detail="Invalid email or password")
     user_id, username = result
-    return {"user_id": user_id, "email": payload.email, "username": username}
+    token = _create_jwt(user_id, payload.email, username)
+    return {"user_id": user_id, "email": payload.email, "username": username, "token": token}
+
+
+@app.post("/api/auth/exchange")
+def auth_exchange(payload: ExchangePayload, request: Request):
+    """Server-to-server endpoint for NextAuth to exchange a verified email for a backend JWT.
+    Gated by INTERNAL_SECRET so it cannot be called by end-user clients.
+    """
+    if not _INTERNAL_SECRET or request.headers.get("X-Internal-Secret") != _INTERNAL_SECRET:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    user_id, username = get_or_create_user_by_email(payload.email)
+    token = _create_jwt(user_id, payload.email, username)
+    return {"token": token, "user_id": user_id}
 
 
 # --- endpoints ---

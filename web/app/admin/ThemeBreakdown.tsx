@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useSession } from "next-auth/react"
+import { authHeader } from "@/lib/api"
 
 interface Theme {
   name: string
@@ -20,9 +21,7 @@ export function ThemeBreakdown() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
   useEffect(() => {
-    const headers: Record<string, string> = {}
-    if (session?.user?.email) headers["X-User-Email"] = session.user.email
-    fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/admin/themes/breakdown`, { headers })
+    fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/admin/themes/breakdown`, { headers: authHeader(session) })
       .then((r) => r.json())
       .then((d) => setThemes(d.themes))
       .catch(() => setThemes([]))
