@@ -4,12 +4,6 @@ import { useState } from "react"
 import { useSession } from "next-auth/react"
 import { RecommendationResults } from "@/components/RecommendationResults"
 
-interface Genre {
-  name: string
-  count: number
-  weight: number
-}
-
 interface Pick {
   id: number
   title: string
@@ -25,7 +19,7 @@ interface Pick {
 }
 
 interface Props {
-  genres: Genre[]
+  genres: string[]
 }
 
 type Tone = "light" | "dark"
@@ -139,18 +133,18 @@ export function MoodSelector({ genres }: Props) {
       {/* Genre chips */}
       {genres.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {genres.map((g, i) => (
+          {genres.map((name, i) => (
             <button
-              key={g.name}
-              onClick={() => toggleGenre(g.name)}
+              key={name}
+              onClick={() => toggleGenre(name)}
               style={{ animationDelay: `${i * 35}ms` }}
               className={`animate-fade-in-up px-4 py-2 rounded-full text-sm transition-all duration-150 border active:scale-95 ${
-                selectedGenres.includes(g.name)
+                selectedGenres.includes(name)
                   ? "bg-brand text-neutral-950 border-brand font-medium scale-105"
                   : "border-neutral-800 text-neutral-400 hover:border-neutral-600 hover:text-neutral-200"
               }`}
             >
-              {g.name}
+              {name}
             </button>
           ))}
         </div>

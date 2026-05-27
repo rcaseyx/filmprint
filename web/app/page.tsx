@@ -2,11 +2,12 @@ import { redirect } from "next/navigation"
 import { MoodSelector } from "@/components/MoodSelector"
 import { apiFetch } from "@/lib/api"
 
-interface Genre {
-  name: string
-  count: number
-  weight: number
-}
+const GENRES = [
+  "Action", "Adventure", "Animation", "Comedy", "Crime",
+  "Documentary", "Drama", "Family", "Fantasy", "History",
+  "Horror", "Music", "Mystery", "Romance", "Science Fiction",
+  "Thriller", "War", "Western",
+]
 
 async function getUserStatus() {
   try {
@@ -18,16 +19,6 @@ async function getUserStatus() {
   }
 }
 
-async function getGenres(): Promise<Genre[]> {
-  try {
-    const res = await apiFetch("/api/genres", { cache: "no-store" })
-    const data = await res.json()
-    return data.genres ?? []
-  } catch {
-    return []
-  }
-}
-
 export default async function HomePage() {
   const user = await getUserStatus()
 
@@ -35,11 +26,9 @@ export default async function HomePage() {
     redirect("/onboarding")
   }
 
-  const genres = await getGenres()
-
   return (
     <div className="max-w-2xl mx-auto px-6 py-12">
-      <MoodSelector genres={genres} />
+      <MoodSelector genres={GENRES} />
     </div>
   )
 }
