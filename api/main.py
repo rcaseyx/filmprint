@@ -64,6 +64,10 @@ _user_states: dict[int, dict[str, Any]] = {}
 # Lightweight profile-only state — no candidate discovery, used by profile/genres endpoints
 _user_profile_states: dict[int, dict[str, Any]] = {}
 
+# Cached serialized responses for expensive profile endpoints — invalidated on profile rebuild
+_profile_response_cache: dict[int, dict] = {}
+_examples_response_cache: dict[int, dict] = {}
+
 # Per-user lock so concurrent requests don't double-run _rebuild_profile_only
 import threading as _threading
 _profile_build_locks: dict[int, _threading.Lock] = {}
@@ -229,6 +233,8 @@ def _rebuild_state(user_id: int, username: str) -> None:
     _save_state_to_volume(user_id, _user_states[user_id])
     # Full state supersedes the lightweight profile-only cache
     _user_profile_states.pop(user_id, None)
+    _profile_response_cache.pop(user_id, None)
+    _examples_response_cache.pop(user_id, None)
 
 
 def _rebuild_profile_only(user_id: int, username: str) -> None:
@@ -296,6 +302,8 @@ def _rebuild_profile_only(user_id: int, username: str) -> None:
         "summary": taste_summary(profile_vec, keyword_vocab, user_subgenre_axes),
         "user_subgenre_axes": user_subgenre_axes,
     }
+    _profile_response_cache.pop(user_id, None)
+    _examples_response_cache.pop(user_id, None)
 
 
 def _get_or_build_profile(user_id: int, username: str) -> dict:
@@ -347,6 +355,12 @@ async def lifespan(app: FastAPI):
                 else:
                     _rebuild_state(uid, uname)
                     rebuilt += 1
+                # Build and cache profile response data so the first user request
+                # is served from cache rather than paying the computation cost.
+                state = _get_or_build_profile(uid, uname)
+                if state:
+                    _build_profile_response(uid, state)
+                    _build_examples_response(uid, state)
             except Exception as e:
                 failed += 1
                 print(f"[prewarm] failed for user {uid} ({uname}): {e}", flush=True)
@@ -646,13 +660,8 @@ def get_user(current_user: dict = Depends(get_current_user)):
     }
 
 
-@app.get("/api/profile")
-def get_profile(current_user: dict = Depends(get_current_user)):
-    """All data needed for the profile page in one call."""
-    user_id = current_user["user_id"]
-    username = current_user["username"]
-    state = _get_or_build_profile(user_id, username)
-
+def _build_profile_response(user_id: int, state: dict) -> dict:
+    """Compute and cache the /api/profile response from an already-built profile state."""
     profile_vec = state.get("profile_vec")
     rated_movies = state.get("rated_movies") or []
 
@@ -684,7 +693,6 @@ def get_profile(current_user: dict = Depends(get_current_user)):
     neutral = state.get("neutral", 3.0)
     director_scores: dict[str, float] = dict((state.get("affinity") or {}).get("directors", {}))
 
-    # Count how many rated films each director has
     director_counts: dict[str, int] = {}
     for movie in rated_movies:
         raw = movie.get("raw_tmdb") or movie
@@ -694,7 +702,6 @@ def get_profile(current_user: dict = Depends(get_current_user)):
                 n = p["name"]
                 director_counts[n] = director_counts.get(n, 0) + 1
 
-    # Merge Coen brothers into a single entry
     COENS = {"Joel Coen", "Ethan Coen", "Joel Coen Jr."}
     coen_scores = [director_scores[n] for n in COENS if n in director_scores]
     if len(coen_scores) > 1:
@@ -728,7 +735,7 @@ def get_profile(current_user: dict = Depends(get_current_user)):
     )
     subgenres = [s for s in all_subgenres if s["weight"] > 0][:8]
 
-    return {
+    result = {
         "ratings_count": len(ratings),
         "watchlist_count": len(state.get("watchlist_ids") or []),
         "avg_rating": avg_rating,
@@ -742,18 +749,12 @@ def get_profile(current_user: dict = Depends(get_current_user)):
         "quality_floor": round(state.get("quality_floor", 6.0) - FLOOR_TOLERANCE, 2),
         "neutral": neutral,
     }
+    _profile_response_cache[user_id] = result
+    return result
 
 
-@app.get("/api/profile/examples")
-def profile_examples(current_user: dict = Depends(get_current_user)):
-    """Return top 3 film examples per radar axis, deduplicated within each radar.
-
-    Deduplication ensures each film appears on at most one axis — so hovering
-    different points shows different posters rather than the same top-rated films.
-    """
-    user_id = current_user["user_id"]
-    username = current_user["username"]
-    state = _get_or_build_profile(user_id, username)
+def _build_examples_response(user_id: int, state: dict) -> dict:
+    """Compute and cache the /api/profile/examples response from an already-built profile state."""
     rated_movies = state.get("rated_movies") or []
     ratings = state.get("ratings") or []
 
@@ -780,7 +781,6 @@ def profile_examples(current_user: dict = Depends(get_current_user)):
             result[name] = [_serialize(m, r) for m, r in candidates[:3]]
         return result
 
-    # ── genres: top 8 by profile weight, same order as radar ─────────────────
     profile_vec = state.get("profile_vec")
     genre_weights = {GENRES[i]: float(profile_vec[i]) for i in range(len(GENRES))} if profile_vec is not None else {}
     genre_counts: dict[str, int] = {g: 0 for g in GENRES}
@@ -795,7 +795,6 @@ def profile_examples(current_user: dict = Depends(get_current_user)):
 
     genre_ex = pick_examples(top_genres, lambda name, m: name in set(_genre_names(m)))
 
-    # ── subgenres: top active axes, same list as radar ────────────────────────
     user_subgenre_axes = state.get("user_subgenre_axes") or SUBGENRE_AXES
     all_subgenres = compute_axis_scores(rated_movies, ratings, user_subgenre_axes)
     top_subgenres = [s["name"] for s in all_subgenres if s["weight"] > 0][:8]
@@ -806,7 +805,6 @@ def profile_examples(current_user: dict = Depends(get_current_user)):
 
     subgenre_ex = pick_examples(top_subgenres, subgenre_match)
 
-    # ── era: active decades (positive weight) ─────────────────────────────────
     decade_weights = {DECADES[i]: float(profile_vec[len(GENRES) + i]) for i in range(len(DECADES))} if profile_vec is not None else {}
     active_decades = [d for d in DECADES if decade_weights.get(d, 0.0) > 0]
 
@@ -820,14 +818,41 @@ def profile_examples(current_user: dict = Depends(get_current_user)):
 
     era_ex = pick_examples(active_decades, era_match)
 
-    # ── tone: all 5 axes ───────────────────────────────────────────────────────
     def tone_match(axis_name: str, m: dict) -> bool:
         kws = set(TONE_AXES.get(axis_name, []))
         return bool(_movie_keywords(m) & kws)
 
     tone_ex = pick_examples(list(TONE_AXES.keys()), tone_match)
 
-    return {"genre": genre_ex, "subgenre": subgenre_ex, "era": era_ex, "tone": tone_ex}
+    result = {"genre": genre_ex, "subgenre": subgenre_ex, "era": era_ex, "tone": tone_ex}
+    _examples_response_cache[user_id] = result
+    return result
+
+
+@app.get("/api/profile")
+def get_profile(current_user: dict = Depends(get_current_user)):
+    """All data needed for the profile page in one call."""
+    user_id = current_user["user_id"]
+    username = current_user["username"]
+    if user_id in _profile_response_cache:
+        return _profile_response_cache[user_id]
+    state = _get_or_build_profile(user_id, username)
+    return _build_profile_response(user_id, state)
+
+
+@app.get("/api/profile/examples")
+def profile_examples(current_user: dict = Depends(get_current_user)):
+    """Return top 3 film examples per radar axis, deduplicated within each radar.
+
+    Deduplication ensures each film appears on at most one axis — so hovering
+    different points shows different posters rather than the same top-rated films.
+    """
+    user_id = current_user["user_id"]
+    username = current_user["username"]
+    if user_id in _examples_response_cache:
+        return _examples_response_cache[user_id]
+    state = _get_or_build_profile(user_id, username)
+    return _build_examples_response(user_id, state)
 
 
 @app.get("/api/genres")
@@ -1302,6 +1327,9 @@ def admin_theme_breakdown(_admin: dict = Depends(get_admin_user)):
 def admin_delete_user(user_id: int, _admin: dict = Depends(get_admin_user)):
     delete_user(user_id)
     _user_states.pop(user_id, None)
+    _user_profile_states.pop(user_id, None)
+    _profile_response_cache.pop(user_id, None)
+    _examples_response_cache.pop(user_id, None)
     return {"deleted": user_id}
 
 
