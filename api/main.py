@@ -241,26 +241,35 @@ def _rebuild_profile_only(user_id: int, username: str) -> None:
     outcome_boosts = get_recommendation_boosts(user_id)
 
     rated_rows = get_user_ratings(user_id)
-    rated_movies = ensure_feature_vectors(list(rated_rows))
     ratings = [r["letterboxd_rating"] for r in rated_rows]
 
-    keyword_vocab = build_keyword_vocab(rated_movies)
-    assign_new_keywords(keyword_vocab)
-    user_subgenre_axes = build_user_subgenre_axes(keyword_vocab)
-    affinity = build_affinity_scores(rated_movies, ratings)
-
+    # Check staleness before deciding whether to call ensure_feature_vectors.
+    # build_keyword_vocab and build_affinity_scores only use raw_tmdb, not feature
+    # vectors, so we can skip the expensive TMDB fetch on the common non-stale path.
     stale = is_profile_stale(user_id, PROFILE_VERSION)
+
     if stale:
+        rated_movies = ensure_feature_vectors(list(rated_rows))
+        keyword_vocab = build_keyword_vocab(rated_movies)
+        assign_new_keywords(keyword_vocab)
+        user_subgenre_axes = build_user_subgenre_axes(keyword_vocab)
+        affinity = build_affinity_scores(rated_movies, ratings)
         profile_vec = build_taste_profile(rated_movies, ratings, keyword_vocab, affinity, outcome_boosts, user_subgenre_axes)
         clusters = build_taste_clusters(rated_movies, ratings, keyword_vocab, affinity, outcome_boosts, user_subgenre_axes)
         save_taste_profile(user_id, profile_vec.tolist(), len(ratings), PROFILE_VERSION,
                            [c.tolist() for c in clusters])
     else:
+        rated_movies = list(rated_rows)
+        keyword_vocab = build_keyword_vocab(rated_movies)
+        assign_new_keywords(keyword_vocab)
+        user_subgenre_axes = build_user_subgenre_axes(keyword_vocab)
+        affinity = build_affinity_scores(rated_movies, ratings)
         profile_data = get_taste_profile(user_id)
         profile_vec = np.array(profile_data["vector"])
         clusters = [np.array(c) for c in profile_data.get("clusters") or []]
         expected_len = 35 + len(keyword_vocab) + 2 + len(user_subgenre_axes) + len(TONE_AXES)
         if len(profile_vec) != expected_len:
+            rated_movies = ensure_feature_vectors(rated_movies)
             profile_vec = build_taste_profile(rated_movies, ratings, keyword_vocab, affinity, subgenre_axes=user_subgenre_axes)
             clusters = build_taste_clusters(rated_movies, ratings, keyword_vocab, affinity, subgenre_axes=user_subgenre_axes)
             save_taste_profile(user_id, profile_vec.tolist(), len(ratings), PROFILE_VERSION,
