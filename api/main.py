@@ -215,6 +215,9 @@ def _rebuild_state(user_id: int, username: str) -> None:
 
     stale = is_profile_stale(user_id, PROFILE_VERSION)
 
+    imdb_ids = [m.get("raw_tmdb", {}).get("imdb_id") or m.get("imdb_id") for m in rated_movies]
+    prime_score_cache([iid for iid in imdb_ids if iid])
+
     t1 = time.time()
     if stale:
         profile_vec = build_taste_profile(rated_movies, ratings, keyword_vocab, affinity, outcome_boosts, user_subgenre_axes)

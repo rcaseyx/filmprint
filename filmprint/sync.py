@@ -5,7 +5,7 @@ from rich.console import Console
 from rich.progress import track
 
 from .db import (
-    upsert_movie, upsert_rating, upsert_watchlist_entry,
+    upsert_movie, upsert_rating, batch_upsert_ratings, upsert_watchlist_entry,
     upsert_watched, get_movie,
 )
 from .letterboxd import (
@@ -48,13 +48,13 @@ def sync_ratings_csv(
     db_index: dict[tuple[str, int | None], int] | None = None,
 ) -> int:
     df = load_ratings_csv(path)
-    synced = 0
+    pending: list[tuple[int, int, float, str | None, str]] = []
     for _, row in track(df.iterrows(), description="Syncing ratings...", total=len(df)):
         tmdb_id = _ensure_movie(row["title"], row.get("year"), db_index)
         if tmdb_id:
-            upsert_rating(user_id, tmdb_id, row["rating"], row.get("date"), source="csv")
-            synced += 1
-    return synced
+            pending.append((user_id, tmdb_id, row["rating"], row.get("date"), "csv"))
+    batch_upsert_ratings(pending)
+    return len(pending)
 
 
 def sync_watchlist_csv(
