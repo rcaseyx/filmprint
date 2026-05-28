@@ -42,6 +42,12 @@ export function Header() {
       </div>
       <div className="flex items-center gap-4 text-sm">
         <span className="text-neutral-500">{session.user?.name}</span>
+        <Link
+          href="/support"
+          className="text-neutral-600 hover:text-neutral-300 transition-colors"
+        >
+          Support
+        </Link>
         <button
           onClick={() => signOut()}
           className="text-neutral-600 hover:text-neutral-300 transition-colors"
