@@ -141,6 +141,10 @@ def init_db(seed_data: dict | None = None) -> None:
         # Backfill imdb_id for existing rows from raw_tmdb JSON
         """UPDATE movies SET imdb_id = (raw_tmdb::jsonb)->>'imdb_id'
            WHERE imdb_id IS NULL AND raw_tmdb IS NOT NULL AND length(raw_tmdb) > 2""",
+        """CREATE TABLE IF NOT EXISTS beta_whitelist (
+            email      TEXT PRIMARY KEY,
+            added_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )""",
     ]
     with get_connection() as conn:
         cur = conn.cursor()
@@ -157,6 +161,44 @@ def init_db(seed_data: dict | None = None) -> None:
 
 
 # --- users ---
+
+def get_user_by_email(email: str) -> dict | None:
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, letterboxd_username FROM users WHERE email = %s", (email,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
+# --- beta whitelist ---
+
+def is_whitelisted(email: str) -> bool:
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM beta_whitelist WHERE email = lower(%s)", (email,))
+        return cur.fetchone() is not None
+
+
+def get_whitelist() -> list[str]:
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT email FROM beta_whitelist ORDER BY added_at")
+        return [row["email"] for row in cur.fetchall()]
+
+
+def add_to_whitelist(email: str) -> None:
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO beta_whitelist (email) VALUES (lower(%s)) ON CONFLICT DO NOTHING", (email,)
+        )
+
+
+def remove_from_whitelist(email: str) -> None:
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM beta_whitelist WHERE email = lower(%s)", (email,))
+
 
 def get_all_users() -> list[dict]:
     with get_connection() as conn:
