@@ -17,7 +17,7 @@ const STEPS = [
   "Reading your taste profile",
   "Scanning your watchlist",
   "Finding candidates",
-  "Asking Claude for your picks",
+  "Composing your picks",
 ]
 
 const STEP_DELAYS_MS = [5000, 11000, 17000]
@@ -28,7 +28,7 @@ const MESSAGES = [
   "Sorting the gems from the good-enough.",
   "Finding films worth the runtime.",
   "This one's worth the wait.",
-  "Claude is watching your watchlist.",
+  "Consulting the archive.",
 ]
 
 export function RecommendationLoader({ topFilms }: Props) {
