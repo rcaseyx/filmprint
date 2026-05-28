@@ -10,7 +10,8 @@ interface Film {
 }
 
 interface Props {
-  topFilms: Film[]
+  genreExamples: Record<string, Film[]>
+  selectedGenres: string[]
 }
 
 const STEPS = [
@@ -22,18 +23,38 @@ const STEPS = [
 
 const STEP_DELAYS_MS = [5000, 11000, 17000]
 
-const MESSAGES = [
-  "Good taste takes time.",
-  "Cross-referencing your 3am watchlist additions.",
-  "Sorting the gems from the good-enough.",
-  "Finding films worth the runtime.",
-  "This one's worth the wait.",
-  "Consulting the archive.",
-]
+function pickPosters(genreExamples: Record<string, Film[]>, selectedGenres: string[], count = 3): Film[] {
+  const seen = new Set<number>()
+  const result: Film[] = []
 
-export function RecommendationLoader({ topFilms }: Props) {
+  const preferred = selectedGenres
+    .flatMap((g) => [...(genreExamples[g] || [])])
+    .sort(() => Math.random() - 0.5)
+
+  for (const film of preferred) {
+    if (!seen.has(film.id) && result.length < count) {
+      seen.add(film.id)
+      result.push(film)
+    }
+  }
+
+  if (result.length < count) {
+    const all = Object.values(genreExamples).flat().sort(() => Math.random() - 0.5)
+    for (const film of all) {
+      if (!seen.has(film.id) && result.length < count) {
+        seen.add(film.id)
+        result.push(film)
+      }
+    }
+  }
+
+  return result
+}
+
+export function RecommendationLoader({ genreExamples, selectedGenres }: Props) {
+  const [posters] = useState(() => pickPosters(genreExamples, selectedGenres))
   const [step, setStep] = useState(0)
-  const [messageIdx, setMessageIdx] = useState(0)
+  const [dotCount, setDotCount] = useState(1)
 
   useEffect(() => {
     const timers = STEP_DELAYS_MS.map((delay, i) =>
@@ -44,24 +65,24 @@ export function RecommendationLoader({ topFilms }: Props) {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setMessageIdx((i) => (i + 1) % MESSAGES.length)
-    }, 4000)
+      setDotCount((n) => (n % 3) + 1)
+    }, 500)
     return () => clearInterval(interval)
   }, [])
 
   return (
     <div className="animate-fade-in flex flex-col items-center justify-center min-h-[60vh] gap-10 py-8">
-      {topFilms.length > 0 && (
+      {posters.length > 0 && (
         <div className="flex flex-col items-center gap-4">
           <div className="flex gap-3">
-            {topFilms.map((film) => (
-              <div key={film.id} className="w-[72px] h-[108px] rounded-lg overflow-hidden bg-neutral-800 shrink-0">
+            {posters.map((film) => (
+              <div key={film.id} className="w-40 h-60 rounded-lg overflow-hidden bg-neutral-800 shrink-0">
                 {film.poster_path ? (
                   <Image
-                    src={`https://image.tmdb.org/t/p/w154${film.poster_path}`}
+                    src={`https://image.tmdb.org/t/p/w200${film.poster_path}`}
                     alt={film.title}
-                    width={72}
-                    height={108}
+                    width={160}
+                    height={240}
                     className="object-cover w-full h-full opacity-80"
                   />
                 ) : null}
@@ -96,19 +117,12 @@ export function RecommendationLoader({ topFilms }: Props) {
                 )}
               </div>
               <span className={`text-sm ${done ? "text-neutral-500" : active ? "text-neutral-100" : "text-neutral-600"}`}>
-                {label}
+                {active ? `${label}${".".repeat(dotCount)}` : label}
               </span>
             </div>
           )
         })}
       </div>
-
-      <p
-        key={messageIdx}
-        className="animate-fade-in text-xs text-neutral-600 italic tracking-wide"
-      >
-        {MESSAGES[messageIdx]}
-      </p>
     </div>
   )
 }
