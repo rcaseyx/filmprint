@@ -462,7 +462,7 @@ def batch_upsert_movies(movies: list[dict]) -> None:
             INSERT INTO movies (
                 id, title, year, runtime, genres, vote_average, vote_count,
                 popularity, origin_country, language, keywords, director, "cast",
-                raw_tmdb, imdb_id, last_fetched_at
+                raw_tmdb, imdb_id
             ) VALUES %s
             ON CONFLICT(id) DO UPDATE SET
                 title           = EXCLUDED.title,
