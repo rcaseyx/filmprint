@@ -93,7 +93,7 @@ export function RecommendationLoader({ genreExamples, selectedGenres }: Props) {
         </div>
       )}
 
-      <div className="flex flex-col gap-3 w-full max-w-xs">
+      <div className="flex flex-col gap-3 w-full max-w-xs mx-auto">
         {STEPS.map((label, i) => {
           const done = i < step
           const active = i === step
