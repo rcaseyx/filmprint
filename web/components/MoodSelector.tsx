@@ -1,6 +1,5 @@
 "use client"
 
-import Image from "next/image"
 import { useEffect, useState } from "react"
 import { useSession } from "next-auth/react"
 import { authHeader } from "@/lib/api"
@@ -154,40 +153,26 @@ export function MoodSelector({ genres }: Props) {
         <h1 className="text-2xl font-semibold tracking-tight">What are you in the mood for?</h1>
         <p className="text-neutral-400 text-sm mt-1">Pick what sounds good and we'll find your best options.</p>
       </div>
-      {/* Genre tiles */}
+      {/* Genre chips — filtered to genres the user has actually rated */}
       {genres.length > 0 && (
-        <div className="grid grid-cols-3 gap-2">
-          {genres.map((name, i) => {
-            const topFilm = genreExamples[name]?.[0]
-            const selected = selectedGenres.includes(name)
-            return (
-              <button
-                key={name}
-                onClick={() => toggleGenre(name)}
-                style={{ animationDelay: `${i * 35}ms` }}
-                className={`animate-fade-in-up relative flex items-center justify-between gap-2 rounded-xl border p-3 text-left transition-all duration-150 active:scale-95 overflow-hidden ${
-                  selected
-                    ? "bg-brand border-brand"
-                    : "border-neutral-800 hover:border-neutral-600"
-                }`}
-              >
-                <span className={`text-sm font-medium leading-tight ${selected ? "text-neutral-950" : "text-neutral-300"}`}>
-                  {name}
-                </span>
-                {topFilm?.poster_path && (
-                  <div className="w-8 h-12 rounded overflow-hidden shrink-0 opacity-70">
-                    <Image
-                      src={`https://image.tmdb.org/t/p/w92${topFilm.poster_path}`}
-                      alt={topFilm.title}
-                      width={32}
-                      height={48}
-                      className="object-cover w-full h-full"
-                    />
-                  </div>
-                )}
-              </button>
-            )
-          })}
+        <div className="flex flex-wrap gap-2">
+          {(Object.keys(genreExamples).length > 0
+            ? genres.filter((name) => genreExamples[name]?.length > 0)
+            : genres
+          ).map((name, i) => (
+            <button
+              key={name}
+              onClick={() => toggleGenre(name)}
+              style={{ animationDelay: `${i * 35}ms` }}
+              className={`animate-fade-in-up px-4 py-2 rounded-full text-sm transition-all duration-150 border active:scale-95 ${
+                selectedGenres.includes(name)
+                  ? "bg-brand text-neutral-950 border-brand font-medium scale-105"
+                  : "border-neutral-800 text-neutral-400 hover:border-neutral-600 hover:text-neutral-200"
+              }`}
+            >
+              {name}
+            </button>
+          ))}
         </div>
       )}
 
