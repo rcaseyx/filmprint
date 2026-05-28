@@ -131,34 +131,27 @@ export function RecommendationResults({ picks, onReset, onRefresh, refreshing }:
 
               {/* Scores */}
               {(pick.scores.rt || pick.scores.imdb || pick.scores.metacritic) && (
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3">
                   {pick.scores.rt && (
-                    <span className="flex items-center gap-1.5 meta">
-                      <svg viewBox="0 0 18 20" className="h-4 w-auto shrink-0" aria-label="Rotten Tomatoes">
-                        <path d="M9 7.5C9 7.5 5.5 3.5 4 4.5C2.5 5.5 6 7 9 7.5Z" fill="#56A348"/>
-                        <path d="M9 7.5C9 7.5 12.5 3.5 14 4.5C15.5 5.5 12 7 9 7.5Z" fill="#56A348"/>
-                        <line x1="9" y1="7.5" x2="9" y2="11" stroke="#56A348" strokeWidth="1.8"/>
-                        <circle cx="9" cy="15" r="5.5" fill="#E8262A"/>
-                      </svg>
-                      {pick.scores.rt}
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-bold leading-none bg-[#FA320A] text-white px-1.5 py-1 rounded">RT</span>
+                      <span className="meta">{pick.scores.rt}</span>
                     </span>
                   )}
                   {pick.scores.imdb && (
-                    <span className="flex items-center gap-1.5 meta">
-                      <svg viewBox="0 0 44 18" className="h-[14px] w-auto shrink-0" aria-label="IMDb">
-                        <rect width="44" height="18" rx="2.5" fill="#F5C518"/>
-                        <text x="4" y="13.5" fontFamily="Arial Black, Arial, sans-serif" fontWeight="900" fontSize="12" fill="#000000">IMDb</text>
-                      </svg>
-                      {pick.scores.imdb}
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-bold leading-none bg-[#F5C518] text-black px-1.5 py-1 rounded">IMDb</span>
+                      <span className="meta">{pick.scores.imdb}</span>
                     </span>
                   )}
                   {pick.scores.metacritic && (
-                    <span className="flex items-center gap-1.5 meta">
-                      <svg viewBox="0 0 26 18" className="h-[14px] w-auto shrink-0" aria-label="Metacritic">
-                        <rect width="26" height="18" rx="2.5" fill="#222222"/>
-                        <text x="3.5" y="13.5" fontFamily="Arial Black, Arial, sans-serif" fontWeight="900" fontSize="12" fill="#FFFFFF">MC</text>
-                      </svg>
-                      {pick.scores.metacritic}
+                    <span className="flex items-center gap-1.5">
+                      <span className={`text-[10px] font-bold leading-none px-1.5 py-1 rounded text-white ${
+                        parseInt(pick.scores.metacritic) >= 61 ? "bg-[#54A72A]" :
+                        parseInt(pick.scores.metacritic) >= 40 ? "bg-[#FFCC34] !text-black" :
+                        "bg-[#E32400]"
+                      }`}>MC</span>
+                      <span className="meta">{pick.scores.metacritic}</span>
                     </span>
                   )}
                 </div>
