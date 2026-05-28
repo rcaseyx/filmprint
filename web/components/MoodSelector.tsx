@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import { useSession } from "next-auth/react"
 import { authHeader } from "@/lib/api"
 import { RecommendationResults } from "@/components/RecommendationResults"
@@ -35,10 +35,10 @@ const RUNTIME_OPTIONS: { label: string; sublabel: string; value: number | null }
 ]
 
 const QUADRANTS = [
-  { label: "Cozy",     tone: "light" as Tone, pacing: "slow" as Pacing, cx: "25%", cy: "28%" },
-  { label: "Moody",    tone: "dark"  as Tone, pacing: "slow" as Pacing, cx: "75%", cy: "28%" },
-  { label: "Playful",  tone: "light" as Tone, pacing: "fast" as Pacing, cx: "25%", cy: "72%" },
-  { label: "Intense",  tone: "dark"  as Tone, pacing: "fast" as Pacing, cx: "75%", cy: "72%" },
+  { label: "Cozy",    sub: "feel-good & easygoing",      tone: "light" as Tone, pacing: "slow" as Pacing },
+  { label: "Moody",   sub: "atmospheric & introspective", tone: "dark"  as Tone, pacing: "slow" as Pacing },
+  { label: "Playful", sub: "fun & lighthearted",          tone: "light" as Tone, pacing: "fast" as Pacing },
+  { label: "Intense", sub: "gripping & high-stakes",      tone: "dark"  as Tone, pacing: "fast" as Pacing },
 ]
 
 function MoodCanvas({
@@ -50,128 +50,24 @@ function MoodCanvas({
   pacing: Pacing | null
   onChange: (tone: Tone | null, pacing: Pacing | null) => void
 }) {
-  const canvasRef = useRef<HTMLDivElement>(null)
-  const [pin, setPin] = useState<{ x: number; y: number } | null>(null)
-  const dragging = useRef(false)
-
-  useEffect(() => {
-    if (!tone && !pacing) setPin(null)
-  }, [tone, pacing])
-
-  const getPos = (clientX: number, clientY: number) => {
-    if (!canvasRef.current) return null
-    const rect = canvasRef.current.getBoundingClientRect()
-    return {
-      x: Math.max(0.02, Math.min(0.98, (clientX - rect.left) / rect.width)),
-      y: Math.max(0.02, Math.min(0.98, (clientY - rect.top) / rect.height)),
-    }
-  }
-
-  const apply = (pos: { x: number; y: number }) => {
-    setPin(pos)
-    onChange(pos.x < 0.5 ? "light" : "dark", pos.y < 0.5 ? "slow" : "fast")
-  }
-
-  const onMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault()
-    dragging.current = true
-    const pos = getPos(e.clientX, e.clientY)
-    if (pos) apply(pos)
-  }
-  const onMouseMove = (e: React.MouseEvent) => {
-    if (!dragging.current) return
-    const pos = getPos(e.clientX, e.clientY)
-    if (pos) apply(pos)
-  }
-  const onMouseUp = () => { dragging.current = false }
-
-  const onTouchStart = (e: React.TouchEvent) => {
-    dragging.current = true
-    const t = e.touches[0]
-    const pos = getPos(t.clientX, t.clientY)
-    if (pos) apply(pos)
-  }
-  const onTouchMove = (e: React.TouchEvent) => {
-    e.preventDefault()
-    const t = e.touches[0]
-    const pos = getPos(t.clientX, t.clientY)
-    if (pos) apply(pos)
-  }
-  const onTouchEnd = () => { dragging.current = false }
-
-  const activeQ = pin
-    ? QUADRANTS.find((q) => q.tone === (pin.x < 0.5 ? "light" : "dark") && q.pacing === (pin.y < 0.5 ? "slow" : "fast"))
-    : null
-
   return (
-    <div className="space-y-2">
-      <div
-        ref={canvasRef}
-        className="relative w-full h-56 rounded-xl bg-neutral-950 border border-neutral-800 cursor-crosshair select-none overflow-hidden touch-none"
-        onMouseDown={onMouseDown}
-        onMouseMove={onMouseMove}
-        onMouseUp={onMouseUp}
-        onMouseLeave={onMouseUp}
-        onTouchStart={onTouchStart}
-        onTouchMove={onTouchMove}
-        onTouchEnd={onTouchEnd}
-      >
-        {/* Quadrant dividers */}
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute left-1/2 top-0 bottom-0 w-px bg-neutral-800/70" />
-          <div className="absolute top-1/2 left-0 right-0 h-px bg-neutral-800/70" />
-        </div>
-
-        {/* Axis labels */}
-        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] text-neutral-600 uppercase tracking-wider pointer-events-none">Light</span>
-        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-neutral-600 uppercase tracking-wider pointer-events-none">Dark</span>
-        <span className="absolute top-2.5 left-1/2 -translate-x-1/2 text-[10px] text-neutral-600 uppercase tracking-wider pointer-events-none">Slow</span>
-        <span className="absolute bottom-2.5 left-1/2 -translate-x-1/2 text-[10px] text-neutral-600 uppercase tracking-wider pointer-events-none">Fast</span>
-
-        {/* Quadrant labels */}
-        {QUADRANTS.map((q) => {
-          const isActive = activeQ?.label === q.label
+    <div className="grid grid-cols-2 rounded-xl border border-neutral-800 overflow-hidden">
+        {QUADRANTS.map((q, i) => {
+          const selected = q.tone === tone && q.pacing === pacing
           return (
-            <span
+            <button
               key={q.label}
-              className={`absolute text-sm font-medium pointer-events-none transition-colors duration-200 -translate-x-1/2 -translate-y-1/2 ${
-                isActive ? "text-neutral-300" : "text-neutral-700"
-              }`}
-              style={{ left: q.cx, top: q.cy }}
+              onClick={() => onChange(selected ? null : q.tone, selected ? null : q.pacing)}
+              className={`py-4 text-center transition-colors duration-150 active:scale-95
+                ${i % 2 === 1 ? "border-l border-neutral-800" : ""}
+                ${i >= 2 ? "border-t border-neutral-800" : ""}
+                ${selected ? "bg-brand" : "hover:bg-neutral-900"}`}
             >
-              {q.label}
-            </span>
+              <span className={`block text-sm font-medium ${selected ? "text-neutral-950" : "text-neutral-400"}`}>{q.label}</span>
+              <span className={`block text-xs mt-0.5 ${selected ? "text-neutral-800" : "text-neutral-600"}`}>{q.sub}</span>
+            </button>
           )
         })}
-
-        {/* Empty hint */}
-        {!pin && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <span className="text-xs text-neutral-700">Click or drag to set your vibe</span>
-          </div>
-        )}
-
-        {/* Pin */}
-        {pin && (
-          <div
-            className="absolute pointer-events-none -translate-x-1/2 -translate-y-1/2"
-            style={{ left: `${pin.x * 100}%`, top: `${pin.y * 100}%` }}
-          >
-            <div className="w-4 h-4 rounded-full bg-brand shadow-[0_0_12px_3px] shadow-brand/40" />
-          </div>
-        )}
-
-        {/* Clear button */}
-        {pin && (
-          <button
-            onClick={(e) => { e.stopPropagation(); setPin(null); onChange(null, null) }}
-            className="absolute top-2.5 right-2.5 w-5 h-5 rounded-full bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-neutral-200 flex items-center justify-center transition-colors text-xs leading-none z-10"
-            aria-label="Clear vibe"
-          >
-            ×
-          </button>
-        )}
-      </div>
     </div>
   )
 }
@@ -299,19 +195,20 @@ export function MoodSelector({ genres }: Props) {
         {/* Familiarity */}
         <div className="grid grid-cols-2 rounded-xl border border-neutral-800 overflow-hidden">
           {([
-            { label: "Crowd-pleaser", value: "familiar" as const },
-            { label: "Challenging", value: "challenging" as const },
-          ]).map(({ label, value }, i) => (
+            { label: "Crowd-pleaser", sub: "mainstream & accessible", value: "familiar" as const },
+            { label: "Challenging", sub: "bold & unconventional", value: "challenging" as const },
+          ]).map(({ label, sub, value }, i) => (
             <button
               key={value}
               onClick={() => setFamiliarity(familiarity === value ? null : value)}
-              className={`py-2.5 text-sm text-center transition-colors duration-150 ${i > 0 ? "border-l border-neutral-800" : ""} ${
+              className={`py-3 text-center transition-colors duration-150 ${i > 0 ? "border-l border-neutral-800" : ""} ${
                 familiarity === value
-                  ? "bg-brand text-neutral-950 font-medium"
-                  : "text-neutral-500 hover:text-neutral-200 hover:bg-neutral-900"
+                  ? "bg-brand"
+                  : "hover:bg-neutral-900"
               }`}
             >
-              {label}
+              <span className={`block text-sm font-medium ${familiarity === value ? "text-neutral-950" : "text-neutral-400"}`}>{label}</span>
+              <span className={`block text-xs mt-0.5 ${familiarity === value ? "text-neutral-800" : "text-neutral-600"}`}>{sub}</span>
             </button>
           ))}
         </div>
@@ -322,13 +219,14 @@ export function MoodSelector({ genres }: Props) {
             <button
               key={opt.label}
               onClick={() => setRuntime(runtime === opt.value ? "any" : opt.value)}
-              className={`py-2.5 text-sm text-center transition-colors duration-150 ${i > 0 ? "border-l border-neutral-800" : ""} ${
+              className={`py-3 text-center transition-colors duration-150 ${i > 0 ? "border-l border-neutral-800" : ""} ${
                 runtime === opt.value
-                  ? "bg-brand text-neutral-950 font-medium"
-                  : "text-neutral-500 hover:text-neutral-200 hover:bg-neutral-900"
+                  ? "bg-brand"
+                  : "hover:bg-neutral-900"
               }`}
             >
-              {opt.label}
+              <span className={`block text-sm font-medium ${runtime === opt.value ? "text-neutral-950" : "text-neutral-400"}`}>{opt.label}</span>
+              <span className={`block text-xs mt-0.5 ${runtime === opt.value ? "text-neutral-800" : "text-neutral-600"}`}>{opt.sublabel}</span>
             </button>
           ))}
         </div>
