@@ -725,14 +725,11 @@ def upsert_watched(user_id: int, movie_id: int, watched_at: str | None, source: 
 
 
 def get_seen_movie_ids(user_id: int) -> set[int]:
-    """Return all TMDB IDs the user has rated or watched — used to filter candidates."""
+    """Return all TMDB IDs the user has rated — used to filter candidates."""
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute("SELECT movie_id FROM user_ratings WHERE user_id = %s", (user_id,))
-        rated = cur.fetchall()
-        cur.execute("SELECT movie_id FROM user_watched WHERE user_id = %s", (user_id,))
-        watched = cur.fetchall()
-    return {row["movie_id"] for row in rated + watched}
+        return {row["movie_id"] for row in cur.fetchall()}
 
 
 # --- taste_profile ---
@@ -904,13 +901,6 @@ def resolve_recommendation_outcomes(user_id: int) -> None:
               AND movie_id IN (SELECT movie_id FROM user_ratings WHERE user_id = %s)
         """, (user_id, user_id, user_id, user_id))
 
-        cur.execute("""
-            UPDATE recommendations
-            SET outcome = 'watched', resolved_at = NOW()
-            WHERE user_id = %s
-              AND outcome IS NULL
-              AND movie_id IN (SELECT movie_id FROM user_watched WHERE user_id = %s)
-        """, (user_id, user_id))
 
 
 def get_recommendation_boosts(user_id: int) -> dict[int, float]:
