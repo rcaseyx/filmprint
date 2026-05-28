@@ -80,7 +80,9 @@ export function RecommendationResults({ picks, onReset, onRefresh, refreshing }:
   const topRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+    if (!topRef.current) return
+    const top = topRef.current.getBoundingClientRect().top + window.scrollY - 80
+    window.scrollTo({ top: Math.max(0, top), behavior: "smooth" })
   }, [picks])
 
   return (
@@ -129,15 +131,35 @@ export function RecommendationResults({ picks, onReset, onRefresh, refreshing }:
 
               {/* Scores */}
               {(pick.scores.rt || pick.scores.imdb || pick.scores.metacritic) && (
-                <div className="flex gap-4">
+                <div className="flex items-center gap-4">
                   {pick.scores.rt && (
-                    <span className="meta">🍅 {pick.scores.rt}</span>
+                    <span className="flex items-center gap-1.5 meta">
+                      <svg viewBox="0 0 18 20" className="h-4 w-auto shrink-0" aria-label="Rotten Tomatoes">
+                        <path d="M9 7.5C9 7.5 5.5 3.5 4 4.5C2.5 5.5 6 7 9 7.5Z" fill="#56A348"/>
+                        <path d="M9 7.5C9 7.5 12.5 3.5 14 4.5C15.5 5.5 12 7 9 7.5Z" fill="#56A348"/>
+                        <line x1="9" y1="7.5" x2="9" y2="11" stroke="#56A348" strokeWidth="1.8"/>
+                        <circle cx="9" cy="15" r="5.5" fill="#E8262A"/>
+                      </svg>
+                      {pick.scores.rt}
+                    </span>
                   )}
                   {pick.scores.imdb && (
-                    <span className="meta">IMDb {pick.scores.imdb}</span>
+                    <span className="flex items-center gap-1.5 meta">
+                      <svg viewBox="0 0 44 18" className="h-[14px] w-auto shrink-0" aria-label="IMDb">
+                        <rect width="44" height="18" rx="2.5" fill="#F5C518"/>
+                        <text x="4" y="13.5" fontFamily="Arial Black, Arial, sans-serif" fontWeight="900" fontSize="12" fill="#000000">IMDb</text>
+                      </svg>
+                      {pick.scores.imdb}
+                    </span>
                   )}
                   {pick.scores.metacritic && (
-                    <span className="meta">MC {pick.scores.metacritic}</span>
+                    <span className="flex items-center gap-1.5 meta">
+                      <svg viewBox="0 0 26 18" className="h-[14px] w-auto shrink-0" aria-label="Metacritic">
+                        <rect width="26" height="18" rx="2.5" fill="#222222"/>
+                        <text x="3.5" y="13.5" fontFamily="Arial Black, Arial, sans-serif" fontWeight="900" fontSize="12" fill="#FFFFFF">MC</text>
+                      </svg>
+                      {pick.scores.metacritic}
+                    </span>
                   )}
                 </div>
               )}
