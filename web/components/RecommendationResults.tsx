@@ -57,7 +57,7 @@ interface Props {
 function PosterImage({ path, title }: { path: string | null; title: string }) {
   const [loaded, setLoaded] = useState(false)
   return (
-    <div className="w-full h-48 sm:w-40 sm:h-60 sm:flex-shrink-0 rounded-lg overflow-hidden bg-neutral-800">
+    <div className="w-full aspect-[2/3] sm:aspect-auto sm:w-40 sm:h-60 sm:flex-shrink-0 rounded-lg overflow-hidden bg-neutral-800">
       {path ? (
         <Image
           src={`https://image.tmdb.org/t/p/w342${path}`}

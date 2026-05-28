@@ -141,7 +141,7 @@ export function ProfileContent({ profile, examples, history, username, isOwner }
           </div>
         </section>
 
-        <section className="grid grid-cols-3 gap-4">
+        <section className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
           <div className="bg-neutral-900 rounded-xl p-4 border border-neutral-800">
             <div className="text-xs text-neutral-500 uppercase tracking-wider mb-1">Critic alignment</div>
             <div className="text-sm font-semibold leading-snug">{alignmentLabel}</div>
