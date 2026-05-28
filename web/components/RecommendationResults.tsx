@@ -110,9 +110,9 @@ export function RecommendationResults({ picks, onReset, onRefresh, refreshing }:
                   <span className={`text-xs px-2 py-0.5 rounded-full border ${
                     pick.source === "watchlist"
                       ? "border-amber-800 text-brand"
-                      : "border-neutral-700 text-neutral-500"
+                      : "border-neutral-700 text-neutral-400"
                   }`}>
-                    {pick.source}
+                    {pick.source === "watchlist" ? "On your watchlist" : "New discovery"}
                   </span>
                 </div>
 

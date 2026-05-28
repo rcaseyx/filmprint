@@ -29,7 +29,7 @@ export function Header() {
   }
 
   return (
-    <header className="border-b border-neutral-800/60 px-6 h-20 flex items-center justify-between">
+    <header className="border-b border-neutral-800/60 px-6 h-16 flex items-center justify-between">
       <div className="flex items-center gap-4">
         <Link href="/">
           <PrintLogo className="h-14 w-auto" />

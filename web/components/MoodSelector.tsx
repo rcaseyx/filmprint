@@ -236,7 +236,7 @@ export function MoodSelector({ genres }: Props) {
         placeholder="e.g. something set in Japan, or a director I haven't seen before..."
         rows={2}
         style={{ animationDelay: `${chipsDuration + 100}ms` }}
-        className="animate-fade-in-up w-full bg-neutral-900/60 border border-neutral-800 rounded-xl px-4 py-3 text-sm text-neutral-100 placeholder-neutral-700 focus:outline-none focus:border-neutral-600 resize-none"
+        className="animate-fade-in-up w-full bg-neutral-900/60 border border-neutral-800 rounded-xl px-4 py-3 text-sm text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-neutral-600 resize-none"
       />
 
       {error && <p className="text-red-400 text-sm">{error}</p>}

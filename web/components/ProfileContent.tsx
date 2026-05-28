@@ -118,27 +118,34 @@ export function ProfileContent({ profile, examples, history, username, isOwner }
 
       <div className="max-w-2xl mx-auto px-6 space-y-10">
         <section>
-          <h2 className="label mb-3">Genre affinity</h2>
+          <div className="flex items-center gap-1.5 mb-3">
+            <h2 className="label">Genre affinity</h2>
+            <div className="group relative">
+              <span className="text-neutral-600 hover:text-neutral-400 cursor-default text-xs leading-none transition-colors">ⓘ</span>
+              <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-2.5 py-1.5 rounded-lg bg-neutral-800 border border-neutral-700 text-xs text-neutral-300 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150 z-10">
+                Bar = taste weight · Count = films rated
+              </div>
+            </div>
+          </div>
           <div className="space-y-2">
             {topGenres.map((g) => (
               <div key={g.name} className="flex items-center gap-3">
                 <span className="text-sm text-neutral-300 w-28 shrink-0">{g.name}</span>
-                <div className="flex-1 bg-neutral-800 rounded-full h-1.5">
+                <div className="flex-1 bg-neutral-800 rounded-full h-2">
                   <div
-                    className="bg-brand h-1.5 rounded-full genre-bar"
+                    className="bg-brand h-2 rounded-full genre-bar"
                     style={{ width: `${(g.weight / maxGenreWeight) * 100}%` }}
                   />
                 </div>
                 <span className="text-xs text-neutral-600 w-8 text-right">{g.count}</span>
               </div>
             ))}
-            <p className="text-xs text-neutral-700 mt-1">Bar = taste weight · Count = films rated</p>
           </div>
         </section>
 
         <section className="grid grid-cols-3 gap-4">
           <div className="bg-neutral-900 rounded-xl p-4 border border-neutral-800">
-            <div className="text-xs text-neutral-500 uppercase tracking-wider mb-2">Critic alignment</div>
+            <div className="text-xs text-neutral-500 uppercase tracking-wider mb-1">Critic alignment</div>
             <div className="text-sm font-semibold leading-snug">{alignmentLabel}</div>
             <div className="text-xs text-neutral-600 mt-1">{alignmentDesc}</div>
           </div>
