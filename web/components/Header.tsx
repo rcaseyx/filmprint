@@ -47,12 +47,12 @@ export function Header() {
             <Image
               src={session.user.image}
               alt="Profile"
-              width={28}
-              height={28}
+              width={36}
+              height={36}
               className="rounded-full"
             />
           ) : (
-            <div className="w-7 h-7 rounded-full bg-neutral-800 border border-neutral-700 text-neutral-300 flex items-center justify-center text-xs font-medium select-none">
+            <div className="w-9 h-9 rounded-full bg-neutral-800 border border-neutral-700 text-neutral-300 flex items-center justify-center text-xs font-medium select-none">
               {(session.user?.name || session.user?.email || "?")[0].toUpperCase()}
             </div>
           )}
