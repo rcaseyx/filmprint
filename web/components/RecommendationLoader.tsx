@@ -117,7 +117,9 @@ export function RecommendationLoader({ genreExamples, selectedGenres }: Props) {
                 )}
               </div>
               <span className={`text-sm ${done ? "text-neutral-500" : active ? "text-neutral-100" : "text-neutral-600"}`}>
-                {active ? `${label}${".".repeat(dotCount)}` : label}
+                {active ? (
+                  <>{label}<span aria-hidden="true">{".".repeat(dotCount)}<span className="invisible">{".".repeat(3 - dotCount)}</span></span></>
+                ) : label}
               </span>
             </div>
           )
