@@ -133,7 +133,7 @@ export function RecommendationLoader({ genreExamples, selectedGenres }: Props) {
               </div>
             ))}
           </div>
-          <p className="text-xs text-neutral-600 tracking-wide uppercase">Starting from your favorites</p>
+          <p className="text-sm text-neutral-400 tracking-wide uppercase">Starting from your favorites</p>
         </div>
       )}
 
