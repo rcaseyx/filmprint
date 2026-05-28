@@ -160,17 +160,18 @@ function MoodCanvas({
             <div className="w-4 h-4 rounded-full bg-brand shadow-[0_0_12px_3px] shadow-brand/40" />
           </div>
         )}
-      </div>
 
-      {/* Clear */}
-      {pin && (
-        <button
-          onClick={() => { setPin(null); onChange(null, null) }}
-          className="text-xs text-neutral-600 hover:text-neutral-400 transition-colors"
-        >
-          Clear vibe
-        </button>
-      )}
+        {/* Clear button */}
+        {pin && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setPin(null); onChange(null, null) }}
+            className="absolute top-2.5 right-2.5 w-5 h-5 rounded-full bg-neutral-800 hover:bg-neutral-700 text-neutral-400 hover:text-neutral-200 flex items-center justify-center transition-colors text-xs leading-none z-10"
+            aria-label="Clear vibe"
+          >
+            ×
+          </button>
+        )}
+      </div>
     </div>
   )
 }
@@ -296,18 +297,18 @@ export function MoodSelector({ genres }: Props) {
         />
 
         {/* Familiarity */}
-        <div className="flex gap-2">
+        <div className="grid grid-cols-2 rounded-xl border border-neutral-800 overflow-hidden">
           {([
             { label: "Crowd-pleaser", value: "familiar" as const },
             { label: "Challenging", value: "challenging" as const },
-          ]).map(({ label, value }) => (
+          ]).map(({ label, value }, i) => (
             <button
               key={value}
               onClick={() => setFamiliarity(familiarity === value ? null : value)}
-              className={`px-4 py-2 rounded-full text-sm border transition-all duration-150 active:scale-95 ${
+              className={`py-2.5 text-sm text-center transition-colors duration-150 ${i > 0 ? "border-l border-neutral-800" : ""} ${
                 familiarity === value
-                  ? "bg-brand text-neutral-950 border-brand font-medium"
-                  : "border-neutral-800 text-neutral-400 hover:border-neutral-600 hover:text-neutral-200"
+                  ? "bg-brand text-neutral-950 font-medium"
+                  : "text-neutral-500 hover:text-neutral-200 hover:bg-neutral-900"
               }`}
             >
               {label}
@@ -316,15 +317,15 @@ export function MoodSelector({ genres }: Props) {
         </div>
 
         {/* Runtime */}
-        <div className="flex gap-2">
-          {RUNTIME_OPTIONS.map((opt) => (
+        <div className="grid grid-cols-3 rounded-xl border border-neutral-800 overflow-hidden">
+          {RUNTIME_OPTIONS.map((opt, i) => (
             <button
               key={opt.label}
               onClick={() => setRuntime(runtime === opt.value ? "any" : opt.value)}
-              className={`px-4 py-2 rounded-full text-sm border transition-all duration-150 active:scale-95 ${
+              className={`py-2.5 text-sm text-center transition-colors duration-150 ${i > 0 ? "border-l border-neutral-800" : ""} ${
                 runtime === opt.value
-                  ? "bg-brand text-neutral-950 border-brand font-medium"
-                  : "border-neutral-800 text-neutral-400 hover:border-neutral-600 hover:text-neutral-200"
+                  ? "bg-brand text-neutral-950 font-medium"
+                  : "text-neutral-500 hover:text-neutral-200 hover:bg-neutral-900"
               }`}
             >
               {opt.label}
