@@ -25,9 +25,12 @@ const STEPS = [
 const STEP_DELAYS_MS = [5000, 11000, 17000]
 
 // Stagger timings for poster and overlay animations
-const POSTER_STAGGER_MS = 180
-const OVERLAY_START_MS = 700
-const OVERLAY_STAGGER_MS = 220
+const POSTER_STAGGER_MS = 280
+const POSTER_DURATION_MS = 650
+const OVERLAY_START_MS = 1400  // after last poster has settled
+const OVERLAY_DURATION_MS = 900
+const OVERLAY_STAGGER_MS = 320
+const STARS_OFFSET_MS = 500   // after each overlay starts — lets the dark bg establish first
 
 function pickPosters(genreExamples: Record<string, Film[]>, selectedGenres: string[], count = 3): Film[] {
   const seen = new Set<number>()
@@ -105,7 +108,7 @@ export function RecommendationLoader({ genreExamples, selectedGenres }: Props) {
                     className="object-cover w-full h-full animate-fade-in"
                     style={{
                       animationDelay: `${i * POSTER_STAGGER_MS}ms`,
-                      animationDuration: "400ms",
+                      animationDuration: `${POSTER_DURATION_MS}ms`,
                     }}
                   />
                 ) : null}
@@ -115,13 +118,13 @@ export function RecommendationLoader({ genreExamples, selectedGenres }: Props) {
                   className="absolute inset-0 bg-neutral-950/75 flex items-center justify-center animate-fade-in"
                   style={{
                     animationDelay: `${OVERLAY_START_MS + i * OVERLAY_STAGGER_MS}ms`,
-                    animationDuration: "500ms",
+                    animationDuration: `${OVERLAY_DURATION_MS}ms`,
                   }}
                 >
                   <div
                     className="animate-loader-stars-rise"
                     style={{
-                      animationDelay: `${OVERLAY_START_MS + 100 + i * OVERLAY_STAGGER_MS}ms`,
+                      animationDelay: `${OVERLAY_START_MS + STARS_OFFSET_MS + i * OVERLAY_STAGGER_MS}ms`,
                     }}
                   >
                     <FilmStars rating={film.rating} />
