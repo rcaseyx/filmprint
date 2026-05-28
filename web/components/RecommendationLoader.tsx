@@ -79,7 +79,7 @@ export function RecommendationLoader({ genreExamples, selectedGenres }: Props) {
               <div key={film.id} className="w-40 h-60 rounded-lg overflow-hidden bg-neutral-800 shrink-0">
                 {film.poster_path ? (
                   <Image
-                    src={`https://image.tmdb.org/t/p/w200${film.poster_path}`}
+                    src={`https://image.tmdb.org/t/p/w342${film.poster_path}`}
                     alt={film.title}
                     width={160}
                     height={240}
