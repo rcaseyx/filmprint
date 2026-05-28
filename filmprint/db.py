@@ -493,6 +493,21 @@ def update_feature_vector(tmdb_id: int, vector: list[float]) -> None:
         )
 
 
+def batch_update_feature_vectors(pairs: list[tuple[int, list[float]]]) -> None:
+    """Update feature_vector for multiple movies in a single transaction."""
+    if not pairs:
+        return
+    with get_connection() as conn:
+        cur = conn.cursor()
+        psycopg2.extras.execute_values(
+            cur,
+            """UPDATE movies SET feature_vector = data.vec
+               FROM (VALUES %s) AS data(id, vec)
+               WHERE movies.id = data.id::bigint""",
+            [(mid, json.dumps(vec)) for mid, vec in pairs],
+        )
+
+
 def batch_get_omdb_scores(imdb_ids: list[str]) -> dict[str, dict]:
     """Return cached OMDB scores for multiple movies in a single query.
 
