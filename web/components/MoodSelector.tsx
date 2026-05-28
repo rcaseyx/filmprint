@@ -148,8 +148,8 @@ export function MoodSelector({ genres }: Props) {
   const chipsDuration = Math.min(genres.length * 35 + 50, 350)
 
   return (
-    <div className="space-y-8">
-      <div className="animate-fade-in-up mb-10">
+    <div className="space-y-5">
+      <div className="animate-fade-in-up">
         <h1 className="text-2xl font-semibold tracking-tight">What are you in the mood for?</h1>
         <p className="text-neutral-400 text-sm mt-1">Pick what sounds good and we'll find your best options.</p>
       </div>
