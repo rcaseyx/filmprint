@@ -9,6 +9,7 @@ import { Header } from "@/components/Header";
 const geist = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://myfilmprint.com"),
   title: "filmprint",
   description: "Personalized movie recommendations from your Letterboxd taste",
 };
