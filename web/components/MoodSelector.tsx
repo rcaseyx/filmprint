@@ -34,31 +34,41 @@ const RUNTIME_OPTIONS: { label: string; sublabel: string; value: number | null }
   { label: "Long", sublabel: "Over 2 hours", value: null },
 ]
 
-function VibeBlock({
-  label,
-  desc,
-  selected,
-  onClick,
+const QUADRANTS = [
+  { label: "Cozy",    sub: "feel-good & easygoing",      tone: "light" as Tone, pacing: "slow" as Pacing },
+  { label: "Moody",   sub: "atmospheric & introspective", tone: "dark"  as Tone, pacing: "slow" as Pacing },
+  { label: "Playful", sub: "fun & lighthearted",          tone: "light" as Tone, pacing: "fast" as Pacing },
+  { label: "Intense", sub: "gripping & high-stakes",      tone: "dark"  as Tone, pacing: "fast" as Pacing },
+]
+
+function MoodCanvas({
+  tone,
+  pacing,
+  onChange,
 }: {
-  label: string
-  desc: string
-  selected: boolean
-  onClick: () => void
+  tone: Tone | null
+  pacing: Pacing | null
+  onChange: (tone: Tone | null, pacing: Pacing | null) => void
 }) {
   return (
-    <button
-      onClick={onClick}
-      className={`p-4 rounded-xl text-left border transition-all duration-200 ${
-        selected
-          ? "bg-brand text-neutral-950 border-brand"
-          : "border-neutral-800 hover:bg-neutral-900/60 hover:border-neutral-600"
-      }`}
-    >
-      <div className="font-medium text-sm">{label}</div>
-      <div className={`text-xs mt-1 leading-snug ${selected ? "text-neutral-700" : "text-neutral-600"}`}>
-        {desc}
-      </div>
-    </button>
+    <div className="grid grid-cols-2 rounded-xl border border-neutral-800 overflow-hidden">
+        {QUADRANTS.map((q, i) => {
+          const selected = q.tone === tone && q.pacing === pacing
+          return (
+            <button
+              key={q.label}
+              onClick={() => onChange(selected ? null : q.tone, selected ? null : q.pacing)}
+              className={`py-4 text-center transition-colors duration-150 active:scale-95
+                ${i % 2 === 1 ? "border-l border-neutral-800" : ""}
+                ${i >= 2 ? "border-t border-neutral-800" : ""}
+                ${selected ? "bg-brand" : "hover:bg-neutral-900"}`}
+            >
+              <span className={`block text-sm font-medium ${selected ? "text-neutral-950" : "text-neutral-400"}`}>{q.label}</span>
+              <span className={`block text-xs mt-0.5 ${selected ? "text-neutral-800" : "text-neutral-600"}`}>{q.sub}</span>
+            </button>
+          )
+        })}
+    </div>
   )
 }
 
@@ -153,6 +163,7 @@ export function MoodSelector({ genres }: Props) {
         <h1 className="text-2xl font-semibold tracking-tight">What are you in the mood for?</h1>
         <p className="text-neutral-400 text-sm mt-1">Pick what sounds good and we'll find your best options.</p>
       </div>
+
       {/* Genre chips */}
       {genres.length > 0 && (
         <div className="flex flex-wrap gap-2">
@@ -173,59 +184,50 @@ export function MoodSelector({ genres }: Props) {
         </div>
       )}
 
-      {/* Vibe grid */}
-      <div className="animate-fade-in-up space-y-2" style={{ animationDelay: `${chipsDuration}ms` }}>
-        <div className="grid grid-cols-2 gap-2">
-          <VibeBlock
-            label="Light"
-            desc="Feel-good, fun, easy watching"
-            selected={tone === "light"}
-            onClick={() => setTone(tone === "light" ? null : "light")}
-          />
-          <VibeBlock
-            label="Dark"
-            desc="Tense, heavy, or intense"
-            selected={tone === "dark"}
-            onClick={() => setTone(tone === "dark" ? null : "dark")}
-          />
+      {/* Mood canvas + familiarity + runtime */}
+      <div className="animate-fade-in-up space-y-3" style={{ animationDelay: `${chipsDuration}ms` }}>
+        <MoodCanvas
+          tone={tone}
+          pacing={pacing}
+          onChange={(t, p) => { setTone(t); setPacing(p) }}
+        />
+
+        {/* Familiarity */}
+        <div className="grid grid-cols-2 rounded-xl border border-neutral-800 overflow-hidden">
+          {([
+            { label: "Crowd-pleaser", sub: "mainstream & accessible", value: "familiar" as const },
+            { label: "Challenging", sub: "bold & unconventional", value: "challenging" as const },
+          ]).map(({ label, sub, value }, i) => (
+            <button
+              key={value}
+              onClick={() => setFamiliarity(familiarity === value ? null : value)}
+              className={`py-3 text-center transition-colors duration-150 ${i > 0 ? "border-l border-neutral-800" : ""} ${
+                familiarity === value
+                  ? "bg-brand"
+                  : "hover:bg-neutral-900"
+              }`}
+            >
+              <span className={`block text-sm font-medium ${familiarity === value ? "text-neutral-950" : "text-neutral-400"}`}>{label}</span>
+              <span className={`block text-xs mt-0.5 ${familiarity === value ? "text-neutral-800" : "text-neutral-600"}`}>{sub}</span>
+            </button>
+          ))}
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          <VibeBlock
-            label="Slow-burn"
-            desc="Patient, layered, atmospheric"
-            selected={pacing === "slow"}
-            onClick={() => setPacing(pacing === "slow" ? null : "slow")}
-          />
-          <VibeBlock
-            label="Fast-paced"
-            desc="Kinetic, plot-driven, propulsive"
-            selected={pacing === "fast"}
-            onClick={() => setPacing(pacing === "fast" ? null : "fast")}
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <VibeBlock
-            label="Crowd-pleaser"
-            desc="Accessible, broadly appealing"
-            selected={familiarity === "familiar"}
-            onClick={() => setFamiliarity(familiarity === "familiar" ? null : "familiar")}
-          />
-          <VibeBlock
-            label="Challenging"
-            desc="Unconventional, bold, demanding"
-            selected={familiarity === "challenging"}
-            onClick={() => setFamiliarity(familiarity === "challenging" ? null : "challenging")}
-          />
-        </div>
-        <div className="grid grid-cols-3 gap-2">
-          {RUNTIME_OPTIONS.map((opt) => (
-            <VibeBlock
+
+        {/* Runtime */}
+        <div className="grid grid-cols-3 rounded-xl border border-neutral-800 overflow-hidden">
+          {RUNTIME_OPTIONS.map((opt, i) => (
+            <button
               key={opt.label}
-              label={opt.label}
-              desc={opt.sublabel}
-              selected={runtime === opt.value}
               onClick={() => setRuntime(runtime === opt.value ? "any" : opt.value)}
-            />
+              className={`py-3 text-center transition-colors duration-150 ${i > 0 ? "border-l border-neutral-800" : ""} ${
+                runtime === opt.value
+                  ? "bg-brand"
+                  : "hover:bg-neutral-900"
+              }`}
+            >
+              <span className={`block text-sm font-medium ${runtime === opt.value ? "text-neutral-950" : "text-neutral-400"}`}>{opt.label}</span>
+              <span className={`block text-xs mt-0.5 ${runtime === opt.value ? "text-neutral-800" : "text-neutral-600"}`}>{opt.sublabel}</span>
+            </button>
           ))}
         </div>
       </div>
@@ -248,15 +250,7 @@ export function MoodSelector({ genres }: Props) {
         style={{ animationDelay: `${chipsDuration + 180}ms` }}
         className="animate-fade-in-up btn-primary w-full py-3 text-sm"
       >
-        {loading ? (
-          <span className="flex items-center justify-center gap-2">
-            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-            Finding your picks…
-          </span>
-        ) : "Find my picks"}
+        Find my picks
       </button>
     </div>
   )
