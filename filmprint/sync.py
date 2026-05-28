@@ -18,9 +18,17 @@ from .tmdb import enrich_movie
 console = Console()
 
 
-def _ensure_movie(title: str, year: int | None) -> int | None:
+def _ensure_movie(
+    title: str,
+    year: int | None,
+    db_index: dict[tuple[str, int | None], int] | None = None,
+) -> int | None:
     """Fetch movie from DB or TMDB. Returns TMDB id or None if not found."""
     from .tmdb import search_movie
+    if db_index is not None:
+        tmdb_id = db_index.get((title.lower(), year))
+        if tmdb_id is not None:
+            return tmdb_id
     match = search_movie(title, year)
     if not match:
         return None
@@ -29,36 +37,50 @@ def _ensure_movie(title: str, year: int | None) -> int | None:
         enriched = enrich_movie(title, year)
         if enriched:
             upsert_movie(enriched)
+    if db_index is not None:
+        db_index[(title.lower(), year)] = tmdb_id
     return tmdb_id
 
 
-def sync_ratings_csv(user_id: int, path: str) -> int:
+def sync_ratings_csv(
+    user_id: int,
+    path: str,
+    db_index: dict[tuple[str, int | None], int] | None = None,
+) -> int:
     df = load_ratings_csv(path)
     synced = 0
     for _, row in track(df.iterrows(), description="Syncing ratings...", total=len(df)):
-        tmdb_id = _ensure_movie(row["title"], row.get("year"))
+        tmdb_id = _ensure_movie(row["title"], row.get("year"), db_index)
         if tmdb_id:
             upsert_rating(user_id, tmdb_id, row["rating"], row.get("date"), source="csv")
             synced += 1
     return synced
 
 
-def sync_watchlist_csv(user_id: int, path: str) -> int:
+def sync_watchlist_csv(
+    user_id: int,
+    path: str,
+    db_index: dict[tuple[str, int | None], int] | None = None,
+) -> int:
     df = load_watchlist_csv(path)
     synced = 0
     for _, row in track(df.iterrows(), description="Syncing watchlist...", total=len(df)):
-        tmdb_id = _ensure_movie(row["title"], row.get("year"))
+        tmdb_id = _ensure_movie(row["title"], row.get("year"), db_index)
         if tmdb_id:
             upsert_watchlist_entry(user_id, tmdb_id)
             synced += 1
     return synced
 
 
-def sync_watched_csv(user_id: int, path: str) -> int:
+def sync_watched_csv(
+    user_id: int,
+    path: str,
+    db_index: dict[tuple[str, int | None], int] | None = None,
+) -> int:
     df = load_watched_csv(path)
     synced = 0
     for _, row in track(df.iterrows(), description="Syncing watched...", total=len(df)):
-        tmdb_id = _ensure_movie(row["title"], row.get("year"))
+        tmdb_id = _ensure_movie(row["title"], row.get("year"), db_index)
         if tmdb_id:
             upsert_watched(user_id, tmdb_id, row.get("Date"), source="csv")
             synced += 1

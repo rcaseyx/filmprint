@@ -617,6 +617,14 @@ def get_movies_by_ids(ids: list[int]) -> dict[int, dict]:
     return result
 
 
+def get_movie_title_year_index() -> dict[tuple[str, int | None], int]:
+    """Return {(title_lower, year): tmdb_id} for all movies in the DB."""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, title, year FROM movies")
+        return {(row["title"].lower(), row["year"]): row["id"] for row in cur.fetchall()}
+
+
 def get_all_movies_with_vectors() -> list[dict]:
     with get_connection() as conn:
         cur = conn.cursor()
