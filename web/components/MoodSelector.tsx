@@ -153,13 +153,10 @@ export function MoodSelector({ genres }: Props) {
         <h1 className="text-2xl font-semibold tracking-tight">What are you in the mood for?</h1>
         <p className="text-neutral-400 text-sm mt-1">Pick what sounds good and we'll find your best options.</p>
       </div>
-      {/* Genre chips — filtered to genres the user has actually rated */}
+      {/* Genre chips */}
       {genres.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {(Object.keys(genreExamples).length > 0
-            ? genres.filter((name) => genreExamples[name]?.length > 0)
-            : genres
-          ).map((name, i) => (
+          {genres.map((name, i) => (
             <button
               key={name}
               onClick={() => toggleGenre(name)}
