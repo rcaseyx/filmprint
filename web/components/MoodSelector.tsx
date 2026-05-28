@@ -1,9 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useSession } from "next-auth/react"
 import { authHeader } from "@/lib/api"
 import { RecommendationResults } from "@/components/RecommendationResults"
+import { RecommendationLoader } from "@/components/RecommendationLoader"
 
 interface Pick {
   id: number
@@ -61,6 +62,12 @@ function VibeBlock({
   )
 }
 
+interface TopFilm {
+  id: number
+  title: string
+  poster_path: string | null
+}
+
 export function MoodSelector({ genres }: Props) {
   const { data: session } = useSession()
   const [selectedGenres, setSelectedGenres] = useState<string[]>([])
@@ -72,6 +79,31 @@ export function MoodSelector({ genres }: Props) {
   const [loading, setLoading] = useState(false)
   const [picks, setPicks] = useState<Pick[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [topFilms, setTopFilms] = useState<TopFilm[]>([])
+
+  useEffect(() => {
+    if (!session) return
+    fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/profile/examples`, {
+      headers: authHeader(session),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        const seen = new Set<number>()
+        const films: TopFilm[] = []
+        for (const bucket of Object.values(data.genre as Record<string, TopFilm[]>)) {
+          for (const film of bucket) {
+            if (!seen.has(film.id)) {
+              seen.add(film.id)
+              films.push(film)
+            }
+            if (films.length === 3) break
+          }
+          if (films.length === 3) break
+        }
+        setTopFilms(films)
+      })
+      .catch(() => {})
+  }, [session])
 
   const toggleGenre = (name: string) => {
     setSelectedGenres((prev) =>
@@ -116,6 +148,10 @@ export function MoodSelector({ genres }: Props) {
     setRuntime("any")
     setFreeText("")
     setError(null)
+  }
+
+  if (loading) {
+    return <RecommendationLoader topFilms={topFilms} />
   }
 
   if (picks) {
