@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useSession } from "next-auth/react"
 import { authHeader } from "@/lib/api"
 import { RecommendationResults } from "@/components/RecommendationResults"
@@ -34,31 +34,144 @@ const RUNTIME_OPTIONS: { label: string; sublabel: string; value: number | null }
   { label: "Long", sublabel: "Over 2 hours", value: null },
 ]
 
-function VibeBlock({
-  label,
-  desc,
-  selected,
-  onClick,
+const QUADRANTS = [
+  { label: "Cozy",     tone: "light" as Tone, pacing: "slow" as Pacing, cx: "25%", cy: "28%" },
+  { label: "Moody",    tone: "dark"  as Tone, pacing: "slow" as Pacing, cx: "75%", cy: "28%" },
+  { label: "Playful",  tone: "light" as Tone, pacing: "fast" as Pacing, cx: "25%", cy: "72%" },
+  { label: "Intense",  tone: "dark"  as Tone, pacing: "fast" as Pacing, cx: "75%", cy: "72%" },
+]
+
+function MoodCanvas({
+  tone,
+  pacing,
+  onChange,
 }: {
-  label: string
-  desc: string
-  selected: boolean
-  onClick: () => void
+  tone: Tone | null
+  pacing: Pacing | null
+  onChange: (tone: Tone | null, pacing: Pacing | null) => void
 }) {
+  const canvasRef = useRef<HTMLDivElement>(null)
+  const [pin, setPin] = useState<{ x: number; y: number } | null>(null)
+  const dragging = useRef(false)
+
+  useEffect(() => {
+    if (!tone && !pacing) setPin(null)
+  }, [tone, pacing])
+
+  const getPos = (clientX: number, clientY: number) => {
+    if (!canvasRef.current) return null
+    const rect = canvasRef.current.getBoundingClientRect()
+    return {
+      x: Math.max(0.02, Math.min(0.98, (clientX - rect.left) / rect.width)),
+      y: Math.max(0.02, Math.min(0.98, (clientY - rect.top) / rect.height)),
+    }
+  }
+
+  const apply = (pos: { x: number; y: number }) => {
+    setPin(pos)
+    onChange(pos.x < 0.5 ? "light" : "dark", pos.y < 0.5 ? "slow" : "fast")
+  }
+
+  const onMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault()
+    dragging.current = true
+    const pos = getPos(e.clientX, e.clientY)
+    if (pos) apply(pos)
+  }
+  const onMouseMove = (e: React.MouseEvent) => {
+    if (!dragging.current) return
+    const pos = getPos(e.clientX, e.clientY)
+    if (pos) apply(pos)
+  }
+  const onMouseUp = () => { dragging.current = false }
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    dragging.current = true
+    const t = e.touches[0]
+    const pos = getPos(t.clientX, t.clientY)
+    if (pos) apply(pos)
+  }
+  const onTouchMove = (e: React.TouchEvent) => {
+    e.preventDefault()
+    const t = e.touches[0]
+    const pos = getPos(t.clientX, t.clientY)
+    if (pos) apply(pos)
+  }
+  const onTouchEnd = () => { dragging.current = false }
+
+  const activeQ = pin
+    ? QUADRANTS.find((q) => q.tone === (pin.x < 0.5 ? "light" : "dark") && q.pacing === (pin.y < 0.5 ? "slow" : "fast"))
+    : null
+
   return (
-    <button
-      onClick={onClick}
-      className={`p-4 rounded-xl text-left border transition-all duration-200 ${
-        selected
-          ? "bg-brand text-neutral-950 border-brand"
-          : "border-neutral-800 hover:bg-neutral-900/60 hover:border-neutral-600"
-      }`}
-    >
-      <div className="font-medium text-sm">{label}</div>
-      <div className={`text-xs mt-1 leading-snug ${selected ? "text-neutral-700" : "text-neutral-600"}`}>
-        {desc}
+    <div className="space-y-2">
+      <div
+        ref={canvasRef}
+        className="relative w-full h-56 rounded-xl bg-neutral-950 border border-neutral-800 cursor-crosshair select-none overflow-hidden touch-none"
+        onMouseDown={onMouseDown}
+        onMouseMove={onMouseMove}
+        onMouseUp={onMouseUp}
+        onMouseLeave={onMouseUp}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+      >
+        {/* Quadrant dividers */}
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute left-1/2 top-0 bottom-0 w-px bg-neutral-800/70" />
+          <div className="absolute top-1/2 left-0 right-0 h-px bg-neutral-800/70" />
+        </div>
+
+        {/* Axis labels */}
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] text-neutral-600 uppercase tracking-wider pointer-events-none">Light</span>
+        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-neutral-600 uppercase tracking-wider pointer-events-none">Dark</span>
+        <span className="absolute top-2.5 left-1/2 -translate-x-1/2 text-[10px] text-neutral-600 uppercase tracking-wider pointer-events-none">Slow</span>
+        <span className="absolute bottom-2.5 left-1/2 -translate-x-1/2 text-[10px] text-neutral-600 uppercase tracking-wider pointer-events-none">Fast</span>
+
+        {/* Quadrant labels */}
+        {QUADRANTS.map((q) => {
+          const isActive = activeQ?.label === q.label
+          return (
+            <span
+              key={q.label}
+              className={`absolute text-sm font-medium pointer-events-none transition-colors duration-200 -translate-x-1/2 -translate-y-1/2 ${
+                isActive ? "text-neutral-300" : "text-neutral-700"
+              }`}
+              style={{ left: q.cx, top: q.cy }}
+            >
+              {q.label}
+            </span>
+          )
+        })}
+
+        {/* Empty hint */}
+        {!pin && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <span className="text-xs text-neutral-700">Click or drag to set your vibe</span>
+          </div>
+        )}
+
+        {/* Pin */}
+        {pin && (
+          <div
+            className="absolute pointer-events-none -translate-x-1/2 -translate-y-1/2"
+            style={{ left: `${pin.x * 100}%`, top: `${pin.y * 100}%` }}
+          >
+            <div className="w-4 h-4 rounded-full bg-brand shadow-[0_0_12px_3px] shadow-brand/40" />
+          </div>
+        )}
       </div>
-    </button>
+
+      {/* Clear */}
+      {pin && (
+        <button
+          onClick={() => { setPin(null); onChange(null, null) }}
+          className="text-xs text-neutral-600 hover:text-neutral-400 transition-colors"
+        >
+          Clear vibe
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -153,6 +266,7 @@ export function MoodSelector({ genres }: Props) {
         <h1 className="text-2xl font-semibold tracking-tight">What are you in the mood for?</h1>
         <p className="text-neutral-400 text-sm mt-1">Pick what sounds good and we'll find your best options.</p>
       </div>
+
       {/* Genre chips */}
       {genres.length > 0 && (
         <div className="flex flex-wrap gap-2">
@@ -173,59 +287,48 @@ export function MoodSelector({ genres }: Props) {
         </div>
       )}
 
-      {/* Vibe grid */}
-      <div className="animate-fade-in-up space-y-2" style={{ animationDelay: `${chipsDuration}ms` }}>
-        <div className="grid grid-cols-2 gap-2">
-          <VibeBlock
-            label="Light"
-            desc="Feel-good, fun, easy watching"
-            selected={tone === "light"}
-            onClick={() => setTone(tone === "light" ? null : "light")}
-          />
-          <VibeBlock
-            label="Dark"
-            desc="Tense, heavy, or intense"
-            selected={tone === "dark"}
-            onClick={() => setTone(tone === "dark" ? null : "dark")}
-          />
+      {/* Mood canvas + familiarity + runtime */}
+      <div className="animate-fade-in-up space-y-3" style={{ animationDelay: `${chipsDuration}ms` }}>
+        <MoodCanvas
+          tone={tone}
+          pacing={pacing}
+          onChange={(t, p) => { setTone(t); setPacing(p) }}
+        />
+
+        {/* Familiarity */}
+        <div className="flex gap-2">
+          {([
+            { label: "Crowd-pleaser", value: "familiar" as const },
+            { label: "Challenging", value: "challenging" as const },
+          ]).map(({ label, value }) => (
+            <button
+              key={value}
+              onClick={() => setFamiliarity(familiarity === value ? null : value)}
+              className={`px-4 py-2 rounded-full text-sm border transition-all duration-150 active:scale-95 ${
+                familiarity === value
+                  ? "bg-brand text-neutral-950 border-brand font-medium"
+                  : "border-neutral-800 text-neutral-400 hover:border-neutral-600 hover:text-neutral-200"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          <VibeBlock
-            label="Slow-burn"
-            desc="Patient, layered, atmospheric"
-            selected={pacing === "slow"}
-            onClick={() => setPacing(pacing === "slow" ? null : "slow")}
-          />
-          <VibeBlock
-            label="Fast-paced"
-            desc="Kinetic, plot-driven, propulsive"
-            selected={pacing === "fast"}
-            onClick={() => setPacing(pacing === "fast" ? null : "fast")}
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <VibeBlock
-            label="Crowd-pleaser"
-            desc="Accessible, broadly appealing"
-            selected={familiarity === "familiar"}
-            onClick={() => setFamiliarity(familiarity === "familiar" ? null : "familiar")}
-          />
-          <VibeBlock
-            label="Challenging"
-            desc="Unconventional, bold, demanding"
-            selected={familiarity === "challenging"}
-            onClick={() => setFamiliarity(familiarity === "challenging" ? null : "challenging")}
-          />
-        </div>
-        <div className="grid grid-cols-3 gap-2">
+
+        {/* Runtime */}
+        <div className="flex gap-2">
           {RUNTIME_OPTIONS.map((opt) => (
-            <VibeBlock
+            <button
               key={opt.label}
-              label={opt.label}
-              desc={opt.sublabel}
-              selected={runtime === opt.value}
               onClick={() => setRuntime(runtime === opt.value ? "any" : opt.value)}
-            />
+              className={`px-4 py-2 rounded-full text-sm border transition-all duration-150 active:scale-95 ${
+                runtime === opt.value
+                  ? "bg-brand text-neutral-950 border-brand font-medium"
+                  : "border-neutral-800 text-neutral-400 hover:border-neutral-600 hover:text-neutral-200"
+              }`}
+            >
+              {opt.label}
+            </button>
           ))}
         </div>
       </div>
@@ -248,15 +351,7 @@ export function MoodSelector({ genres }: Props) {
         style={{ animationDelay: `${chipsDuration + 180}ms` }}
         className="animate-fade-in-up btn-primary w-full py-3 text-sm"
       >
-        {loading ? (
-          <span className="flex items-center justify-center gap-2">
-            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-            Finding your picks…
-          </span>
-        ) : "Find my picks"}
+        Find my picks
       </button>
     </div>
   )
