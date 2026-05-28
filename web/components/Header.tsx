@@ -3,12 +3,14 @@
 import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { useState } from "react"
 import { useSession, signOut } from "next-auth/react"
 import { PrintLogo } from "./PrintLogo"
 
 export function Header() {
   const { data: session } = useSession()
   const pathname = usePathname()
+  const [menuOpen, setMenuOpen] = useState(false)
 
   if (!session) return null
 
@@ -69,6 +71,36 @@ export function Header() {
         >
           Sign out
         </button>
+
+        {/* Mobile hamburger */}
+        <div className="relative sm:hidden">
+          <button
+            onClick={() => setMenuOpen((v) => !v)}
+            className="flex flex-col justify-center items-center w-8 h-8 gap-1.5"
+            aria-label="Menu"
+          >
+            <span className={`block w-5 h-px bg-neutral-400 transition-transform duration-200 ${menuOpen ? "rotate-45 translate-y-[7px]" : ""}`} />
+            <span className={`block w-5 h-px bg-neutral-400 transition-opacity duration-200 ${menuOpen ? "opacity-0" : ""}`} />
+            <span className={`block w-5 h-px bg-neutral-400 transition-transform duration-200 ${menuOpen ? "-rotate-45 -translate-y-[7px]" : ""}`} />
+          </button>
+          {menuOpen && (
+            <div className="absolute right-0 top-full mt-2 w-40 bg-neutral-900 border border-neutral-800 rounded-xl shadow-xl overflow-hidden z-50">
+              <Link
+                href="/support"
+                onClick={() => setMenuOpen(false)}
+                className="block px-4 py-3 text-sm text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800 transition-colors"
+              >
+                Support
+              </Link>
+              <button
+                onClick={() => { setMenuOpen(false); signOut() }}
+                className="w-full text-left px-4 py-3 text-sm text-neutral-400 hover:text-neutral-100 hover:bg-neutral-800 transition-colors"
+              >
+                Sign out
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   )

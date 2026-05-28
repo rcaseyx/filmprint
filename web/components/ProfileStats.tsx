@@ -41,7 +41,7 @@ export function ProfileStats({ ratings, watchlist, avgRating }: Props) {
   const avgRatingValue = useCountUp(avgRating, 1600, 1)
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+    <div className="grid grid-cols-3 gap-4">
       <div className="bg-neutral-900 rounded-xl p-4 text-center border border-neutral-800">
         <div className="text-3xl font-semibold tabular-nums">{ratingsCount}</div>
         <div className="text-xs text-neutral-500 mt-1 uppercase tracking-wider">Ratings</div>

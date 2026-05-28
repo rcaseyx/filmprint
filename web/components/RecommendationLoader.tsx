@@ -92,8 +92,8 @@ export function RecommendationLoader({ genreExamples, selectedGenres }: Props) {
   return (
     <div className="animate-fade-in flex flex-col items-center justify-center min-h-[60vh] gap-10 py-8">
       {posters.length > 0 && (
-        <div className="flex flex-col items-center gap-4">
-          <div className="flex gap-3 overflow-x-auto snap-x snap-mandatory scrollbar-hide sm:overflow-visible w-full sm:w-auto justify-start sm:justify-center px-6 sm:px-0 -mx-6 sm:mx-0">
+        <div className="flex flex-col items-center gap-4 w-full sm:w-auto">
+          <div className="w-full overflow-x-auto snap-x snap-mandatory scrollbar-hide sm:overflow-visible flex gap-3 sm:justify-center px-6 sm:px-0">
             {posters.map((film, i) => (
               <div
                 key={film.id}
