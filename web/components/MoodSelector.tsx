@@ -66,6 +66,7 @@ interface TopFilm {
   id: number
   title: string
   poster_path: string | null
+  rating: number
 }
 
 export function MoodSelector({ genres }: Props) {

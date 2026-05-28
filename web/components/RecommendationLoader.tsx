@@ -7,6 +7,7 @@ interface Film {
   id: number
   title: string
   poster_path: string | null
+  rating: number
 }
 
 interface Props {
@@ -22,6 +23,11 @@ const STEPS = [
 ]
 
 const STEP_DELAYS_MS = [5000, 11000, 17000]
+
+// Stagger timings for poster and overlay animations
+const POSTER_STAGGER_MS = 180
+const OVERLAY_START_MS = 700
+const OVERLAY_STAGGER_MS = 220
 
 function pickPosters(genreExamples: Record<string, Film[]>, selectedGenres: string[], count = 3): Film[] {
   const seen = new Set<number>()
@@ -51,6 +57,16 @@ function pickPosters(genreExamples: Record<string, Film[]>, selectedGenres: stri
   return result
 }
 
+function FilmStars({ rating }: { rating: number }) {
+  const full = Math.floor(rating)
+  const half = rating % 1 >= 0.5
+  return (
+    <span className="text-brand text-xl tracking-wide select-none">
+      {"★".repeat(full)}{half ? "½" : ""}
+    </span>
+  )
+}
+
 export function RecommendationLoader({ genreExamples, selectedGenres }: Props) {
   const [posters] = useState(() => pickPosters(genreExamples, selectedGenres))
   const [step, setStep] = useState(0)
@@ -75,17 +91,42 @@ export function RecommendationLoader({ genreExamples, selectedGenres }: Props) {
       {posters.length > 0 && (
         <div className="flex flex-col items-center gap-4">
           <div className="flex gap-3">
-            {posters.map((film) => (
-              <div key={film.id} className="w-40 h-60 rounded-lg overflow-hidden bg-neutral-800 shrink-0">
+            {posters.map((film, i) => (
+              <div
+                key={film.id}
+                className="relative w-40 h-60 rounded-lg overflow-hidden bg-neutral-800 shrink-0"
+              >
                 {film.poster_path ? (
                   <Image
                     src={`https://image.tmdb.org/t/p/w342${film.poster_path}`}
                     alt={film.title}
                     width={160}
                     height={240}
-                    className="object-cover w-full h-full opacity-80"
+                    className="object-cover w-full h-full animate-fade-in"
+                    style={{
+                      animationDelay: `${i * POSTER_STAGGER_MS}ms`,
+                      animationDuration: "400ms",
+                    }}
                   />
                 ) : null}
+
+                {/* Rating overlay */}
+                <div
+                  className="absolute inset-0 bg-neutral-950/75 flex items-center justify-center animate-fade-in"
+                  style={{
+                    animationDelay: `${OVERLAY_START_MS + i * OVERLAY_STAGGER_MS}ms`,
+                    animationDuration: "500ms",
+                  }}
+                >
+                  <div
+                    className="animate-loader-stars-rise"
+                    style={{
+                      animationDelay: `${OVERLAY_START_MS + 100 + i * OVERLAY_STAGGER_MS}ms`,
+                    }}
+                  >
+                    <FilmStars rating={film.rating} />
+                  </div>
+                </div>
               </div>
             ))}
           </div>
