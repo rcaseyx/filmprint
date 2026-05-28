@@ -106,7 +106,7 @@ export function ProfileContent({ profile, examples, history, username, isOwner }
         />
       </div>
 
-      <div className="max-w-2xl mx-auto px-6 w-full">
+      <div className="max-w-2xl mx-auto px-6 space-y-6">
         <RadarSection
           genres={topGenres}
           subgenres={profile.subgenres}
@@ -114,9 +114,7 @@ export function ProfileContent({ profile, examples, history, username, isOwner }
           tone={profile.tone}
           examples={examples}
         />
-      </div>
-
-      <div className="max-w-2xl mx-auto px-6 space-y-10">
+        <div className="space-y-10">
         <section>
           <div className="flex items-center gap-1.5 mb-3">
             <h2 className="label">Genre affinity</h2>
@@ -169,6 +167,7 @@ export function ProfileContent({ profile, examples, history, username, isOwner }
             </div>
           </section>
         )}
+        </div>
       </div>
     </div>
   )
