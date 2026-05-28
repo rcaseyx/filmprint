@@ -200,8 +200,12 @@ def _rebuild_state(user_id: int, username: str) -> None:
     outcome_boosts = get_recommendation_boosts(user_id)
 
     rated_rows = get_user_ratings(user_id)
-    rated_movies = ensure_feature_vectors(list(rated_rows))
     ratings = [r["letterboxd_rating"] for r in rated_rows]
+    print(f"[rebuild_state] user {user_id}: {len(rated_rows)} ratings loaded", flush=True)
+
+    t1 = time.time()
+    rated_movies = ensure_feature_vectors(list(rated_rows), label="rebuild_state/rated")
+    print(f"[rebuild_state] rated movies vectorized in {time.time()-t1:.1f}s", flush=True)
 
     keyword_vocab = build_keyword_vocab(rated_movies)
     assign_new_keywords(keyword_vocab)
@@ -210,6 +214,7 @@ def _rebuild_state(user_id: int, username: str) -> None:
 
     stale = is_profile_stale(user_id, PROFILE_VERSION)
 
+    t1 = time.time()
     if stale:
         profile_vec = build_taste_profile(rated_movies, ratings, keyword_vocab, affinity, outcome_boosts, user_subgenre_axes)
         clusters = build_taste_clusters(rated_movies, ratings, keyword_vocab, affinity, outcome_boosts, user_subgenre_axes)
@@ -226,9 +231,10 @@ def _rebuild_state(user_id: int, username: str) -> None:
             clusters = build_taste_clusters(rated_movies, ratings, keyword_vocab, affinity, subgenre_axes=user_subgenre_axes)
             save_taste_profile(user_id, profile_vec.tolist(), len(ratings), PROFILE_VERSION,
                                [c.tolist() for c in clusters])
+    print(f"[rebuild_state] profile built in {time.time()-t1:.1f}s (stale={stale})", flush=True)
 
     seen_ids = get_seen_movie_ids(user_id)
-    watchlist = ensure_feature_vectors(get_user_watchlist(user_id))
+    watchlist = ensure_feature_vectors(get_user_watchlist(user_id), label="rebuild_state/watchlist")
     watchlist_ids = {m["id"] for m in watchlist}
 
     if stale:
@@ -244,7 +250,7 @@ def _rebuild_state(user_id: int, username: str) -> None:
         t1 = time.time()
         batch_upsert_movies(discovered_raw)
         print(f"[rebuild_state] batch upserted {len(discovered_raw)} movies in {time.time()-t1:.1f}s", flush=True)
-        discovered = ensure_feature_vectors([{**d, "raw_tmdb": d} for d in discovered_raw])
+        discovered = ensure_feature_vectors([{**d, "raw_tmdb": d} for d in discovered_raw], label="rebuild_state/discovered")
     else:
         discovered = get_candidate_movies(seen_ids | watchlist_ids)
 
@@ -264,7 +270,9 @@ def _rebuild_state(user_id: int, username: str) -> None:
     imdb_ids = [(m.get("raw_tmdb") or m).get("imdb_id") for m in all_candidates]
     prime_score_cache([iid for iid in imdb_ids if iid])
 
+    t1 = time.time()
     ranked = rank_watchlist(profile_vec, all_candidates, keyword_vocab, affinity, user_subgenre_axes)
+    print(f"[rebuild_state] ranked {len(ranked)} candidates in {time.time()-t1:.1f}s", flush=True)
 
     _user_states[user_id] = {
         "user_id": user_id,
@@ -1204,8 +1212,11 @@ def sync(current_user: dict = Depends(get_current_user)):
     ratings_before = len(state.get("ratings") or [])
     watchlist_before = len(state.get("watchlist_ids") or [])
 
+    t0 = time.time()
+    print(f"[sync] user {user_id} ({username}): starting", flush=True)
     sync_scrape(user_id, username)
     sync_rss(user_id, username)
+    print(f"[sync] user {user_id}: scrape+rss done in {time.time()-t0:.1f}s", flush=True)
     _rebuild_state(user_id, username)
 
     new_state = _user_states.get(user_id, {})
@@ -1243,12 +1254,15 @@ async def import_csv(
     ratings_before = len(state.get("ratings") or [])
     watchlist_before = len(state.get("watchlist_ids") or [])
 
+    is_zip = bool(file.filename and file.filename.endswith(".zip"))
     content = await file.read()
+    print(f"[import] user {user_id} ({active_username}): starting ({'zip' if is_zip else 'csv'}, {len(content)} bytes)", flush=True)
 
+    t0 = time.time()
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
 
-        if file.filename and file.filename.endswith(".zip"):
+        if is_zip:
             zip_path = tmp_path / "export.zip"
             zip_path.write_bytes(content)
             with zipfile.ZipFile(zip_path) as zf:
@@ -1270,6 +1284,7 @@ async def import_csv(
         if watched_csv:
             sync_watched_csv(user_id, str(watched_csv))
 
+    print(f"[import] user {user_id}: csv ingestion done in {time.time()-t0:.1f}s (ratings={'yes' if ratings_csv else 'no'}, watchlist={'yes' if watchlist_csv else 'no'}, watched={'yes' if watched_csv else 'no'})", flush=True)
     _rebuild_state(user_id, active_username)
 
     new_state = _user_states.get(user_id, {})
