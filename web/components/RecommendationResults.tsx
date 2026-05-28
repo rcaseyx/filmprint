@@ -57,7 +57,7 @@ interface Props {
 function PosterImage({ path, title }: { path: string | null; title: string }) {
   const [loaded, setLoaded] = useState(false)
   return (
-    <div className="flex-shrink-0 w-40 h-60 rounded-lg overflow-hidden bg-neutral-800">
+    <div className="w-full h-48 sm:w-40 sm:h-60 sm:flex-shrink-0 rounded-lg overflow-hidden bg-neutral-800">
       {path ? (
         <Image
           src={`https://image.tmdb.org/t/p/w342${path}`}
@@ -97,7 +97,7 @@ export function RecommendationResults({ picks, onReset, onRefresh, refreshing }:
             target="_blank"
             rel="noopener noreferrer"
             style={{ animationDelay: `${index * 80}ms` }}
-            className="animate-fade-in-up flex gap-5 bg-neutral-900/50 border border-neutral-800/70 rounded-xl p-4 hover:-translate-y-0.5 hover:border-brand/40 hover:bg-neutral-900/80 hover:shadow-lg hover:shadow-amber-900/20 transition-[transform,border-color,background-color,box-shadow] duration-200 cursor-pointer"
+            className="animate-fade-in-up flex flex-col sm:flex-row gap-4 sm:gap-5 bg-neutral-900/50 border border-neutral-800/70 rounded-xl p-4 hover:-translate-y-0.5 hover:border-brand/40 hover:bg-neutral-900/80 hover:shadow-lg hover:shadow-amber-900/20 transition-[transform,border-color,background-color,box-shadow] duration-200 cursor-pointer"
           >
             {/* Poster */}
             <PosterImage path={pick.poster_path} title={pick.title} />

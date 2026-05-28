@@ -4,6 +4,17 @@
   --color-brand: #fbbf24; /* change here to retheme the whole app */
 }
 
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #262626 25%, #303030 50%, #262626 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+
 :root {
   --brand: var(--color-brand);
 }

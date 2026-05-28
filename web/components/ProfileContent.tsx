@@ -141,21 +141,27 @@ export function ProfileContent({ profile, examples, history, username, isOwner }
           </div>
         </section>
 
-        <section className="grid grid-cols-3 gap-4">
-          <div className="bg-neutral-900 rounded-xl p-4 border border-neutral-800">
-            <div className="text-xs text-neutral-500 uppercase tracking-wider mb-1">Critic alignment</div>
-            <div className="text-sm font-semibold leading-snug">{alignmentLabel}</div>
-            <div className="text-xs text-neutral-600 mt-1">{alignmentDesc}</div>
+        <section className="rounded-xl border border-neutral-800 divide-y divide-neutral-800 overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3">
+            <div>
+              <div className="text-xs text-neutral-500 uppercase tracking-wider">Critic alignment</div>
+              <div className="text-sm font-semibold mt-0.5">{alignmentLabel}</div>
+            </div>
+            <div className="text-xs text-neutral-500 text-right">{alignmentDesc}</div>
           </div>
-          <div className="bg-neutral-900 rounded-xl p-4 border border-neutral-800">
-            <div className="text-xs text-neutral-500 uppercase tracking-wider mb-1">Quality floor</div>
+          <div className="flex items-center justify-between px-4 py-3">
+            <div>
+              <div className="text-xs text-neutral-500 uppercase tracking-wider">Quality floor</div>
+              <div className="text-xs text-neutral-600 mt-0.5">Min IMDb score for candidates</div>
+            </div>
             <div className="text-xl font-semibold">{profile.quality_floor.toFixed(1)}</div>
-            <div className="text-xs text-neutral-600 mt-0.5">Min IMDb for candidates</div>
           </div>
-          <div className="bg-neutral-900 rounded-xl p-4 border border-neutral-800">
-            <div className="text-xs text-neutral-500 uppercase tracking-wider mb-1">{isOwner ? "Your neutral" : "Their neutral"}</div>
+          <div className="flex items-center justify-between px-4 py-3">
+            <div>
+              <div className="text-xs text-neutral-500 uppercase tracking-wider">{isOwner ? "Your neutral" : "Their neutral"}</div>
+              <div className="text-xs text-neutral-600 mt-0.5">Calibrated from ratings</div>
+            </div>
             <div className="text-xl font-semibold text-brand">{profile.neutral.toFixed(1)}★</div>
-            <div className="text-xs text-neutral-600 mt-0.5">Calibrated from your ratings</div>
           </div>
         </section>
 
