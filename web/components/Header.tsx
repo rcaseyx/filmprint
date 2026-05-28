@@ -59,21 +59,8 @@ export function Header() {
             </div>
           )}
         </Link>
-        <Link
-          href="/support"
-          className="hidden sm:inline text-neutral-600 hover:text-neutral-300 transition-colors"
-        >
-          Support
-        </Link>
-        <button
-          onClick={() => signOut()}
-          className="hidden sm:inline text-neutral-600 hover:text-neutral-300 transition-colors"
-        >
-          Sign out
-        </button>
-
-        {/* Mobile hamburger */}
-        <div className="relative sm:hidden">
+        {/* Hamburger menu */}
+        <div className="relative">
           <button
             onClick={() => setMenuOpen((v) => !v)}
             className="flex flex-col justify-center items-center w-8 h-8 gap-1.5"
