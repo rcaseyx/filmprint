@@ -43,15 +43,15 @@ export function ProfileStats({ ratings, watchlist, avgRating }: Props) {
   return (
     <div className="grid grid-cols-3 gap-4">
       <div className="bg-neutral-900 rounded-xl p-4 text-center border border-neutral-800">
-        <div className="text-2xl font-semibold tabular-nums">{ratingsCount}</div>
+        <div className="text-3xl font-semibold tabular-nums">{ratingsCount}</div>
         <div className="text-xs text-neutral-500 mt-1 uppercase tracking-wider">Ratings</div>
       </div>
       <div className="bg-neutral-900 rounded-xl p-4 text-center border border-neutral-800">
-        <div className="text-2xl font-semibold tabular-nums">{watchlistCount}</div>
+        <div className="text-3xl font-semibold tabular-nums">{watchlistCount}</div>
         <div className="text-xs text-neutral-500 mt-1 uppercase tracking-wider">Watchlist</div>
       </div>
       <div className="bg-neutral-900 rounded-xl p-4 text-center border border-neutral-800">
-        <div className="text-2xl font-semibold tabular-nums text-brand">{avgRatingValue.toFixed(1)}★</div>
+        <div className="text-3xl font-semibold tabular-nums text-brand">{avgRatingValue.toFixed(1)}★</div>
         <div className="text-xs text-neutral-500 mt-1 uppercase tracking-wider">Avg rating</div>
       </div>
     </div>

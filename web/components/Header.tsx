@@ -1,5 +1,6 @@
 "use client"
 
+import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useSession, signOut } from "next-auth/react"
@@ -41,7 +42,21 @@ export function Header() {
         </nav>
       </div>
       <div className="flex items-center gap-4 text-sm">
-        <span className="text-neutral-500">{session.user?.name}</span>
+        <Link href="/profile" className="shrink-0">
+          {session.user?.image ? (
+            <Image
+              src={session.user.image}
+              alt="Profile"
+              width={36}
+              height={36}
+              className="rounded-full"
+            />
+          ) : (
+            <div className="w-9 h-9 rounded-full bg-neutral-800 border border-neutral-700 text-neutral-300 flex items-center justify-center text-xs font-medium select-none">
+              {(session.user?.name || session.user?.email || "?")[0].toUpperCase()}
+            </div>
+          )}
+        </Link>
         <Link
           href="/support"
           className="text-neutral-600 hover:text-neutral-300 transition-colors"
