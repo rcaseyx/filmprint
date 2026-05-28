@@ -79,7 +79,7 @@ from filmprint.discovery import expand_candidates, discover_by_mood
 from filmprint.app import ensure_feature_vectors
 from filmprint.tmdb import get_watch_providers, CACHE_DIR as _TMDB_CACHE_DIR
 from filmprint.omdb import get_scores, prime_score_cache
-from filmprint.sync import sync_ratings_csv, sync_watchlist_csv, sync_watched_csv, sync_rss, sync_scrape
+from filmprint.sync import sync_ratings_csv, sync_watchlist_csv, sync_rss, sync_scrape
 from filmprint.letterboxd import validate_username
 from filmprint.themes import assign_new_keywords, build_user_subgenre_axes, backfill_catalog_keywords, build_clusters, claude_cleanup_themes
 import requests as _requests
@@ -251,7 +251,11 @@ def _rebuild_state(user_id: int, username: str) -> None:
         t1 = time.time()
         batch_upsert_movies(discovered_raw)
         print(f"[rebuild_state] batch upserted {len(discovered_raw)} movies in {time.time()-t1:.1f}s", flush=True)
-        discovered = ensure_feature_vectors([{**d, "raw_tmdb": d} for d in discovered_raw], label="rebuild_state/discovered")
+        stored = get_movies_by_ids([d["id"] for d in discovered_raw])
+        discovered = ensure_feature_vectors(
+            [{**d, "raw_tmdb": d, "feature_vector": stored.get(d["id"], {}).get("feature_vector")} for d in discovered_raw],
+            label="rebuild_state/discovered",
+        )
     else:
         discovered = get_candidate_movies(seen_ids | watchlist_ids)
 
@@ -1273,20 +1277,17 @@ async def import_csv(
 
         ratings_csv = next(tmp_path.rglob("ratings.csv"), None)
         watchlist_csv = next(tmp_path.rglob("watchlist.csv"), None)
-        watched_csv = next(tmp_path.rglob("watched.csv"), None)
 
-        if not any([ratings_csv, watchlist_csv, watched_csv]):
-            raise HTTPException(status_code=422, detail="No ratings.csv, watchlist.csv, or watched.csv found in upload")
+        if not any([ratings_csv, watchlist_csv]):
+            raise HTTPException(status_code=422, detail="No ratings.csv or watchlist.csv found in upload")
 
         db_index = get_movie_title_year_index()
         if ratings_csv:
             sync_ratings_csv(user_id, str(ratings_csv), db_index)
         if watchlist_csv:
             sync_watchlist_csv(user_id, str(watchlist_csv), db_index)
-        if watched_csv:
-            sync_watched_csv(user_id, str(watched_csv), db_index)
 
-    print(f"[import] user {user_id}: csv ingestion done in {time.time()-t0:.1f}s (ratings={'yes' if ratings_csv else 'no'}, watchlist={'yes' if watchlist_csv else 'no'}, watched={'yes' if watched_csv else 'no'})", flush=True)
+    print(f"[import] user {user_id}: csv ingestion done in {time.time()-t0:.1f}s (ratings={'yes' if ratings_csv else 'no'}, watchlist={'yes' if watchlist_csv else 'no'})", flush=True)
     _rebuild_state(user_id, active_username)
 
     new_state = _user_states.get(user_id, {})
