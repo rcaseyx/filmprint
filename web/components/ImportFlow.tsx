@@ -66,6 +66,7 @@ export function ImportFlow({ isOnboarding, needsUsername }: Props) {
   }
 
   const selectFile = (file: File) => {
+    if (status === "uploading") return
     if (isOnboarding) {
       setPendingFile(file)
       setError(null)
@@ -149,10 +150,12 @@ export function ImportFlow({ isOnboarding, needsUsername }: Props) {
               onDragLeave={() => setDragging(false)}
               onDrop={onDrop}
               onClick={() => inputRef.current?.click()}
-              className={`relative flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-10 cursor-pointer transition-colors ${
-                dragging
-                  ? "border-neutral-400 bg-neutral-800"
-                  : "border-neutral-700 hover:border-neutral-500"
+              className={`relative flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-10 transition-colors ${
+                status === "uploading"
+                  ? "border-neutral-700 cursor-default pointer-events-none"
+                  : dragging
+                  ? "border-neutral-400 bg-neutral-800 cursor-pointer"
+                  : "border-neutral-700 hover:border-neutral-500 cursor-pointer"
               }`}
             >
               <span className="text-2xl">📦</span>
