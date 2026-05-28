@@ -75,8 +75,12 @@ export function RecommendationLoader({ genreExamples, selectedGenres }: Props) {
       {posters.length > 0 && (
         <div className="flex flex-col items-center gap-4">
           <div className="flex gap-3">
-            {posters.map((film) => (
-              <div key={film.id} className="w-40 h-60 rounded-lg overflow-hidden bg-neutral-800 shrink-0">
+            {posters.map((film, i) => (
+              <div
+                key={film.id}
+                style={{ animationDelay: `${i * 150}ms` }}
+                className="animate-fade-in-up w-40 h-60 rounded-lg overflow-hidden bg-neutral-800 shrink-0"
+              >
                 {film.poster_path ? (
                   <Image
                     src={`https://image.tmdb.org/t/p/w200${film.poster_path}`}
