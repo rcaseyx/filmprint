@@ -134,23 +134,38 @@ export function RecommendationResults({ picks, onReset, onRefresh, refreshing }:
                 <div className="flex items-center gap-3">
                   {pick.scores.rt && (
                     <span className="flex items-center gap-1.5">
-                      <span className="text-[10px] font-bold leading-none bg-[#FA320A] text-white px-1.5 py-1 rounded">RT</span>
+                      <span className="group relative cursor-default">
+                        <span className="text-[10px] font-bold leading-none bg-[#FA320A] text-white px-1.5 py-1 rounded">RT</span>
+                        <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 px-2 py-1 rounded-lg bg-neutral-800 border border-neutral-700 text-xs text-neutral-300 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150 z-10">
+                          Rotten Tomatoes
+                        </span>
+                      </span>
                       <span className="meta">{pick.scores.rt}</span>
                     </span>
                   )}
                   {pick.scores.imdb && (
                     <span className="flex items-center gap-1.5">
-                      <span className="text-[10px] font-bold leading-none bg-[#F5C518] text-black px-1.5 py-1 rounded">IMDb</span>
+                      <span className="group relative cursor-default">
+                        <span className="text-[10px] font-bold leading-none bg-[#F5C518] text-black px-1.5 py-1 rounded">IMDb</span>
+                        <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 px-2 py-1 rounded-lg bg-neutral-800 border border-neutral-700 text-xs text-neutral-300 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150 z-10">
+                          IMDb
+                        </span>
+                      </span>
                       <span className="meta">{pick.scores.imdb}</span>
                     </span>
                   )}
                   {pick.scores.metacritic && (
                     <span className="flex items-center gap-1.5">
-                      <span className={`text-[10px] font-bold leading-none px-1.5 py-1 rounded text-white ${
-                        parseInt(pick.scores.metacritic) >= 61 ? "bg-[#54A72A]" :
-                        parseInt(pick.scores.metacritic) >= 40 ? "bg-[#FFCC34] !text-black" :
-                        "bg-[#E32400]"
-                      }`}>MC</span>
+                      <span className="group relative cursor-default">
+                        <span className={`text-[10px] font-bold leading-none px-1.5 py-1 rounded text-white ${
+                          parseInt(pick.scores.metacritic) >= 61 ? "bg-[#54A72A]" :
+                          parseInt(pick.scores.metacritic) >= 40 ? "bg-[#FFCC34] !text-black" :
+                          "bg-[#E32400]"
+                        }`}>MC</span>
+                        <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 px-2 py-1 rounded-lg bg-neutral-800 border border-neutral-700 text-xs text-neutral-300 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150 z-10">
+                          Metacritic
+                        </span>
+                      </span>
                       <span className="meta">{pick.scores.metacritic}</span>
                     </span>
                   )}
