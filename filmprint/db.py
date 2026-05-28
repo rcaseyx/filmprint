@@ -654,6 +654,22 @@ def upsert_rating(user_id: int, movie_id: int, rating: float, rated_at: str | No
         """, (user_id, movie_id, rating, rated_at, source))
 
 
+def batch_upsert_ratings(rows: list[tuple[int, int, float, str | None, str]]) -> None:
+    """Upsert multiple ratings in a single transaction. Each row: (user_id, movie_id, rating, rated_at, source)."""
+    if not rows:
+        return
+    with get_connection() as conn:
+        cur = conn.cursor()
+        psycopg2.extras.execute_values(cur, """
+            INSERT INTO user_ratings (user_id, movie_id, letterboxd_rating, rated_at, source)
+            VALUES %s
+            ON CONFLICT(user_id, movie_id) DO UPDATE SET
+                letterboxd_rating = EXCLUDED.letterboxd_rating,
+                rated_at          = COALESCE(EXCLUDED.rated_at, user_ratings.rated_at),
+                source            = EXCLUDED.source
+        """, rows)
+
+
 def get_user_ratings(user_id: int) -> list[dict]:
     with get_connection() as conn:
         cur = conn.cursor()
