@@ -30,18 +30,18 @@ export function Header() {
   }
 
   return (
-    <header className="border-b border-neutral-800/60 px-6 h-16 flex items-center justify-between">
-      <div className="flex items-center gap-4">
+    <header className="border-b border-neutral-800/60 px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between">
+      <div className="flex items-center gap-3 sm:gap-4">
         <Link href="/">
-          <PrintLogo className="h-14 w-auto" />
+          <PrintLogo className="h-10 sm:h-14 w-auto" />
         </Link>
-        <nav className="flex items-center gap-5">
+        <nav className="flex items-center gap-3 sm:gap-5">
           {navLink("/", "Picks")}
           {navLink("/profile", "Profile")}
           {navLink("/search", "People")}
         </nav>
       </div>
-      <div className="flex items-center gap-4 text-sm">
+      <div className="flex items-center gap-3 sm:gap-4 text-sm">
         <Link href="/profile" className="shrink-0">
           {session.user?.image ? (
             <Image
@@ -59,13 +59,13 @@ export function Header() {
         </Link>
         <Link
           href="/support"
-          className="text-neutral-600 hover:text-neutral-300 transition-colors"
+          className="hidden sm:inline text-neutral-600 hover:text-neutral-300 transition-colors"
         >
           Support
         </Link>
         <button
           onClick={() => signOut()}
-          className="text-neutral-600 hover:text-neutral-300 transition-colors"
+          className="hidden sm:inline text-neutral-600 hover:text-neutral-300 transition-colors"
         >
           Sign out
         </button>

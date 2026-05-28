@@ -47,7 +47,7 @@ export function SyncButton() {
         >
           {status === "syncing" ? "Syncing..." : "Sync my data"}
         </button>
-        <a href="/import" className="btn-secondary px-4 py-2 text-sm text-center">
+        <a href="/import" className="hidden sm:block btn-secondary px-4 py-2 text-sm text-center">
           Re-import data
         </a>
       </div>

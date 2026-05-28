@@ -64,8 +64,10 @@ export function GenreRadar({ data, label = "", initialExamples = {} }: Props) {
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!containerRef.current) return
     const rect = containerRef.current.getBoundingClientRect()
+    const TOOLTIP_W = 224 // maxWidth 14rem
+    const rawX = e.clientX - rect.left + 14
     setTooltipPos({
-      x: e.clientX - rect.left + 14,
+      x: Math.max(0, Math.min(rawX, rect.width - TOOLTIP_W)),
       y: e.clientY - rect.top,
       flipDown: e.clientY < 230,
     })
