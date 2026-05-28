@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useSession } from "next-auth/react"
 import { authHeader } from "@/lib/api"
@@ -19,6 +19,13 @@ interface Props {
   needsUsername?: boolean
 }
 
+const IMPORT_STEPS = [
+  "Reading your export",
+  "Enriching films against TMDB",
+  "Updating your taste profile",
+]
+const STEP_DELAYS_MS = [4000, 12000]
+
 export function ImportFlow({ isOnboarding, needsUsername }: Props) {
   const router = useRouter()
   const { data: session } = useSession()
@@ -29,6 +36,25 @@ export function ImportFlow({ isOnboarding, needsUsername }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const [username, setUsername] = useState("")
+  const [step, setStep] = useState(0)
+  const [dotCount, setDotCount] = useState(1)
+
+  useEffect(() => {
+    if (status !== "uploading") return
+    setStep(0)
+    const timers = STEP_DELAYS_MS.map((delay, i) =>
+      setTimeout(() => setStep(i + 1), delay)
+    )
+    return () => timers.forEach(clearTimeout)
+  }, [status])
+
+  useEffect(() => {
+    if (status !== "uploading") return
+    const interval = setInterval(() => {
+      setDotCount((n) => (n % 3) + 1)
+    }, 500)
+    return () => clearInterval(interval)
+  }, [status])
 
   const upload = async (file: File) => {
     setStatus("uploading")
@@ -98,15 +124,45 @@ export function ImportFlow({ isOnboarding, needsUsername }: Props) {
     if (file) selectFile(file)
   }
 
-  // Onboarding: building profile spinner
+  const importSteps = (
+    <div className="flex flex-col gap-3 py-2">
+      {IMPORT_STEPS.map((label, i) => {
+        const done = i < step
+        const active = i === step
+        return (
+          <div
+            key={label}
+            className={`flex items-center gap-3 transition-opacity duration-500 ${
+              i > step ? "opacity-25" : "opacity-100"
+            }`}
+          >
+            <div className="w-5 h-5 shrink-0 flex items-center justify-center">
+              {done ? (
+                <svg viewBox="0 0 20 20" fill="none" className="w-5 h-5">
+                  <circle cx="10" cy="10" r="9" stroke="rgb(251 191 36)" strokeWidth="1.5" />
+                  <path d="M6 10l3 3 5-5" stroke="rgb(251 191 36)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              ) : active ? (
+                <span className="w-2 h-2 rounded-full bg-brand animate-pulse mx-auto block" />
+              ) : (
+                <span className="w-2 h-2 rounded-full border border-neutral-700 mx-auto block" />
+              )}
+            </div>
+            <span className={`text-sm ${done ? "text-neutral-500" : active ? "text-neutral-100" : "text-neutral-600"}`}>
+              {active ? `${label}${".".repeat(dotCount)}` : label}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
+
+  // Onboarding: step-based loading view
   if (isOnboarding && status === "uploading") {
     return (
-      <div className="flex flex-col items-center gap-5 py-12">
-        <div className="h-10 w-10 rounded-full border-2 border-neutral-700 border-t-brand animate-spin" />
-        <div className="text-center space-y-1">
-          <p className="text-sm text-neutral-300">Building your taste profile…</p>
-          <p className="text-xs text-neutral-500">This may take a minute — enriching your films against TMDB</p>
-        </div>
+      <div className="space-y-3 py-4">
+        <p className="text-sm text-neutral-400">Building your taste profile…</p>
+        {importSteps}
       </div>
     )
   }
@@ -131,7 +187,9 @@ export function ImportFlow({ isOnboarding, needsUsername }: Props) {
 
       {status !== "done" && (
         <>
-          {status === "file_selected" && pendingFile ? (
+          {status === "uploading" ? (
+            importSteps
+          ) : status === "file_selected" && pendingFile ? (
             <div className="flex items-center justify-between rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-3">
               <div className="flex items-center gap-3 min-w-0">
                 <span className="text-base">📦</span>
@@ -151,26 +209,18 @@ export function ImportFlow({ isOnboarding, needsUsername }: Props) {
               onDrop={onDrop}
               onClick={() => inputRef.current?.click()}
               className={`relative flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-10 transition-colors ${
-                status === "uploading"
-                  ? "border-neutral-700 cursor-default pointer-events-none"
-                  : dragging
+                dragging
                   ? "border-neutral-400 bg-neutral-800 cursor-pointer"
                   : "border-neutral-700 hover:border-neutral-500 cursor-pointer"
               }`}
             >
               <span className="text-2xl">📦</span>
               <span className="text-sm text-neutral-300">
-                {status === "uploading" ? "Importing…" : "Drop your Letterboxd zip here, or click to choose"}
+                Drop your Letterboxd zip here, or click to choose
               </span>
-              {status === "uploading" ? (
-                <span className="text-xs text-neutral-500">
-                  This may take a minute — enriching films against TMDB
-                </span>
-              ) : (
-                <span className="text-xs text-neutral-600">
-                  Accepts the .zip from Letterboxd&rsquo;s data export
-                </span>
-              )}
+              <span className="text-xs text-neutral-600">
+                Accepts the .zip from Letterboxd&rsquo;s data export
+              </span>
             </div>
           )}
 
