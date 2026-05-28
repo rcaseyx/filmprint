@@ -64,6 +64,8 @@ from filmprint.db import (
     get_ratings_count, get_all_users_with_stats, delete_user,
     get_all_keyword_themes_full, get_candidate_movies,
     compute_ratings_hash, get_movies_by_ids,
+    get_user_by_email,
+    is_whitelisted, get_whitelist, add_to_whitelist, remove_from_whitelist,
 )
 from filmprint.features import (
     build_feature_vector, taste_summary, build_keyword_vocab,
@@ -773,6 +775,8 @@ class ExchangePayload(BaseModel):
 
 @app.post("/api/auth/register")
 def register(payload: CredentialsPayload):
+    if not is_whitelisted(payload.email):
+        raise HTTPException(status_code=403, detail="You're not on the beta list")
     try:
         user_id = create_user_with_password(payload.email, payload.password)
     except ValueError as e:
@@ -797,6 +801,9 @@ def auth_exchange(payload: ExchangePayload, request: Request):
     """
     if not _INTERNAL_SECRET or request.headers.get("X-Internal-Secret") != _INTERNAL_SECRET:
         raise HTTPException(status_code=403, detail="Forbidden")
+    existing = get_user_by_email(payload.email)
+    if not existing and not is_whitelisted(payload.email):
+        raise HTTPException(status_code=403, detail="You're not on the beta list")
     user_id, username = get_or_create_user_by_email(payload.email)
     token = _create_jwt(user_id, payload.email, username)
     return {"token": token, "user_id": user_id}
@@ -1503,6 +1510,26 @@ def admin_theme_breakdown(_admin: dict = Depends(get_admin_user)):
         )
     }
 
+
+
+@app.get("/api/admin/whitelist")
+def admin_get_whitelist(_admin: dict = Depends(get_admin_user)):
+    return {"emails": get_whitelist()}
+
+
+@app.post("/api/admin/whitelist")
+def admin_add_to_whitelist(payload: dict, _admin: dict = Depends(get_admin_user)):
+    email = payload.get("email", "").strip()
+    if not email:
+        raise HTTPException(status_code=400, detail="email required")
+    add_to_whitelist(email)
+    return {"added": email}
+
+
+@app.delete("/api/admin/whitelist/{email}")
+def admin_remove_from_whitelist(email: str, _admin: dict = Depends(get_admin_user)):
+    remove_from_whitelist(email)
+    return {"removed": email}
 
 
 @app.delete("/api/admin/users/{user_id}")
