@@ -44,7 +44,7 @@ export function RecentRatings({ ratings }: Props) {
           <div className="w-[104px] h-[156px] rounded-lg overflow-hidden bg-neutral-800 mb-2">
             {film.poster_path ? (
               <Image
-                src={`https://image.tmdb.org/t/p/w185${film.poster_path}`}
+                src={`https://image.tmdb.org/t/p/w342${film.poster_path}`}
                 alt={film.title}
                 width={104}
                 height={156}

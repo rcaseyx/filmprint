@@ -60,7 +60,7 @@ function PosterImage({ path, title }: { path: string | null; title: string }) {
     <div className="flex-shrink-0 w-40 h-60 rounded-lg overflow-hidden bg-neutral-800">
       {path ? (
         <Image
-          src={`https://image.tmdb.org/t/p/w200${path}`}
+          src={`https://image.tmdb.org/t/p/w342${path}`}
           alt={title}
           width={160}
           height={240}

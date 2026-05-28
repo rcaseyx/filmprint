@@ -93,7 +93,7 @@ export function GenreRadar({ data, label = "", initialExamples = {} }: Props) {
                 <div className="w-[64px] h-[96px] rounded overflow-hidden bg-neutral-800 shrink-0">
                   {ex.poster_path ? (
                     <Image
-                      src={`https://image.tmdb.org/t/p/w92${ex.poster_path}`}
+                      src={`https://image.tmdb.org/t/p/w185${ex.poster_path}`}
                       alt={ex.title}
                       width={64}
                       height={96}

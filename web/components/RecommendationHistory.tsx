@@ -62,7 +62,7 @@ export function RecommendationHistory({ history }: Props) {
           <div className="relative w-[104px] h-[156px] rounded-lg overflow-hidden bg-neutral-800 mb-2">
             {entry.poster_path ? (
               <Image
-                src={`https://image.tmdb.org/t/p/w185${entry.poster_path}`}
+                src={`https://image.tmdb.org/t/p/w342${entry.poster_path}`}
                 alt={entry.title}
                 width={104}
                 height={156}
