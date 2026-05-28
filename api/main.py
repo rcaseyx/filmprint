@@ -66,6 +66,7 @@ from filmprint.db import (
     compute_ratings_hash, get_movies_by_ids,
     get_user_by_email,
     is_whitelisted, get_whitelist, add_to_whitelist, remove_from_whitelist,
+    get_movie_title_year_index,
 )
 from filmprint.features import (
     build_feature_vector, taste_summary, build_keyword_vocab,
@@ -1277,12 +1278,13 @@ async def import_csv(
         if not any([ratings_csv, watchlist_csv, watched_csv]):
             raise HTTPException(status_code=422, detail="No ratings.csv, watchlist.csv, or watched.csv found in upload")
 
+        db_index = get_movie_title_year_index()
         if ratings_csv:
-            sync_ratings_csv(user_id, str(ratings_csv))
+            sync_ratings_csv(user_id, str(ratings_csv), db_index)
         if watchlist_csv:
-            sync_watchlist_csv(user_id, str(watchlist_csv))
+            sync_watchlist_csv(user_id, str(watchlist_csv), db_index)
         if watched_csv:
-            sync_watched_csv(user_id, str(watched_csv))
+            sync_watched_csv(user_id, str(watched_csv), db_index)
 
     print(f"[import] user {user_id}: csv ingestion done in {time.time()-t0:.1f}s (ratings={'yes' if ratings_csv else 'no'}, watchlist={'yes' if watchlist_csv else 'no'}, watched={'yes' if watched_csv else 'no'})", flush=True)
     _rebuild_state(user_id, active_username)
