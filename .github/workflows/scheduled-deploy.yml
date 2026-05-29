@@ -1,0 +1,60 @@
+name: Scheduled deploy
+
+on:
+  schedule:
+    - cron: '0 6 * * *' # 2am ET (UTC-4 in summer, UTC-5 in winter — adjust as needed)
+  workflow_dispatch:     # manual trigger as escape hatch
+
+jobs:
+  test-api:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    needs: test-api
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Deploy backend
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up --service filmprint-backend --detach
+
+      - name: Deploy frontend
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up --service filmprint-app --detach
+
+  post-deploy-monitor:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for Railway to route to new deployment
+        run: sleep 90
+
+      - name: Health check (retry for up to 3 min)
+        run: |
+          for i in $(seq 1 6); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://filmprint-backend-production.up.railway.app/health)
+            echo "Attempt $i: $STATUS"
+            if [ "$STATUS" = "200" ]; then exit 0; fi
+            sleep 30
+          done
+          echo "Health check failed after retries"
+          exit 1
+
+      - name: Rollback backend on failure
+        if: failure()
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway rollback --service filmprint-backend
+
+      - name: Rollback frontend on failure
+        if: failure()
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway rollback --service filmprint-app
