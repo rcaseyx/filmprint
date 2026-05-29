@@ -1611,6 +1611,18 @@ def warm_cache(_admin: dict = Depends(get_admin_user)):
     }
 
 
+@app.get("/health")
+def health():
+    try:
+        from filmprint.db import get_connection as _get_conn
+        with _get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+        return {"status": "ok"}
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"db unavailable: {e}")
+
+
 @app.get("/api/admin/cache-stats")
 def cache_stats(_admin: dict = Depends(get_admin_user)):
     from filmprint.tmdb import CACHE_DIR as TMDB_CACHE_DIR
