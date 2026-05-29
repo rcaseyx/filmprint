@@ -51,6 +51,10 @@ export function SyncButton() {
           Re-import data
         </a>
       </div>
+      <div className="hidden sm:flex flex-col gap-0.5 text-xs text-neutral-500 text-right max-w-[260px]">
+        <span>Sync picks up new activity.</span>
+        <span>Re-import if your history is out of date.</span>
+      </div>
       {status === "done" && result && (
         <span className="text-xs text-neutral-500">
           {result.ratings_added > 0 || result.watchlist_added > 0
