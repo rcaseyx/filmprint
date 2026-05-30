@@ -22,19 +22,19 @@ jobs:
       - name: Deploy backend
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: railway up --service filmprint-backend --detach
+        run: railway up --service filmprint-backend
 
       - name: Deploy frontend
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: railway up --service filmprint-app --detach
+        run: railway up --service filmprint-app
 
   post-deploy-monitor:
     needs: deploy
     runs-on: ubuntu-latest
     steps:
-      - name: Wait for Railway to route to new deployment
-        run: sleep 90
+      - name: Wait for Railway to finish routing
+        run: sleep 30
 
       - name: Health check (retry for up to 3 min)
         run: |
