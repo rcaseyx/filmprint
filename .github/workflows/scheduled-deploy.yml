@@ -37,8 +37,13 @@ jobs:
           RAILWAY_PROJECT_ID: 544b18f1-b3ef-4c9f-8ef6-440519f795cf
         run: |
           echo "Polling backend deployment status..."
-          for i in $(seq 1 30); do
-            STATUS=$(railway status --service filmprint-backend --json 2>/dev/null | jq -r '.activeDeployment.status // "UNKNOWN"')
+          sleep 15
+          for i in $(seq 1 40); do
+            STATUS=$(railway status --json 2>/dev/null | jq -r '
+              .environments.edges[0].node.serviceInstances.edges[]
+              | select(.node.serviceName == "filmprint-backend")
+              | .node.latestDeployment.status
+            ' 2>/dev/null || echo "UNKNOWN")
             echo "Attempt $i: $STATUS"
             if [ "$STATUS" = "SUCCESS" ]; then
               echo "Backend deployment succeeded."
@@ -48,9 +53,9 @@ jobs:
               echo "Backend deployment failed with status: $STATUS"
               exit 1
             fi
-            sleep 20
+            sleep 30
           done
-          echo "Backend deployment timed out after 10 minutes"
+          echo "Backend deployment timed out after 20 minutes"
           exit 1
 
   post-deploy-monitor:
