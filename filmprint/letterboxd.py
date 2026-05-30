@@ -3,7 +3,6 @@
 import re
 import time
 import feedparser
-import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 from pathlib import Path
@@ -11,8 +10,9 @@ from pathlib import Path
 _HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; filmprint/1.0)"}
 
 
-def load_ratings_csv(path: str) -> pd.DataFrame:
+def load_ratings_csv(path: str):
     """Load a Letterboxd ratings CSV export into a DataFrame."""
+    import pandas as pd
     df = pd.read_csv(path)
     # Expected columns: Date, Name, Year, Letterboxd URI, Rating
     df = df.rename(columns={"Name": "title", "Year": "year", "Rating": "rating", "Date": "date"})
@@ -21,15 +21,17 @@ def load_ratings_csv(path: str) -> pd.DataFrame:
     return df[["title", "year", "rating", "date"]]
 
 
-def load_watchlist_csv(path: str) -> pd.DataFrame:
+def load_watchlist_csv(path: str):
     """Load a Letterboxd watchlist CSV export into a DataFrame."""
+    import pandas as pd
     df = pd.read_csv(path)
     df = df.rename(columns={"Name": "title", "Year": "year"})
     return df[["title", "year"]]
 
 
-def load_watched_csv(path: str) -> pd.DataFrame:
+def load_watched_csv(path: str):
     """Load a Letterboxd watched CSV export into a DataFrame."""
+    import pandas as pd
     df = pd.read_csv(path)
     df = df.rename(columns={"Name": "title", "Year": "year"})
     return df[["title", "year"]]

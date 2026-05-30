@@ -1,7 +1,6 @@
 """Build a taste profile vector from a user's rated films."""
 
 import numpy as np
-from sklearn.cluster import KMeans
 from .features import build_feature_vector
 
 
@@ -155,6 +154,7 @@ def build_taste_clusters(
     movies, rtgs = zip(*pairs)
     vecs = np.array([build_feature_vector(m, keyword_vocab, affinity, subgenre_axes) for m in movies])
 
+    from sklearn.cluster import KMeans
     km = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
     labels = km.fit_predict(vecs)
 
