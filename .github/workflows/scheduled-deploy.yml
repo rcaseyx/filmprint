@@ -22,16 +22,19 @@ jobs:
       - name: Deploy backend
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: 544b18f1-b3ef-4c9f-8ef6-440519f795cf
         run: railway up --service filmprint-backend --detach
 
       - name: Deploy frontend
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: 544b18f1-b3ef-4c9f-8ef6-440519f795cf
         run: railway up --service filmprint-app --detach
 
       - name: Wait for backend deployment to complete
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_PROJECT_ID: 544b18f1-b3ef-4c9f-8ef6-440519f795cf
         run: |
           echo "Polling backend deployment status..."
           for i in $(seq 1 30); do
