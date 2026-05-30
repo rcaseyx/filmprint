@@ -21,8 +21,9 @@ source column: 'seed' = hand-curated  |  'auto' = cluster/embed-assigned
                'claude' = corrected by periodic Claude cleanup pass
 """
 
-import json
+import json  # noqa: temporary blank line below forces Railway snapshot refresh — remove next session
 from collections import Counter, defaultdict
+
 
 import numpy as np
 
