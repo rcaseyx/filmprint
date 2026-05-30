@@ -10,31 +10,45 @@ from pathlib import Path
 _HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; filmprint/1.0)"}
 
 
-def load_ratings_csv(path: str):
-    """Load a Letterboxd ratings CSV export into a DataFrame."""
-    import pandas as pd
-    df = pd.read_csv(path)
-    # Expected columns: Date, Name, Year, Letterboxd URI, Rating
-    df = df.rename(columns={"Name": "title", "Year": "year", "Rating": "rating", "Date": "date"})
-    df = df.dropna(subset=["rating"])
-    df["rating"] = df["rating"].astype(float)
-    return df[["title", "year", "rating", "date"]]
+def load_ratings_csv(path: str) -> list[dict]:
+    """Load a Letterboxd ratings CSV export. Expected columns: Date, Name, Year, Rating."""
+    import csv as _csv
+    rows = []
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        for row in _csv.DictReader(f):
+            if not row.get("Rating"):
+                continue
+            try:
+                rating = float(row["Rating"])
+            except (ValueError, TypeError):
+                continue
+            rows.append({
+                "title": row.get("Name", ""),
+                "year": int(row["Year"]) if row.get("Year") else None,
+                "rating": rating,
+                "date": row.get("Date"),
+            })
+    return rows
 
 
-def load_watchlist_csv(path: str):
-    """Load a Letterboxd watchlist CSV export into a DataFrame."""
-    import pandas as pd
-    df = pd.read_csv(path)
-    df = df.rename(columns={"Name": "title", "Year": "year"})
-    return df[["title", "year"]]
+def load_watchlist_csv(path: str) -> list[dict]:
+    """Load a Letterboxd watchlist CSV export."""
+    import csv as _csv
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        return [
+            {"title": row.get("Name", ""), "year": int(row["Year"]) if row.get("Year") else None}
+            for row in _csv.DictReader(f)
+        ]
 
 
-def load_watched_csv(path: str):
-    """Load a Letterboxd watched CSV export into a DataFrame."""
-    import pandas as pd
-    df = pd.read_csv(path)
-    df = df.rename(columns={"Name": "title", "Year": "year"})
-    return df[["title", "year"]]
+def load_watched_csv(path: str) -> list[dict]:
+    """Load a Letterboxd watched CSV export."""
+    import csv as _csv
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        return [
+            {"title": row.get("Name", ""), "year": int(row["Year"]) if row.get("Year") else None}
+            for row in _csv.DictReader(f)
+        ]
 
 
 def validate_username(username: str) -> bool:
