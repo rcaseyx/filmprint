@@ -5,9 +5,6 @@ Recommendation requests are fast — the expensive work (CSV sync, TMDB
 enrichment, profile build, ranking) happens once at boot.
 """
 
-import tracemalloc as _tracemalloc
-_tracemalloc.start()
-
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -1604,17 +1601,9 @@ def admin_memory_profile(_admin: dict = Depends(get_admin_user)):
         pass
     top_libs = sorted(so_rss.items(), key=lambda x: x[1], reverse=True)[:30]
 
-    # Python heap — top allocators by filename
-    snapshot = _tracemalloc.take_snapshot()
-    top_python = [
-        {"file": str(stat.traceback[0]).replace("<", "").replace(">", ""), "size_mb": round(stat.size / 1e6, 2), "count": stat.count}
-        for stat in snapshot.statistics("filename")[:25]
-    ]
-
     return {
         "rss_mb": rss_mb,
         "top_libs_mb": [{"path": p, "rss_mb": mb} for p, mb in top_libs if mb > 1],
-        "top_python_allocations": top_python,
     }
 
 
