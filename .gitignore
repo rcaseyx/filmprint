@@ -5,6 +5,9 @@ __pycache__/
 data/*.csv
 data/cache/
 data/*.db
+data/model.onnx
+data/model.onnx.data
+data/tokenizer/
 venv/
 .venv/
 
