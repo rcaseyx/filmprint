@@ -13,14 +13,16 @@ RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/wh
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Bake the sentence-transformers model into the image so it isn't fetched at runtime
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
-
 COPY filmprint/ ./filmprint/
 COPY api/ ./api/
+COPY scripts/ ./scripts/
 COPY pyproject.toml .
 
 RUN pip install --no-cache-dir -e . --no-deps
+
+# Download the pre-exported ONNX model and tokenizer so PyTorch is never
+# imported at runtime — reduces memory by ~200-300 MB.
+RUN python scripts/export_onnx.py
 
 EXPOSE 8000
 

@@ -91,14 +91,55 @@ _NOISE_THEMES: frozenset[str] = frozenset({
 _model = None
 _centroids: dict[str, np.ndarray] = {}   # theme → mean embedding vector
 
+from pathlib import Path as _Path
+_DATA_DIR = _Path(__file__).parent.parent / "data"
+_ONNX_PATH = str(_DATA_DIR / "model.onnx")
+_TOKENIZER_PATH = str(_DATA_DIR / "tokenizer")
+
+
+class _OnnxEncoder:
+    def __init__(self, onnx_path: str, tokenizer_path: str) -> None:
+        import onnxruntime as ort
+        from transformers import AutoTokenizer
+        self._session = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
+        self._tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+
+    def encode(self, texts: list[str], batch_size: int = 256, **_kwargs) -> np.ndarray:
+        chunks = []
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i : i + batch_size]
+            enc = self._tokenizer(
+                batch,
+                return_tensors="np",
+                padding=True,
+                truncation=True,
+                max_length=128,
+            )
+            (hidden,) = self._session.run(
+                ["last_hidden_state"],
+                {
+                    "input_ids": enc["input_ids"],
+                    "attention_mask": enc["attention_mask"],
+                    "token_type_ids": enc["token_type_ids"],
+                },
+            )
+            mask = enc["attention_mask"][:, :, np.newaxis].astype(np.float32)
+            pooled = (hidden * mask).sum(axis=1) / mask.sum(axis=1).clip(min=1e-9)
+            norms = np.linalg.norm(pooled, axis=1, keepdims=True).clip(min=1e-9)
+            chunks.append(pooled / norms)
+        return np.vstack(chunks)
+
 
 def _get_model():
     global _model
     if _model is None:
-        import logging
-        logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
-        from sentence_transformers import SentenceTransformer
-        _model = SentenceTransformer("all-MiniLM-L6-v2")
+        if _Path(_ONNX_PATH).exists() and _Path(_TOKENIZER_PATH).exists():
+            _model = _OnnxEncoder(_ONNX_PATH, _TOKENIZER_PATH)
+        else:
+            import logging
+            logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+            from sentence_transformers import SentenceTransformer
+            _model = SentenceTransformer("all-MiniLM-L6-v2")
     return _model
 
 
