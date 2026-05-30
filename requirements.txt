@@ -6,7 +6,6 @@ beautifulsoup4
 fastapi
 feedparser
 numpy
-pandas
 python-dotenv
 python-multipart
 requests

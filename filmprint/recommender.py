@@ -1,7 +1,6 @@
 """Score and rank candidates against a taste profile."""
 
 import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
 from .features import build_feature_vector
 
 
@@ -19,6 +18,7 @@ def rank_watchlist(
     """
     if not candidates:
         return []
+    from sklearn.metrics.pairwise import cosine_similarity
     matrix = np.array([
         build_feature_vector(m, keyword_vocab, affinity, subgenre_axes)
         for m in candidates
@@ -72,6 +72,7 @@ def diversify(
         if not selected:
             best = max(remaining, key=lambda i: scores[i])
         else:
+            from sklearn.metrics.pairwise import cosine_similarity
             sel_vecs = vecs[selected]
             best = max(
                 remaining,

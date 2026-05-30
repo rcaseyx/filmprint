@@ -47,9 +47,9 @@ def sync_ratings_csv(
     path: str,
     db_index: dict[tuple[str, int | None], int] | None = None,
 ) -> int:
-    df = load_ratings_csv(path)
+    rows = load_ratings_csv(path)
     pending: list[tuple[int, int, float, str | None, str]] = []
-    for _, row in track(df.iterrows(), description="Syncing ratings...", total=len(df)):
+    for row in track(rows, description="Syncing ratings...", total=len(rows)):
         tmdb_id = _ensure_movie(row["title"], row.get("year"), db_index)
         if tmdb_id:
             pending.append((user_id, tmdb_id, row["rating"], row.get("date"), "csv"))
@@ -62,9 +62,9 @@ def sync_watchlist_csv(
     path: str,
     db_index: dict[tuple[str, int | None], int] | None = None,
 ) -> int:
-    df = load_watchlist_csv(path)
+    rows = load_watchlist_csv(path)
     synced = 0
-    for _, row in track(df.iterrows(), description="Syncing watchlist...", total=len(df)):
+    for row in track(rows, description="Syncing watchlist...", total=len(rows)):
         tmdb_id = _ensure_movie(row["title"], row.get("year"), db_index)
         if tmdb_id:
             upsert_watchlist_entry(user_id, tmdb_id)
@@ -77,9 +77,9 @@ def sync_watched_csv(
     path: str,
     db_index: dict[tuple[str, int | None], int] | None = None,
 ) -> int:
-    df = load_watched_csv(path)
+    rows = load_watched_csv(path)
     synced = 0
-    for _, row in track(df.iterrows(), description="Syncing watched...", total=len(df)):
+    for row in track(rows, description="Syncing watched...", total=len(rows)):
         tmdb_id = _ensure_movie(row["title"], row.get("year"), db_index)
         if tmdb_id:
             upsert_watched(user_id, tmdb_id, row.get("Date"), source="csv")
