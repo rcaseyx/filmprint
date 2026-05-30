@@ -22,17 +22,41 @@ jobs:
       - name: Deploy backend
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: railway up --service filmprint-backend
+        run: railway up --service filmprint-backend --detach
 
       - name: Deploy frontend
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: railway up --service filmprint-app
+        run: railway up --service filmprint-app --detach
+
+      - name: Wait for backend deployment to complete
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          echo "Polling backend deployment status..."
+          for i in $(seq 1 30); do
+            STATUS=$(railway status --service filmprint-backend --json 2>/dev/null | jq -r '.activeDeployment.status // "UNKNOWN"')
+            echo "Attempt $i: $STATUS"
+            if [ "$STATUS" = "SUCCESS" ]; then
+              echo "Backend deployment succeeded."
+              exit 0
+            fi
+            if [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "CRASHED" ]; then
+              echo "Backend deployment failed with status: $STATUS"
+              exit 1
+            fi
+            sleep 20
+          done
+          echo "Backend deployment timed out after 10 minutes"
+          exit 1
 
   post-deploy-monitor:
     needs: deploy
     runs-on: ubuntu-latest
     steps:
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
       - name: Wait for Railway to finish routing
         run: sleep 30
 
