@@ -1,3 +1,6 @@
+[build]
+watchPaths = ["Dockerfile", "requirements.txt", "pyproject.toml", "filmprint/**", "api/**", "scripts/**"]
+
 [deploy]
 healthcheckPath = "/health"
 healthcheckTimeout = 300
