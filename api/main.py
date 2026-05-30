@@ -5,6 +5,9 @@ Recommendation requests are fast — the expensive work (CSV sync, TMDB
 enrichment, profile build, ranking) happens once at boot.
 """
 
+import tracemalloc as _tracemalloc
+_tracemalloc.start()
+
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -1568,6 +1571,51 @@ def admin_recluster(_admin: dict = Depends(get_admin_user)):
     """Re-run full co-occurrence + embedding clustering on the catalog."""
     n_themes = build_clusters()
     return {"themes": n_themes}
+
+
+@app.get("/api/admin/memory")
+def admin_memory_profile(_admin: dict = Depends(get_admin_user)):
+    """Snapshot current memory usage — Python heap allocations and resident .so sizes."""
+    # RSS from /proc
+    rss_mb = None
+    try:
+        with open("/proc/self/status") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    rss_mb = round(int(line.split()[1]) / 1024, 1)
+                    break
+    except OSError:
+        pass
+
+    # Per-library RSS from /proc/self/smaps
+    so_rss: dict[str, float] = {}
+    try:
+        current = ""
+        with open("/proc/self/smaps") as f:
+            for line in f:
+                if line and line[0] not in (" ", "\t") and "-" in line.split()[0]:
+                    parts = line.split()
+                    current = parts[5] if len(parts) >= 6 else ""
+                elif line.startswith("Rss:") and current:
+                    kb = int(line.split()[1])
+                    if kb:
+                        so_rss[current] = round(so_rss.get(current, 0) + kb / 1024, 1)
+    except OSError:
+        pass
+    top_libs = sorted(so_rss.items(), key=lambda x: x[1], reverse=True)[:30]
+
+    # Python heap — top allocators by filename
+    snapshot = _tracemalloc.take_snapshot()
+    top_python = [
+        {"file": str(stat.traceback[0]).replace("<", "").replace(">", ""), "size_mb": round(stat.size / 1e6, 2), "count": stat.count}
+        for stat in snapshot.statistics("filename")[:25]
+    ]
+
+    return {
+        "rss_mb": rss_mb,
+        "top_libs_mb": [{"path": p, "rss_mb": mb} for p, mb in top_libs if mb > 1],
+        "top_python_allocations": top_python,
+    }
 
 
 @app.post("/api/admin/warm-cache")
