@@ -483,13 +483,15 @@ async def lifespan(app: FastAPI):
         users = [u for u in get_all_users_with_stats() if u.get("ratings_count", 0) > 0]
         print(f"[prewarm] starting — {len(users)} user(s) to warm", flush=True)
         t0 = time.time()
-        counters = {"restored": 0, "rebuilt": 0, "failed": 0}
+        counters = {"restored": 0, "rebuilt": 0, "failed": 0, "skipped": 0}
         counter_lock = _t.Lock()
 
         def _warm_one(user):
             uid = user["id"]
             uname = user.get("letterboxd_username") or ""
             if uid in _user_states:
+                with counter_lock:
+                    counters["skipped"] += 1
                 return
             try:
                 if _restore_state_from_volume(uid, uname):
@@ -515,7 +517,8 @@ async def lifespan(app: FastAPI):
 
         print(
             f"[prewarm] done in {time.time()-t0:.1f}s — "
-            f"{counters['restored']} restored, {counters['rebuilt']} rebuilt, {counters['failed']} failed",
+            f"{counters['restored']} restored, {counters['rebuilt']} rebuilt, "
+            f"{counters['skipped']} skipped (already in cache), {counters['failed']} failed",
             flush=True,
         )
 
