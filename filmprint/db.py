@@ -207,6 +207,16 @@ def get_all_users() -> list[dict]:
         return [dict(row) for row in cur.fetchall()]
 
 
+def get_users_with_letterboxd() -> list[dict]:
+    """Return all users that have a Letterboxd username set."""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, letterboxd_username FROM users WHERE letterboxd_username IS NOT NULL"
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+
 def get_all_users_with_stats() -> list[dict]:
     with get_connection() as conn:
         cur = conn.cursor()
