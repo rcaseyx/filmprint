@@ -50,6 +50,14 @@ def get_connection():
         pool.putconn(conn)
 
 
+def close_db() -> None:
+    """Close all connections in the pool. Call before process exit in short-lived scripts."""
+    global _pool
+    if _pool is not None:
+        _pool.closeall()
+        _pool = None
+
+
 def init_db(seed_data: dict | None = None) -> None:
     ddl = [
         """CREATE TABLE IF NOT EXISTS users (

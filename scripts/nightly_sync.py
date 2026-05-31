@@ -21,7 +21,7 @@ load_dotenv(override=True)
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from filmprint.db import init_db, get_users_with_letterboxd
+from filmprint.db import init_db, close_db, get_users_with_letterboxd
 from filmprint.sync import sync_scrape
 
 logging.basicConfig(
@@ -74,6 +74,7 @@ def main() -> None:
         failed,
         total,
     )
+    close_db()
     if failed:
         sys.exit(1)
 
