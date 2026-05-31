@@ -1132,6 +1132,12 @@ def get_recommendations(mood: MoodContext, current_user: dict = Depends(get_curr
     if not state:
         raise HTTPException(status_code=428, detail="Import your Letterboxd data first")
 
+    # Batch-prime the in-process OMDb score cache so rank_watchlist doesn't make
+    # a DB/API call per movie. _restore_state_from_volume does this too, but when
+    # state is served from Redis that path is skipped, leaving the cache cold.
+    imdb_ids = [(m.get("raw_tmdb") or m).get("imdb_id") for m, _ in state.get("ranked") or []]
+    prime_score_cache([iid for iid in imdb_ids if iid])
+
     session_ids = state.get("session_recommended_ids", set())
     ranked = [(m, s) for m, s in state["ranked"] if m["id"] not in session_ids]
     keyword_vocab = state["keyword_vocab"]
