@@ -2,13 +2,8 @@ FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-# Build-time only: torch + sentence-transformers needed to download and export the model
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
-RUN pip install --no-cache-dir sentence-transformers
+# Only huggingface_hub needed to download model and tokenizer artifacts
+RUN pip install --no-cache-dir huggingface_hub
 
 COPY scripts/export_onnx.py ./scripts/
 RUN python scripts/export_onnx.py
@@ -32,7 +27,7 @@ COPY pyproject.toml .
 
 RUN pip install --no-cache-dir -e . --no-deps
 
-# Copy model artifacts from builder — torch/sentence-transformers never enter this stage
+# Copy model artifacts from builder — no torch or sentence-transformers in this stage
 COPY --from=builder /app/data/ ./data/
 
 EXPOSE 8000
