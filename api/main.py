@@ -61,7 +61,7 @@ from filmprint.db import (
     is_profile_stale, upsert_movie, batch_upsert_movies, update_feature_vector,
     log_recommendation, get_recent_ratings, get_recommendation_history,
     resolve_recommendation_outcomes, get_recommendation_boosts,
-    get_ratings_count, get_all_users_with_stats, delete_user,
+    get_ratings_count, get_watchlist_count, get_all_users_with_stats, delete_user,
     get_all_keyword_themes_full, get_candidate_movies,
     compute_ratings_hash, get_movies_by_ids,
     get_user_by_email,
@@ -1210,23 +1210,23 @@ def sync(current_user: dict = Depends(get_current_user)):
     if not username:
         raise HTTPException(status_code=428, detail="Set your Letterboxd username before syncing")
 
-    state = _user_states.get(user_id, {})
-    ratings_before = len(state.get("ratings") or [])
-    watchlist_before = len(state.get("watchlist_ids") or [])
+    ratings_before = get_ratings_count(user_id)
+    watchlist_before = get_watchlist_count(user_id)
 
     t0 = time.time()
     print(f"[sync] user {user_id} ({username}): starting", flush=True)
     sync_scrape(user_id, username)
-    sync_rss(user_id, username)
-    print(f"[sync] user {user_id}: scrape+rss done in {time.time()-t0:.1f}s", flush=True)
+    print(f"[sync] user {user_id}: scrape done in {time.time()-t0:.1f}s", flush=True)
     _rebuild_state(user_id, username)
 
+    ratings_after = get_ratings_count(user_id)
+    watchlist_after = get_watchlist_count(user_id)
     new_state = _user_states.get(user_id, {})
     return {
-        "ratings_added": len(new_state.get("ratings") or []) - ratings_before,
-        "watchlist_added": len(new_state.get("watchlist_ids") or []) - watchlist_before,
-        "ratings_count": len(new_state.get("ratings") or []),
-        "watchlist_count": len(new_state.get("watchlist_ids") or []),
+        "ratings_added": ratings_after - ratings_before,
+        "watchlist_added": watchlist_after - watchlist_before,
+        "ratings_count": ratings_after,
+        "watchlist_count": watchlist_after,
         "candidates_count": len(new_state.get("ranked") or []),
     }
 
