@@ -12,6 +12,6 @@ requests
 rich
 scikit-learn
 uvicorn
-sentence-transformers
+tokenizers
 onnxruntime
 redis
