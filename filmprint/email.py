@@ -8,7 +8,7 @@ import requests
 logger = logging.getLogger(__name__)
 
 _RESEND_URL = "https://api.resend.com/emails"
-_FROM = "filmprint <onboarding@resend.dev>"
+_FROM = "filmprint <dev@myfilmprint.com>"
 
 
 def _send(to: str, subject: str, html: str) -> bool:
