@@ -90,15 +90,9 @@ DATA_DIR = Path(__file__).parent.parent / "data"
 # Gives under-reviewed films breathing room without changing the floor's derivation.
 FLOOR_TOLERANCE = 0.5
 
-# Per-user pipeline state, keyed by user_id, built lazily on first request
-_user_states: dict[int, dict[str, Any]] = {}
-
-# Lightweight profile-only state — no candidate discovery, used by profile/genres endpoints
-_user_profile_states: dict[int, dict[str, Any]] = {}
-
-# Cached serialized responses for expensive profile endpoints — invalidated on profile rebuild
-_profile_response_cache: dict[int, dict] = {}
-_examples_response_cache: dict[int, dict] = {}
+# Per-user pipeline state — backed by Redis, falls back to in-memory dict if unavailable
+from filmprint.cache import make_caches as _make_caches
+_user_states, _user_profile_states, _profile_response_cache, _examples_response_cache = _make_caches()
 
 # Per-user lock so concurrent requests don't double-run _rebuild_profile_only
 import threading as _threading
