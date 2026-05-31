@@ -497,6 +497,8 @@ async def lifespan(app: FastAPI):
             if uid in _user_states:
                 with counter_lock:
                     counters["skipped"] += 1
+                if uid not in _profile_response_cache or uid not in _examples_response_cache:
+                    _prewarm_profile_cache(uid, uname)
                 return
             try:
                 if _restore_state_from_volume(uid, uname):
