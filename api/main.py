@@ -1586,7 +1586,7 @@ def admin_approve_beta_request(request_id: int, _admin: dict = Depends(get_admin
         raise HTTPException(status_code=404, detail="Request not found")
     approved_until = _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(days=7)
     add_to_whitelist(req["email"], approved_until)
-    signup_url = f"{os.environ.get('FRONTEND_URL', 'https://filmprint.app')}/signup"
+    signup_url = f"{os.environ.get('FRONTEND_URL', 'https://myfilmprint.com')}/signup"
     send_approval_email(req["email"], req["name"], signup_url)
     delete_beta_request(request_id)
     return {"approved": req["email"]}
