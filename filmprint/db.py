@@ -707,6 +707,13 @@ def upsert_watchlist_entry(user_id: int, movie_id: int) -> None:
         )
 
 
+def get_watchlist_count(user_id: int) -> int:
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) AS count FROM user_watchlist WHERE user_id = %s", (user_id,))
+        return cur.fetchone()["count"]
+
+
 def get_user_watchlist(user_id: int) -> list[dict]:
     with get_connection() as conn:
         cur = conn.cursor()
