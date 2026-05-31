@@ -21,7 +21,7 @@ TOKENIZER_PATH = DATA_DIR / "tokenizer"
 
 MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
 ONNX_FILENAME = "onnx/model.onnx"
-TOKENIZER_FILENAME = "tokenizer.json"
+TOKENIZER_FILES = ["tokenizer.json", "tokenizer_config.json"]
 
 
 def main() -> None:
@@ -37,16 +37,17 @@ def main() -> None:
     shutil.rmtree(DATA_DIR / "_hf_tmp", ignore_errors=True)
     print(f"Model saved to {ONNX_PATH} ({ONNX_PATH.stat().st_size / 1_000_000:.1f} MB)")
 
-    print(f"Downloading {TOKENIZER_FILENAME} from {MODEL_ID} ...")
     TOKENIZER_PATH.mkdir(parents=True, exist_ok=True)
-    tmp_path = hf_hub_download(
-        repo_id=MODEL_ID,
-        filename=TOKENIZER_FILENAME,
-        local_dir=str(DATA_DIR / "_hf_tmp"),
-    )
-    shutil.move(tmp_path, str(TOKENIZER_PATH / TOKENIZER_FILENAME))
+    for filename in TOKENIZER_FILES:
+        print(f"Downloading {filename} from {MODEL_ID} ...")
+        tmp_path = hf_hub_download(
+            repo_id=MODEL_ID,
+            filename=filename,
+            local_dir=str(DATA_DIR / "_hf_tmp"),
+        )
+        shutil.move(tmp_path, str(TOKENIZER_PATH / filename))
     shutil.rmtree(DATA_DIR / "_hf_tmp", ignore_errors=True)
-    print(f"Tokenizer saved to {TOKENIZER_PATH / TOKENIZER_FILENAME}")
+    print(f"Tokenizer saved to {TOKENIZER_PATH}")
 
     print("Done.")
 
