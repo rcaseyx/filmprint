@@ -14,3 +14,4 @@ scikit-learn
 uvicorn
 sentence-transformers
 onnxruntime
+redis
