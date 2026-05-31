@@ -6,6 +6,7 @@ import { UserTable, type AdminUser } from "./UserTable"
 import { ThemeManager } from "./ThemeManager"
 import { CacheWarmer } from "./CacheWarmer"
 import { BetaWhitelist } from "./BetaWhitelist"
+import { BetaRequests } from "./BetaRequests"
 
 export default async function AdminPage() {
   const session = await getServerSession(authOptions)
@@ -15,10 +16,11 @@ export default async function AdminPage() {
     redirect("/")
   }
 
-  const [usersRes, themesRes, whitelistRes] = await Promise.allSettled([
+  const [usersRes, themesRes, whitelistRes, betaRequestsRes] = await Promise.allSettled([
     apiFetch("/api/admin/users", { cache: "no-store" }),
     apiFetch("/api/admin/themes", { cache: "no-store" }),
     apiFetch("/api/admin/whitelist", { cache: "no-store" }),
+    apiFetch("/api/admin/beta-requests", { cache: "no-store" }),
   ])
 
   const users: AdminUser[] =
@@ -36,9 +38,21 @@ export default async function AdminPage() {
       ? (await whitelistRes.value.json()).emails ?? []
       : []
 
+  const betaRequests =
+    betaRequestsRes.status === "fulfilled" && betaRequestsRes.value.ok
+      ? (await betaRequestsRes.value.json()).requests ?? []
+      : []
+
   return (
     <div className="max-w-4xl mx-auto px-6 py-12 space-y-10">
       <h1 className="text-2xl font-semibold tracking-tight">Admin</h1>
+
+      <section className="space-y-4">
+        <h2 className="text-xs uppercase tracking-wider text-neutral-500">
+          Beta requests <span className="text-neutral-700 normal-case tracking-normal">({betaRequests.length})</span>
+        </h2>
+        <BetaRequests initialRequests={betaRequests} />
+      </section>
 
       <section className="space-y-4">
         <h2 className="text-xs uppercase tracking-wider text-neutral-500">

@@ -21,7 +21,7 @@ import jwt as pyjwt
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile, File
+from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -67,6 +67,8 @@ from filmprint.db import (
     get_user_by_email,
     is_whitelisted, get_whitelist, add_to_whitelist, remove_from_whitelist,
     get_movie_title_year_index,
+    create_beta_request, get_beta_requests, get_beta_request,
+    update_beta_request_counts, delete_beta_request,
 )
 from filmprint.features import (
     build_feature_vector, taste_summary, build_keyword_vocab,
@@ -80,7 +82,7 @@ from filmprint.app import ensure_feature_vectors
 from filmprint.tmdb import get_watch_providers, CACHE_DIR as _TMDB_CACHE_DIR
 from filmprint.omdb import get_scores, prime_score_cache
 from filmprint.sync import sync_ratings_csv, sync_watchlist_csv, sync_rss, sync_scrape
-from filmprint.letterboxd import validate_username
+from filmprint.letterboxd import validate_username, scrape_ratings, scrape_watchlist
 from filmprint.themes import assign_new_keywords, build_user_subgenre_axes, backfill_catalog_keywords, build_clusters, claude_cleanup_themes, _get_model as _get_onnx_model
 import requests as _requests
 
@@ -1539,6 +1541,66 @@ def admin_theme_breakdown(_admin: dict = Depends(get_admin_user)):
         )
     }
 
+
+
+@app.post("/api/beta/request")
+def submit_beta_request(payload: dict, background_tasks: BackgroundTasks):
+    name = (payload.get("name") or "").strip()
+    email = (payload.get("email") or "").strip()
+    username = (payload.get("letterboxd_username") or "").strip()
+    if not name or not email or not username:
+        raise HTTPException(status_code=400, detail="name, email, and letterboxd_username are required")
+    if get_user_by_email(email):
+        raise HTTPException(status_code=409, detail="An account with this email already exists")
+    if not validate_username(username):
+        raise HTTPException(status_code=422, detail="Letterboxd profile not found or not public")
+    try:
+        request_id = create_beta_request(name, email, username)
+    except Exception:
+        raise HTTPException(status_code=409, detail="A request from this email is already pending")
+    background_tasks.add_task(_scrape_beta_request, request_id, username)
+    return {"status": "received"}
+
+
+def _scrape_beta_request(request_id: int, username: str) -> None:
+    try:
+        ratings = scrape_ratings(username)
+        watchlist = scrape_watchlist(username)
+        update_beta_request_counts(request_id, len(ratings), len(watchlist))
+    except Exception as exc:
+        import logging as _logging
+        _logging.getLogger(__name__).error("[beta] scrape failed for request %d: %s", request_id, exc)
+
+
+@app.get("/api/admin/beta-requests")
+def admin_get_beta_requests(_admin: dict = Depends(get_admin_user)):
+    return {"requests": get_beta_requests()}
+
+
+@app.post("/api/admin/beta-requests/{request_id}/approve")
+def admin_approve_beta_request(request_id: int, _admin: dict = Depends(get_admin_user)):
+    import datetime as _dt
+    from filmprint.email import send_approval_email
+    req = get_beta_request(request_id)
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+    approved_until = _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(days=7)
+    add_to_whitelist(req["email"], approved_until)
+    signup_url = f"{os.environ.get('FRONTEND_URL', 'https://myfilmprint.com')}/signup"
+    send_approval_email(req["email"], req["name"], signup_url)
+    delete_beta_request(request_id)
+    return {"approved": req["email"]}
+
+
+@app.post("/api/admin/beta-requests/{request_id}/deny")
+def admin_deny_beta_request(request_id: int, _admin: dict = Depends(get_admin_user)):
+    from filmprint.email import send_denial_email
+    req = get_beta_request(request_id)
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+    send_denial_email(req["email"], req["name"])
+    delete_beta_request(request_id)
+    return {"denied": req["email"]}
 
 
 @app.get("/api/admin/whitelist")

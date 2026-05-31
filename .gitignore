@@ -5,7 +5,11 @@ __pycache__/
 data/*.csv
 data/cache/
 data/*.db
+data/*.db.bak
 data/model.onnx
+*.db
+*.db.bak
+keyword_themes_backup.json
 data/model.onnx.data
 data/tokenizer/
 venv/
