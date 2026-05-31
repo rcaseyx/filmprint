@@ -833,18 +833,13 @@ def auth_exchange(payload: ExchangePayload, request: Request):
 def get_user(current_user: dict = Depends(get_current_user)):
     user_id = current_user["user_id"]
     username = current_user["username"]
-    # Use a direct DB count so this endpoint is always fast — no state build triggered.
-    # Endpoints that need full state (_get_or_build_state) do so lazily on first request.
     ratings_count = get_ratings_count(user_id)
-    state = _user_states.get(user_id, {})
     return {
         "has_profile": ratings_count > 0,
         "needs_username": not username,
         "username": username or None,
-        "summary": state.get("summary"),
         "ratings_count": ratings_count,
-        "watchlist_count": len(state.get("watchlist_ids") or []),
-        "candidates_count": len(state.get("ranked") or []),
+        "watchlist_count": get_watchlist_count(user_id),
     }
 
 
