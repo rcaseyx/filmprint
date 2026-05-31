@@ -8,6 +8,7 @@ Serialization handles numpy arrays and sets, which appear throughout the
 user state dicts. Plain JSON types pass through unchanged.
 """
 
+import datetime
 import json
 import logging
 import os
@@ -23,6 +24,10 @@ def _encode(obj):
         return {"__ndarray__": obj.tolist(), "__dtype__": str(obj.dtype)}
     if isinstance(obj, (set, frozenset)):
         return {"__set__": list(obj)}
+    if isinstance(obj, datetime.datetime):
+        return {"__datetime__": obj.isoformat()}
+    if isinstance(obj, datetime.date):
+        return {"__date__": obj.isoformat()}
     if isinstance(obj, dict):
         return {k: _encode(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
@@ -40,6 +45,10 @@ def _decode(obj):
             return np.array(obj["__ndarray__"], dtype=obj.get("__dtype__", "float32"))
         if "__set__" in obj:
             return set(obj["__set__"])
+        if "__datetime__" in obj:
+            return datetime.datetime.fromisoformat(obj["__datetime__"])
+        if "__date__" in obj:
+            return datetime.date.fromisoformat(obj["__date__"])
         return {k: _decode(v) for k, v in obj.items()}
     if isinstance(obj, list):
         return [_decode(i) for i in obj]
