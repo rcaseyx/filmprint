@@ -71,9 +71,9 @@ export default function LoginPage() {
         </form>
 
         <p className="text-center text-xs text-neutral-500">
-          Don&apos;t have an account?{" "}
-          <Link href="/signup" className="text-neutral-300 hover:text-white transition-colors">
-            Sign up
+          Want to join?{" "}
+          <Link href="/beta" className="text-neutral-300 hover:text-white transition-colors">
+            Request beta access
           </Link>
         </p>
 
