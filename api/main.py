@@ -1142,9 +1142,12 @@ def get_recommendations(mood: MoodContext, current_user: dict = Depends(get_curr
     user_subgenre_axes = state.get("user_subgenre_axes") or {}
     cluster = _select_cluster(mood, state)
     active_vec = cluster if cluster is not None else profile_vec
+    print(f"[rec] user {user_id}: {len(ranked)} candidates, cluster={'yes' if cluster is not None else 'no'}", flush=True)
     if cluster is not None:
         all_candidates = [m for m, _ in ranked]
+        t_rw = time.time()
         ranked = rank_watchlist(cluster, all_candidates, keyword_vocab, affinity, user_subgenre_axes)
+        print(f"[rec] user {user_id}: cluster rank_watchlist in {time.time()-t_rw:.1f}s", flush=True)
         active_summary = taste_summary(cluster, keyword_vocab, user_subgenre_axes)
     else:
         active_summary = state["summary"]
@@ -1152,7 +1155,9 @@ def get_recommendations(mood: MoodContext, current_user: dict = Depends(get_curr
     active_vec = _apply_mood_to_vector(active_vec, mood, keyword_vocab, user_subgenre_axes)
     if mood.tone or mood.pacing or mood.familiarity:
         all_candidates = [m for m, _ in ranked]
+        t_rw = time.time()
         ranked = rank_watchlist(active_vec, all_candidates, keyword_vocab, affinity, user_subgenre_axes)
+        print(f"[rec] user {user_id}: mood rank_watchlist in {time.time()-t_rw:.1f}s", flush=True)
     t1 = time.time()
 
     # Augment with TMDB Discover when mood specifies genres
