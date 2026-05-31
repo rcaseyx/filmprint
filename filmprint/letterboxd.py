@@ -139,13 +139,16 @@ def _scrape_grid_page(url: str) -> tuple[list[dict], bool]:
 
 
 def scrape_ratings(username: str) -> list[dict]:
-    """Scrape the most recent rated films from a public Letterboxd profile.
+    """Scrape the most recently added rated films from a public Letterboxd profile.
 
     Letterboxd only serves the first page (~72 films) of ratings without
-    authentication. Paginated URLs (/films/page/N/) return 403. For full
-    history, users should import their Letterboxd CSV export.
+    authentication. Paginated URLs return 403. For full history, users should
+    import their Letterboxd CSV export.
+
+    Sorted by date-added (newest first) so recently rated older films aren't
+    pushed off the page by the default release-date sort.
     """
-    items, _ = _scrape_grid_page(f"https://letterboxd.com/{username}/films/")
+    items, _ = _scrape_grid_page(f"https://letterboxd.com/{username}/films/by/date/")
     return [e for e in items if e["rating"] is not None]
 
 
