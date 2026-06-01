@@ -336,6 +336,20 @@ def upsert_keyword_theme(keyword: str, theme: str, source: str = "auto") -> None
         )
 
 
+def bulk_upsert_keyword_themes(rows: list[tuple[str, str, str]]) -> None:
+    """Upsert many (keyword, theme, source) rows in a single connection."""
+    if not rows:
+        return
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.executemany(
+            """INSERT INTO keyword_themes (keyword, theme, source)
+               VALUES (%s, %s, %s)
+               ON CONFLICT(keyword) DO UPDATE SET theme = EXCLUDED.theme, source = EXCLUDED.source""",
+            rows,
+        )
+
+
 def get_all_keyword_themes_full() -> list[dict]:
     """Return full rows for admin display."""
     with get_connection() as conn:

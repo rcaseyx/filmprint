@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 from .db import (
     get_all_keyword_themes, get_all_keyword_themes_full, get_connection,
     load_theme_centroids, save_theme_centroids, upsert_keyword_theme,
+    bulk_upsert_keyword_themes,
 )
 
 # ── tunables ────────────────────────────────────────────────────────────────
@@ -306,12 +307,13 @@ def build_clusters() -> int:
         cluster_centroids[theme_name] = embs[indices].mean(axis=0)
 
     # ── write to DB (preserve seed + claude) ────────────────────────────────
-    print(f"[recluster] writing {len(theme_assignments)} keyword assignments to DB", flush=True)
-    for kw, theme in theme_assignments.items():
-        src = existing_full.get(kw, {}).get("source")
-        if src in ("seed", "claude"):
-            continue
-        upsert_keyword_theme(kw, theme, source="auto")
+    rows = [
+        (kw, theme, "auto")
+        for kw, theme in theme_assignments.items()
+        if existing_full.get(kw, {}).get("source") not in ("seed", "claude")
+    ]
+    print(f"[recluster] writing {len(rows)} keyword assignments to DB", flush=True)
+    bulk_upsert_keyword_themes(rows)
 
     # ── store centroids, then assign sparse keywords ─────────────────────────
     print("[recluster] storing centroids and assigning sparse keywords", flush=True)
@@ -352,12 +354,14 @@ def assign_new_keywords(keywords: list[str]) -> None:
         c_norm = centroid_matrix / (np.linalg.norm(centroid_matrix, axis=1, keepdims=True) + 1e-8)
         sims = kw_norm @ c_norm.T  # (n_new, n_themes)
 
+        rows = []
         for kw, sim_row in zip(new_kws, sims):
             best_idx = int(np.argmax(sim_row))
             if sim_row[best_idx] >= ASSIGN_THRESHOLD:
-                upsert_keyword_theme(kw, theme_names[best_idx], source="auto")
+                rows.append((kw, theme_names[best_idx], "auto"))
             # else: leave unmapped — sparse keywords that don't fit a cluster
             # stay out of the table rather than cluttering it as singletons
+        bulk_upsert_keyword_themes(rows)
     # If no centroids exist yet, skip — build_clusters() will assign everything
 
 
