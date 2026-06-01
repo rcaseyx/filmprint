@@ -95,6 +95,8 @@ FLOOR_TOLERANCE = 0.5
 # Per-user pipeline state — backed by Redis, falls back to in-memory dict if unavailable
 from filmprint.cache import make_caches as _make_caches
 _user_states, _user_profile_states, _profile_response_cache, _examples_response_cache = _make_caches()
+_public_profile_cache: dict[int, dict] = {}
+_public_examples_cache: dict[int, dict] = {}
 
 # Per-user lock so concurrent requests don't double-run _rebuild_profile_only
 import threading as _threading
@@ -302,6 +304,8 @@ def _rebuild_state(user_id: int, username: str) -> None:
     _user_profile_states.pop(user_id, None)
     _profile_response_cache.pop(user_id, None)
     _examples_response_cache.pop(user_id, None)
+    _public_profile_cache.pop(user_id, None)
+    _public_examples_cache.pop(user_id, None)
     print(f"[rebuild_state] done for user {user_id} in {time.time()-t0:.1f}s (stale={stale})", flush=True)
 
 
@@ -378,6 +382,8 @@ def _rebuild_profile_only(user_id: int, username: str) -> None:
     }
     _profile_response_cache.pop(user_id, None)
     _examples_response_cache.pop(user_id, None)
+    _public_profile_cache.pop(user_id, None)
+    _public_examples_cache.pop(user_id, None)
     print(f"[rebuild_profile_only] done for user {user_id} in {time.time()-t0:.1f}s", flush=True)
 
 
@@ -1338,6 +1344,9 @@ def user_search(q: str = ""):
 
 def _public_profile_response(user_id: int, username: str) -> dict:
     """Build the same response shape as /api/profile for any user."""
+    if user_id in _public_profile_cache:
+        return _public_profile_cache[user_id]
+
     state = _get_or_build_profile(user_id, username)
     if not state:
         raise HTTPException(status_code=404, detail="No profile yet")
@@ -1367,7 +1376,6 @@ def _public_profile_response(user_id: int, username: str) -> dict:
     ratings = state.get("ratings") or []
     avg_rating = round(sum(ratings) / len(ratings), 1) if ratings else 0.0
     neutral = state.get("neutral", 3.0)
-    critic = build_critic_profile(rated_movies, ratings)
 
     decades = [
         {"name": d, "weight": decade_weights.get(d, 0.0)}
@@ -1379,7 +1387,7 @@ def _public_profile_response(user_id: int, username: str) -> dict:
         rated_movies, ratings, state.get("user_subgenre_axes") or SUBGENRE_AXES
     )
 
-    return {
+    result = {
         "letterboxd_username": username,
         "ratings_count": len(ratings),
         "watchlist_count": len(state.get("watchlist_ids") or []),
@@ -1389,10 +1397,12 @@ def _public_profile_response(user_id: int, username: str) -> dict:
         "decades": decades,
         "tone": tone,
         "subgenres": [s for s in all_subgenres if s["weight"] > 0][:8],
-        "critic_alignment": critic["alignment"],
-        "quality_floor": round(critic["quality_floor"] - FLOOR_TOLERANCE, 2),
+        "critic_alignment": state.get("critic_alignment", 0.0),
+        "quality_floor": round(state.get("quality_floor", 6.0) - FLOOR_TOLERANCE, 2),
         "neutral": neutral,
     }
+    _public_profile_cache[user_id] = result
+    return result
 
 
 @app.get("/api/users/{username}")
@@ -1409,6 +1419,8 @@ def get_public_examples(username: str):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     user_id = user["id"]
+    if user_id in _public_examples_cache:
+        return _public_examples_cache[user_id]
     state = _get_or_build_profile(user_id, username)
     if not state:
         return {"genre": {}, "subgenre": {}}
@@ -1486,7 +1498,9 @@ def get_public_examples(username: str):
 
     tone_ex = pick_examples(list(TONE_AXES.keys()), tone_match)
 
-    return {"genre": genre_ex, "subgenre": subgenre_ex, "era": era_ex, "tone": tone_ex}
+    result = {"genre": genre_ex, "subgenre": subgenre_ex, "era": era_ex, "tone": tone_ex}
+    _public_examples_cache[user_id] = result
+    return result
 
 
 @app.get("/api/users/{username}/history")
@@ -1649,6 +1663,8 @@ def admin_delete_user(user_id: int, _admin: dict = Depends(get_admin_user)):
     _user_profile_states.pop(user_id, None)
     _profile_response_cache.pop(user_id, None)
     _examples_response_cache.pop(user_id, None)
+    _public_profile_cache.pop(user_id, None)
+    _public_examples_cache.pop(user_id, None)
     return {"deleted": user_id}
 
 
