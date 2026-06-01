@@ -1718,6 +1718,20 @@ def warm_cache(_admin: dict = Depends(get_admin_user)):
     }
 
 
+@app.post("/api/internal/rebuild/{user_id}")
+def internal_rebuild_state(user_id: int, request: Request):
+    """Trigger a full state rebuild for a user. Protected by INTERNAL_SECRET.
+    Used by scripts/manual_import.py after ingesting a large CSV."""
+    if not _INTERNAL_SECRET or request.headers.get("X-Internal-Secret") != _INTERNAL_SECRET:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    from filmprint.db import get_user_by_id as _get_user_by_id
+    user = _get_user_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    _rebuild_state(user_id, user.get("letterboxd_username") or "")
+    return {"status": "done", "user_id": user_id}
+
+
 @app.get("/health")
 def health():
     try:

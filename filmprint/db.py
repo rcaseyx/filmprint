@@ -180,6 +180,14 @@ def init_db(seed_data: dict | None = None) -> None:
 
 # --- users ---
 
+def get_user_by_id(user_id: int) -> dict | None:
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, email, letterboxd_username FROM users WHERE id = %s", (user_id,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
 def get_user_by_email(email: str) -> dict | None:
     with get_connection() as conn:
         cur = conn.cursor()
