@@ -482,53 +482,66 @@ async def lifespan(app: FastAPI):
 
     def _prewarm():
         import threading as _t
-        t_model = time.time()
-        print("[prewarm] loading ONNX model...", flush=True)
-        _get_onnx_model()
-        print(f"[prewarm] ONNX model ready in {time.time()-t_model:.1f}s", flush=True)
-        backfill_catalog_keywords()  # assign any new keywords in background
+        try:
+            t_model = time.time()
+            print("[prewarm] loading ONNX model...", flush=True)
+            _get_onnx_model()
+            print(f"[prewarm] ONNX model ready in {time.time()-t_model:.1f}s", flush=True)
 
-        users = [u for u in get_all_users_with_stats() if u.get("ratings_count", 0) > 0]
-        print(f"[prewarm] starting — {len(users)} user(s) to warm", flush=True)
-        t0 = time.time()
-        counters = {"restored": 0, "rebuilt": 0, "failed": 0, "skipped": 0}
-        counter_lock = _t.Lock()
+            def _run_backfill():
+                try:
+                    print("[prewarm] backfill_catalog_keywords starting...", flush=True)
+                    t = time.time()
+                    n = backfill_catalog_keywords()
+                    print(f"[prewarm] backfill_catalog_keywords done in {time.time()-t:.1f}s — {n} themes", flush=True)
+                except Exception as e:
+                    print(f"[prewarm] backfill_catalog_keywords failed: {e}", flush=True)
 
-        def _warm_one(user):
-            uid = user["id"]
-            uname = user.get("letterboxd_username") or ""
-            if uid in _user_states:
-                with counter_lock:
-                    counters["skipped"] += 1
-                return
-            try:
-                if _restore_state_from_volume(uid, uname):
-                    # Build profile cache without risking eviction of the restored rec state.
-                    _prewarm_profile_cache(uid, uname)
+            _t.Thread(target=_run_backfill, daemon=True).start()
+
+            users = [u for u in get_all_users_with_stats() if u.get("ratings_count", 0) > 0]
+            print(f"[prewarm] starting — {len(users)} user(s) to warm", flush=True)
+            t0 = time.time()
+            counters = {"restored": 0, "rebuilt": 0, "failed": 0, "skipped": 0}
+            counter_lock = _t.Lock()
+
+            def _warm_one(user):
+                uid = user["id"]
+                uname = user.get("letterboxd_username") or ""
+                if uid in _user_states:
                     with counter_lock:
-                        counters["restored"] += 1
-                else:
-                    _rebuild_profile_only(uid, uname)
-                    state = _user_profile_states.get(uid)
-                    if state:
-                        _build_profile_response(uid, state)
-                        _build_examples_response(uid, state)
+                        counters["skipped"] += 1
+                    return
+                try:
+                    if _restore_state_from_volume(uid, uname):
+                        # Build profile cache without risking eviction of the restored rec state.
+                        _prewarm_profile_cache(uid, uname)
+                        with counter_lock:
+                            counters["restored"] += 1
+                    else:
+                        _rebuild_profile_only(uid, uname)
+                        state = _user_profile_states.get(uid)
+                        if state:
+                            _build_profile_response(uid, state)
+                            _build_examples_response(uid, state)
+                        with counter_lock:
+                            counters["rebuilt"] += 1
+                except Exception as e:
+                    print(f"[prewarm] failed for user {uid} ({uname}): {e}", flush=True)
                     with counter_lock:
-                        counters["rebuilt"] += 1
-            except Exception as e:
-                print(f"[prewarm] failed for user {uid} ({uname}): {e}", flush=True)
-                with counter_lock:
-                    counters["failed"] += 1
+                        counters["failed"] += 1
 
-        with ThreadPoolExecutor(max_workers=min(len(users) or 1, 4)) as pool:
-            list(pool.map(_warm_one, users))
+            with ThreadPoolExecutor(max_workers=min(len(users) or 1, 4)) as pool:
+                list(pool.map(_warm_one, users))
 
-        print(
-            f"[prewarm] done in {time.time()-t0:.1f}s — "
-            f"{counters['restored']} restored, {counters['rebuilt']} rebuilt, "
-            f"{counters['skipped']} skipped (already in cache), {counters['failed']} failed",
-            flush=True,
-        )
+            print(
+                f"[prewarm] done in {time.time()-t0:.1f}s — "
+                f"{counters['restored']} restored, {counters['rebuilt']} rebuilt, "
+                f"{counters['skipped']} skipped (already in cache), {counters['failed']} failed",
+                flush=True,
+            )
+        except Exception as e:
+            print(f"[prewarm] fatal error: {e}", flush=True)
 
     threading.Thread(target=_prewarm, daemon=True).start()
     yield
