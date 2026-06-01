@@ -299,12 +299,9 @@ def get_all_users_with_stats() -> list[dict]:
         cur = conn.cursor()
         cur.execute("""
             SELECT u.id, u.email, u.letterboxd_username, u.created_at,
-                   COUNT(DISTINCT r.movie_id) AS ratings_count,
-                   COUNT(DISTINCT w.movie_id) AS watchlist_count
+                   (SELECT COUNT(*) FROM user_ratings WHERE user_id = u.id) AS ratings_count,
+                   (SELECT COUNT(*) FROM user_watchlist WHERE user_id = u.id) AS watchlist_count
             FROM users u
-            LEFT JOIN user_ratings r ON r.user_id = u.id
-            LEFT JOIN user_watchlist w ON w.user_id = u.id
-            GROUP BY u.id
             ORDER BY u.created_at DESC
         """)
         return [dict(row) for row in cur.fetchall()]
