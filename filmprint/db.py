@@ -146,6 +146,7 @@ def init_db(seed_data: dict | None = None) -> None:
         "ALTER TABLE movies ADD COLUMN IF NOT EXISTS mc_score TEXT",
         "ALTER TABLE movies ADD COLUMN IF NOT EXISTS omdb_fetched_at TIMESTAMPTZ",
         "CREATE INDEX IF NOT EXISTS idx_movies_imdb_id ON movies(imdb_id)",
+        "CREATE INDEX IF NOT EXISTS idx_keyword_themes_theme ON keyword_themes(theme)",
         # Backfill imdb_id for existing rows from raw_tmdb JSON
         """UPDATE movies SET imdb_id = (raw_tmdb::jsonb)->>'imdb_id'
            WHERE imdb_id IS NULL AND raw_tmdb IS NOT NULL AND length(raw_tmdb) > 2""",
@@ -344,6 +345,25 @@ def get_all_keyword_themes_full() -> list[dict]:
         cur = conn.cursor()
         cur.execute("SELECT keyword, theme, source, created_at FROM keyword_themes ORDER BY theme, keyword")
         return [dict(row) for row in cur.fetchall()]
+
+
+def get_keyword_theme_stats() -> dict:
+    """Aggregate keyword/theme counts in SQL — avoids fetching all rows."""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT
+                SUM(cnt)                              AS total_keywords,
+                COUNT(*)                              AS total_themes,
+                COUNT(*) FILTER (WHERE cnt > 1)       AS multi_keyword_themes
+            FROM (SELECT theme, COUNT(*) AS cnt FROM keyword_themes GROUP BY theme) sub
+        """)
+        row = cur.fetchone()
+        return {
+            "total_keywords": int(row["total_keywords"] or 0),
+            "total_themes":   int(row["total_themes"]   or 0),
+            "multi_keyword_themes": int(row["multi_keyword_themes"] or 0),
+        }
 
 
 def save_theme_centroids(centroids: dict[str, list[float]]) -> None:
