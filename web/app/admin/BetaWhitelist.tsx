@@ -39,7 +39,7 @@ export function BetaWhitelist() {
         throw new Error(data.detail || "Failed to add")
       }
       const { added } = await res.json()
-      setEmails((prev) => [...prev, added])
+      setEmails((prev) => [...(prev ?? []), added])
       setInput("")
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to add")
@@ -60,7 +60,7 @@ export function BetaWhitelist() {
         const data = await res.json().catch(() => ({}))
         throw new Error(data.detail || "Failed to remove")
       }
-      setEmails((prev) => prev.filter((e) => e !== email))
+      setEmails((prev) => (prev ?? []).filter((e) => e !== email))
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to remove")
     } finally {

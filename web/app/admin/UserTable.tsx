@@ -60,7 +60,7 @@ export function UserTable() {
         const data = await res.json().catch(() => ({}))
         throw new Error(data.detail || "Delete failed")
       }
-      setUsers((prev) => prev.filter((u) => u.id !== userId))
+      setUsers((prev) => (prev ?? []).filter((u) => u.id !== userId))
     } catch (e) {
       setError(e instanceof Error ? e.message : "Delete failed")
     } finally {

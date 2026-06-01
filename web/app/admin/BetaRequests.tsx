@@ -37,7 +37,7 @@ export function BetaRequests() {
         headers: authHeader(session),
       })
       if (res.ok) {
-        setRequests(r => r.filter(req => req.id !== id))
+        setRequests(r => (r ?? []).filter(req => req.id !== id))
       }
     } finally {
       setLoading(null)
