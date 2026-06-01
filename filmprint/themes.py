@@ -315,10 +315,29 @@ def build_clusters() -> int:
     print(f"[recluster] writing {len(rows)} keyword assignments to DB", flush=True)
     bulk_upsert_keyword_themes(rows)
 
-    # ── store centroids, then assign sparse keywords ─────────────────────────
-    print("[recluster] storing centroids and assigning sparse keywords", flush=True)
+    # ── store centroids, then force-reassign ALL sparse keywords ────────────────
+    # assign_new_keywords() skips already-assigned keywords (correct for incremental
+    # backfill). A full recluster must reassign sparse keywords against fresh
+    # centroids so stale assignments from prior runs don't persist.
+    print("[recluster] storing centroids and reassigning sparse keywords", flush=True)
     _store_centroids(cluster_centroids)
-    assign_new_keywords(sparse_kws)
+
+    sparse_to_assign = [kw for kw in sparse_kws if kw.lower() not in _NOISE_KEYWORDS]
+    if sparse_to_assign and cluster_centroids:
+        theme_names = list(cluster_centroids.keys())
+        c_norm = np.stack([cluster_centroids[t] for t in theme_names])
+        c_norm = c_norm / (np.linalg.norm(c_norm, axis=1, keepdims=True) + 1e-8)
+        sparse_embs = model.encode(sparse_to_assign, show_progress_bar=False, batch_size=256)
+        sparse_norm = sparse_embs / (np.linalg.norm(sparse_embs, axis=1, keepdims=True) + 1e-8)
+        sims = sparse_norm @ c_norm.T
+        sparse_rows = [
+            (kw, theme_names[int(np.argmax(sim_row))], "auto")
+            for kw, sim_row in zip(sparse_to_assign, sims)
+            if sim_row[int(np.argmax(sim_row))] >= ASSIGN_THRESHOLD
+            and existing_full.get(kw, {}).get("source") not in ("seed", "claude")
+        ]
+        print(f"[recluster] assigning {len(sparse_rows)}/{len(sparse_to_assign)} sparse keywords", flush=True)
+        bulk_upsert_keyword_themes(sparse_rows)
 
     print(f"[recluster] complete — {len(cluster_centroids)} themes", flush=True)
     return len(cluster_centroids)
