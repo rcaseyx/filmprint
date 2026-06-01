@@ -1623,6 +1623,18 @@ def admin_remove_from_whitelist(email: str, _admin: dict = Depends(get_admin_use
     return {"removed": email}
 
 
+@app.post("/api/admin/users/{user_id}/rebuild")
+def admin_rebuild_user(user_id: int, background_tasks: BackgroundTasks, _admin: dict = Depends(get_admin_user)):
+    """Trigger a full state rebuild for a user in the background."""
+    from filmprint.db import get_user_by_id as _get_user_by_id
+    user = _get_user_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    _user_states.pop(user_id, None)
+    background_tasks.add_task(_rebuild_state, user_id, user.get("letterboxd_username") or "")
+    return {"status": "rebuilding", "user_id": user_id}
+
+
 @app.delete("/api/admin/users/{user_id}")
 def admin_delete_user(user_id: int, _admin: dict = Depends(get_admin_user)):
     delete_user(user_id)

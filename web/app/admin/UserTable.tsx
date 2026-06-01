@@ -18,7 +18,26 @@ export function UserTable({ initialUsers }: { initialUsers: AdminUser[] }) {
   const [users, setUsers] = useState(initialUsers)
   const [confirming, setConfirming] = useState<number | null>(null)
   const [deleting, setDeleting] = useState<number | null>(null)
+  const [rebuilding, setRebuilding] = useState<number | null>(null)
+  const [rebuilt, setRebuilt] = useState<Set<number>>(new Set())
   const [error, setError] = useState<string | null>(null)
+
+  const handleRebuild = async (userId: number) => {
+    setRebuilding(userId)
+    setError(null)
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/admin/users/${userId}/rebuild`,
+        { method: "POST", headers: authHeader(session) }
+      )
+      if (!res.ok) throw new Error("Rebuild failed")
+      setRebuilt(prev => new Set(prev).add(userId))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Rebuild failed")
+    } finally {
+      setRebuilding(null)
+    }
+  }
 
   const handleDelete = async (userId: number) => {
     setDeleting(userId)
@@ -92,30 +111,39 @@ export function UserTable({ initialUsers }: { initialUsers: AdminUser[] }) {
                   {user.created_at.slice(0, 10)}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  {confirming === user.id ? (
-                    <span className="inline-flex items-center gap-2">
-                      <button
-                        onClick={() => handleDelete(user.id)}
-                        disabled={deleting === user.id}
-                        className="text-xs text-red-400 hover:text-red-300 transition-colors disabled:opacity-50"
-                      >
-                        {deleting === user.id ? "Deleting…" : "Confirm"}
-                      </button>
-                      <button
-                        onClick={() => setConfirming(null)}
-                        className="text-xs text-neutral-600 hover:text-neutral-400 transition-colors"
-                      >
-                        Cancel
-                      </button>
-                    </span>
-                  ) : (
+                  <span className="inline-flex items-center gap-3">
                     <button
-                      onClick={() => setConfirming(user.id)}
-                      className="text-xs text-neutral-600 hover:text-red-400 transition-colors"
+                      onClick={() => handleRebuild(user.id)}
+                      disabled={rebuilding === user.id}
+                      className="text-xs text-neutral-600 hover:text-neutral-300 transition-colors disabled:opacity-50"
                     >
-                      Delete
+                      {rebuilding === user.id ? "Queuing…" : rebuilt.has(user.id) ? "Queued ✓" : "Rebuild"}
                     </button>
-                  )}
+                    {confirming === user.id ? (
+                      <span className="inline-flex items-center gap-2">
+                        <button
+                          onClick={() => handleDelete(user.id)}
+                          disabled={deleting === user.id}
+                          className="text-xs text-red-400 hover:text-red-300 transition-colors disabled:opacity-50"
+                        >
+                          {deleting === user.id ? "Deleting…" : "Confirm"}
+                        </button>
+                        <button
+                          onClick={() => setConfirming(null)}
+                          className="text-xs text-neutral-600 hover:text-neutral-400 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => setConfirming(user.id)}
+                        className="text-xs text-neutral-600 hover:text-red-400 transition-colors"
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </span>
                 </td>
               </tr>
             ))}
