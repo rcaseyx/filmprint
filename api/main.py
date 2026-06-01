@@ -62,7 +62,7 @@ from filmprint.db import (
     log_recommendation, get_recent_ratings, get_recommendation_history,
     resolve_recommendation_outcomes, get_recommendation_boosts,
     get_ratings_count, get_watchlist_count, get_all_users_with_stats, delete_user,
-    get_all_keyword_themes_full, get_candidate_movies,
+    get_all_keyword_themes_full, get_keyword_theme_stats, get_candidate_movies,
     compute_ratings_hash, get_movies_by_ids,
     get_user_by_email,
     is_whitelisted, get_whitelist, add_to_whitelist, remove_from_whitelist,
@@ -1514,14 +1514,7 @@ def admin_list_users(_admin: dict = Depends(get_admin_user)):
 
 @app.get("/api/admin/themes")
 def admin_theme_stats(_admin: dict = Depends(get_admin_user)):
-    from collections import Counter
-    rows = get_all_keyword_themes_full()
-    counts = Counter(r["theme"] for r in rows)
-    return {
-        "total_keywords": len(rows),
-        "total_themes": len(counts),
-        "multi_keyword_themes": sum(1 for c in counts.values() if c > 1),
-    }
+    return get_keyword_theme_stats()
 
 
 @app.get("/api/admin/themes/breakdown")
