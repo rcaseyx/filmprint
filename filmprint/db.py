@@ -337,16 +337,19 @@ def upsert_keyword_theme(keyword: str, theme: str, source: str = "auto") -> None
 
 
 def bulk_upsert_keyword_themes(rows: list[tuple[str, str, str]]) -> None:
-    """Upsert many (keyword, theme, source) rows in a single connection."""
+    """Upsert many (keyword, theme, source) rows in a single INSERT statement."""
     if not rows:
         return
+    from psycopg2.extras import execute_values
     with get_connection() as conn:
         cur = conn.cursor()
-        cur.executemany(
+        execute_values(
+            cur,
             """INSERT INTO keyword_themes (keyword, theme, source)
-               VALUES (%s, %s, %s)
+               VALUES %s
                ON CONFLICT(keyword) DO UPDATE SET theme = EXCLUDED.theme, source = EXCLUDED.source""",
             rows,
+            page_size=1000,
         )
 
 
