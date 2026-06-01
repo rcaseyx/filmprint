@@ -17,6 +17,7 @@ export function ThemeManager({ initialStats }: { initialStats: ThemeStats }) {
   const [running, setRunning] = useState(false)
   const [reclustered, setReclustered] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [showBreakdown, setShowBreakdown] = useState(false)
 
   const headers = () => authHeader(session)
 
@@ -74,7 +75,16 @@ export function ThemeManager({ initialStats }: { initialStats: ThemeStats }) {
         </div>
       )}
 
-      <ThemeBreakdown />
+      <div>
+        <button
+          onClick={() => setShowBreakdown((v) => !v)}
+          className="text-xs px-3 py-1.5 rounded-lg border border-neutral-700 text-neutral-400 hover:text-neutral-200 hover:border-neutral-500 transition-colors"
+        >
+          {showBreakdown ? "Hide breakdown" : "Show breakdown"}
+        </button>
+      </div>
+
+      {showBreakdown && <ThemeBreakdown />}
     </div>
   )
 }
