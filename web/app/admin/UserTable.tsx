@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useSession } from "next-auth/react"
 import { authHeader } from "@/lib/api"
 
@@ -13,14 +13,22 @@ export interface AdminUser {
   watchlist_count: number
 }
 
-export function UserTable({ initialUsers }: { initialUsers: AdminUser[] }) {
+export function UserTable() {
   const { data: session } = useSession()
-  const [users, setUsers] = useState(initialUsers)
+  const [users, setUsers] = useState<AdminUser[] | null>(null)
   const [confirming, setConfirming] = useState<number | null>(null)
   const [deleting, setDeleting] = useState<number | null>(null)
   const [rebuilding, setRebuilding] = useState<number | null>(null)
   const [rebuilt, setRebuilt] = useState<Set<number>>(new Set())
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!session) return
+    fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/admin/users`, { headers: authHeader(session) })
+      .then(r => r.json())
+      .then(d => setUsers(d.users ?? []))
+      .catch(() => setUsers([]))
+  }, [session])
 
   const handleRebuild = async (userId: number) => {
     setRebuilding(userId)
@@ -52,7 +60,7 @@ export function UserTable({ initialUsers }: { initialUsers: AdminUser[] }) {
         const data = await res.json().catch(() => ({}))
         throw new Error(data.detail || "Delete failed")
       }
-      setUsers((prev) => prev.filter((u) => u.id !== userId))
+      setUsers((prev) => (prev ?? []).filter((u) => u.id !== userId))
     } catch (e) {
       setError(e instanceof Error ? e.message : "Delete failed")
     } finally {
@@ -60,6 +68,8 @@ export function UserTable({ initialUsers }: { initialUsers: AdminUser[] }) {
       setConfirming(null)
     }
   }
+
+  if (users === null) return <p className="text-xs text-neutral-600 animate-pulse">Loading users…</p>
 
   return (
     <div className="space-y-3">

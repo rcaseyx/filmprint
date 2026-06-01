@@ -1,18 +1,26 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useSession } from "next-auth/react"
 import { authHeader } from "@/lib/api"
 
 const API = process.env.NEXT_PUBLIC_API_URL
 
-export function BetaWhitelist({ initialEmails }: { initialEmails: string[] }) {
+export function BetaWhitelist() {
   const { data: session } = useSession()
-  const [emails, setEmails] = useState(initialEmails)
+  const [emails, setEmails] = useState<string[] | null>(null)
   const [input, setInput] = useState("")
   const [adding, setAdding] = useState(false)
   const [removing, setRemoving] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!session) return
+    fetch(`${API}/api/admin/whitelist`, { headers: authHeader(session) })
+      .then(r => r.json())
+      .then(d => setEmails(d.emails ?? []))
+      .catch(() => setEmails([]))
+  }, [session])
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault()
@@ -31,7 +39,7 @@ export function BetaWhitelist({ initialEmails }: { initialEmails: string[] }) {
         throw new Error(data.detail || "Failed to add")
       }
       const { added } = await res.json()
-      setEmails((prev) => [...prev, added])
+      setEmails((prev) => [...(prev ?? []), added])
       setInput("")
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to add")
@@ -52,13 +60,15 @@ export function BetaWhitelist({ initialEmails }: { initialEmails: string[] }) {
         const data = await res.json().catch(() => ({}))
         throw new Error(data.detail || "Failed to remove")
       }
-      setEmails((prev) => prev.filter((e) => e !== email))
+      setEmails((prev) => (prev ?? []).filter((e) => e !== email))
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to remove")
     } finally {
       setRemoving(null)
     }
   }
+
+  if (emails === null) return <p className="text-xs text-neutral-600 animate-pulse">Loading…</p>
 
   return (
     <div className="space-y-3">

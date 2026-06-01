@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useSession } from "next-auth/react"
 import { authHeader } from "@/lib/api"
 
@@ -16,10 +16,18 @@ interface BetaRequest {
   created_at: string
 }
 
-export function BetaRequests({ initialRequests }: { initialRequests: BetaRequest[] }) {
+export function BetaRequests() {
   const { data: session } = useSession()
-  const [requests, setRequests] = useState(initialRequests)
+  const [requests, setRequests] = useState<BetaRequest[] | null>(null)
   const [loading, setLoading] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (!session) return
+    fetch(`${API}/api/admin/beta-requests`, { headers: authHeader(session) })
+      .then(r => r.json())
+      .then(d => setRequests(d.requests ?? []))
+      .catch(() => setRequests([]))
+  }, [session])
 
   async function act(id: number, action: "approve" | "deny") {
     setLoading(id)
@@ -29,16 +37,15 @@ export function BetaRequests({ initialRequests }: { initialRequests: BetaRequest
         headers: authHeader(session),
       })
       if (res.ok) {
-        setRequests(r => r.filter(req => req.id !== id))
+        setRequests(r => (r ?? []).filter(req => req.id !== id))
       }
     } finally {
       setLoading(null)
     }
   }
 
-  if (requests.length === 0) {
-    return <p className="text-sm text-neutral-500">No pending requests.</p>
-  }
+  if (requests === null) return <p className="text-xs text-neutral-600 animate-pulse">Loading…</p>
+  if (requests.length === 0) return <p className="text-sm text-neutral-500">No pending requests.</p>
 
   return (
     <div className="space-y-3">
