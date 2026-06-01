@@ -1668,10 +1668,20 @@ def admin_delete_user(user_id: int, _admin: dict = Depends(get_admin_user)):
     return {"deleted": user_id}
 
 
+def _run_build_clusters() -> None:
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+    try:
+        n = build_clusters()
+        _log.info(f"[recluster] background task complete — {n} themes")
+    except Exception as exc:
+        _log.exception(f"[recluster] background task failed: {exc}")
+
+
 @app.post("/api/admin/recluster")
 def admin_recluster(background_tasks: BackgroundTasks, _admin: dict = Depends(get_admin_user)):
     """Re-run full co-occurrence + embedding clustering on the catalog."""
-    background_tasks.add_task(build_clusters)
+    background_tasks.add_task(_run_build_clusters)
     return {"status": "recluster started"}
 
 
