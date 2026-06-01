@@ -1669,13 +1669,13 @@ def admin_delete_user(user_id: int, _admin: dict = Depends(get_admin_user)):
 
 
 def _run_build_clusters() -> None:
-    import logging as _logging
-    _log = _logging.getLogger(__name__)
+    import traceback
     try:
         n = build_clusters()
-        _log.info(f"[recluster] background task complete — {n} themes")
+        print(f"[recluster] background task complete — {n} themes", flush=True)
     except Exception as exc:
-        _log.exception(f"[recluster] background task failed: {exc}")
+        print(f"[recluster] background task failed: {exc}", flush=True)
+        traceback.print_exc()
 
 
 @app.post("/api/admin/recluster")
