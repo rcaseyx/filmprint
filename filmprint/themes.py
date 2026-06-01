@@ -351,6 +351,18 @@ def assign_new_keywords(keywords: list[str]) -> None:
 
 # ── startup backfill ─────────────────────────────────────────────────────────
 
+def load_centroids() -> None:
+    """Load centroids synchronously at startup. Runs build_clusters() on first deploy.
+
+    Call this in the main thread before accepting requests so theme lookups work
+    immediately. New keyword assignment (backfill_catalog_keywords) can then run
+    in a background thread without blocking the healthcheck.
+    """
+    _load_centroids_from_db()
+    if not _centroids:
+        build_clusters()
+
+
 def backfill_catalog_keywords() -> int:
     """Called at API startup. Fast path after first run.
 

@@ -83,7 +83,7 @@ from filmprint.tmdb import get_watch_providers, CACHE_DIR as _TMDB_CACHE_DIR
 from filmprint.omdb import get_scores, prime_score_cache
 from filmprint.sync import sync_ratings_csv, sync_watchlist_csv, sync_rss, sync_scrape
 from filmprint.letterboxd import validate_username, scrape_ratings, scrape_watchlist
-from filmprint.themes import assign_new_keywords, build_user_subgenre_axes, backfill_catalog_keywords, build_clusters, claude_cleanup_themes, _get_model as _get_onnx_model
+from filmprint.themes import assign_new_keywords, build_user_subgenre_axes, backfill_catalog_keywords, load_centroids, build_clusters, claude_cleanup_themes, _get_model as _get_onnx_model
 import requests as _requests
 
 DATA_DIR = Path(__file__).parent.parent / "data"
@@ -478,7 +478,7 @@ def _get_or_build_state(user_id: int, username: str) -> dict:
 async def lifespan(app: FastAPI):
     import threading
     init_db(seed_data=SUBGENRE_AXES)
-    backfill_catalog_keywords()
+    load_centroids()  # fast: loads existing themes so requests work immediately
 
     def _prewarm():
         import threading as _t
@@ -486,6 +486,7 @@ async def lifespan(app: FastAPI):
         print("[prewarm] loading ONNX model...", flush=True)
         _get_onnx_model()
         print(f"[prewarm] ONNX model ready in {time.time()-t_model:.1f}s", flush=True)
+        backfill_catalog_keywords()  # assign any new keywords in background
 
         users = [u for u in get_all_users_with_stats() if u.get("ratings_count", 0) > 0]
         print(f"[prewarm] starting — {len(users)} user(s) to warm", flush=True)
