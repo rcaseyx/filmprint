@@ -33,7 +33,7 @@ def _cached_get(cache_key: str, endpoint: str, params: dict = {}) -> dict:
     response.raise_for_status()
     data = response.json()
 
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data))
     return data
 
