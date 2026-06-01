@@ -34,9 +34,9 @@ from .db import (
 
 # ── tunables ────────────────────────────────────────────────────────────────
 
-MIN_FILM_COUNT = 3      # keywords in fewer films are sparse-assigned, not clustered
+MIN_FILM_COUNT = 5      # keywords in fewer films are sparse-assigned, not clustered
 CO_WEIGHT = 0.6         # co-occurrence vs embedding weight in combined similarity
-CLUSTER_DISTANCE = 0.55 # agglomerative linkage cutoff (distance = 1 − similarity)
+CLUSTER_DISTANCE = 0.65 # agglomerative linkage cutoff (distance = 1 − similarity)
 ASSIGN_THRESHOLD = 0.35 # min cosine to nearest centroid to join it vs own theme
 
 _NOISE_KEYWORDS: frozenset[str] = frozenset({
