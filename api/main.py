@@ -1669,10 +1669,10 @@ def admin_delete_user(user_id: int, _admin: dict = Depends(get_admin_user)):
 
 
 @app.post("/api/admin/recluster")
-def admin_recluster(_admin: dict = Depends(get_admin_user)):
+def admin_recluster(background_tasks: BackgroundTasks, _admin: dict = Depends(get_admin_user)):
     """Re-run full co-occurrence + embedding clustering on the catalog."""
-    n_themes = build_clusters()
-    return {"themes": n_themes}
+    background_tasks.add_task(build_clusters)
+    return {"status": "recluster started"}
 
 
 @app.get("/api/admin/memory")
