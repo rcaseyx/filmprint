@@ -83,7 +83,7 @@ from filmprint.tmdb import get_watch_providers, CACHE_DIR as _TMDB_CACHE_DIR
 from filmprint.omdb import get_scores, prime_score_cache
 from filmprint.sync import sync_ratings_csv, sync_watchlist_csv, sync_rss, sync_scrape
 from filmprint.letterboxd import validate_username, scrape_ratings, scrape_watchlist
-from filmprint.themes import assign_new_keywords, build_user_subgenre_axes, backfill_catalog_keywords, load_centroids, build_clusters, _get_model as _get_onnx_model
+from filmprint.themes import assign_new_keywords, build_user_subgenre_axes, backfill_catalog_keywords, load_centroids, build_clusters, claude_cleanup_themes, _get_model as _get_onnx_model
 import requests as _requests
 
 DATA_DIR = Path(__file__).parent.parent / "data"
