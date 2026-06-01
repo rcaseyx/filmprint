@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useSession } from "next-auth/react"
 import { authHeader } from "@/lib/api"
 import { ThemeBreakdown } from "./ThemeBreakdown"
@@ -11,15 +11,23 @@ interface ThemeStats {
   multi_keyword_themes: number
 }
 
-export function ThemeManager({ initialStats }: { initialStats: ThemeStats }) {
+export function ThemeManager() {
   const { data: session } = useSession()
-  const [stats, setStats] = useState(initialStats)
+  const [stats, setStats] = useState<ThemeStats | null>(null)
   const [running, setRunning] = useState(false)
   const [reclustered, setReclustered] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [showBreakdown, setShowBreakdown] = useState(false)
 
   const headers = () => authHeader(session)
+
+  useEffect(() => {
+    if (!session) return
+    fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/admin/themes`, { headers: headers() })
+      .then(r => r.json())
+      .then(d => setStats(d))
+      .catch(() => setStats({ total_keywords: 0, total_themes: 0, multi_keyword_themes: 0 }))
+  }, [session])
 
   const refreshStats = async () => {
     try {
@@ -53,10 +61,13 @@ export function ThemeManager({ initialStats }: { initialStats: ThemeStats }) {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-base font-medium text-neutral-200">Keyword themes</h2>
-          <p className="text-xs text-neutral-500 mt-0.5">
-            {stats.total_keywords.toLocaleString()} keywords → {stats.total_themes.toLocaleString()} themes
-            {" "}({stats.multi_keyword_themes} multi-keyword)
-          </p>
+          {stats === null
+            ? <p className="text-xs text-neutral-600 animate-pulse mt-0.5">Loading…</p>
+            : <p className="text-xs text-neutral-500 mt-0.5">
+                {stats.total_keywords.toLocaleString()} keywords → {stats.total_themes.toLocaleString()} themes
+                {" "}({stats.multi_keyword_themes} multi-keyword)
+              </p>
+          }
         </div>
         <button
           onClick={runRecluster}
