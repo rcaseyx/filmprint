@@ -1,6 +1,8 @@
 "use client"
 
 import { useState } from "react"
+import { useSession } from "next-auth/react"
+import { authHeader } from "@/lib/api"
 
 const API = process.env.NEXT_PUBLIC_API_URL
 
@@ -14,18 +16,8 @@ interface BetaRequest {
   created_at: string
 }
 
-function authHeader(): Record<string, string> {
-  if (typeof window === "undefined") return {}
-  const cookies = document.cookie.split(";").reduce<Record<string, string>>((acc, c) => {
-    const [k, v] = c.trim().split("=")
-    acc[k] = v
-    return acc
-  }, {})
-  const token = cookies["next-auth.session-token"] || cookies["__Secure-next-auth.session-token"] || ""
-  return token ? { Cookie: `next-auth.session-token=${token}` } : {}
-}
-
 export function BetaRequests({ initialRequests }: { initialRequests: BetaRequest[] }) {
+  const { data: session } = useSession()
   const [requests, setRequests] = useState(initialRequests)
   const [loading, setLoading] = useState<number | null>(null)
 
@@ -34,7 +26,7 @@ export function BetaRequests({ initialRequests }: { initialRequests: BetaRequest
     try {
       const res = await fetch(`${API}/api/admin/beta-requests/${id}/${action}`, {
         method: "POST",
-        credentials: "include",
+        headers: authHeader(session),
       })
       if (res.ok) {
         setRequests(r => r.filter(req => req.id !== id))
