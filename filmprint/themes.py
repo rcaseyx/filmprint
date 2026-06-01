@@ -219,12 +219,12 @@ def build_clusters() -> int:
     from sklearn.preprocessing import normalize
     from sklearn.cluster import AgglomerativeClustering
 
-    print(\1, flush=True)
+    print("[recluster] starting — fetching catalog keywords", flush=True)
     kw_films = _get_catalog_keyword_films()
 
     qualified = {kw: films for kw, films in kw_films.items() if len(films) >= MIN_FILM_COUNT}
     sparse_kws = [kw for kw, films in kw_films.items() if len(films) < MIN_FILM_COUNT]
-    print(\1, flush=True)
+    print(f"[recluster] {len(qualified)} qualified keywords, {len(sparse_kws)} sparse", flush=True)
 
     if len(qualified) < 2:
         return 0
@@ -246,19 +246,19 @@ def build_clusters() -> int:
     td = td.tocsr()
 
     # Co-occurrence similarity: normalized rows → cosine similarity matrix
-    print(\1, flush=True)
+    print("[recluster] building co-occurrence similarity matrix", flush=True)
     td_norm = normalize(td, norm="l2")
     cooc_sim = np.asarray((td_norm @ td_norm.T).todense(), dtype=np.float32)
 
     # ── embedding similarity ─────────────────────────────────────────────────
-    print(\1, flush=True)
+    print("[recluster] encoding keywords with ONNX model", flush=True)
     model = _get_model()
     embs = model.encode(keywords, show_progress_bar=False, batch_size=256)
     embs_norm = embs / (np.linalg.norm(embs, axis=1, keepdims=True) + 1e-8)
     emb_sim = (embs_norm @ embs_norm.T).astype(np.float32)
 
     # ── combined distance matrix ─────────────────────────────────────────────
-    print(\1, flush=True)
+    print("[recluster] combining similarity matrices and clustering", flush=True)
     combined = CO_WEIGHT * cooc_sim + (1.0 - CO_WEIGHT) * emb_sim
     np.fill_diagonal(combined, 1.0)
     distance = np.clip(1.0 - combined, 0.0, 2.0).astype(np.float64)
@@ -273,7 +273,7 @@ def build_clusters() -> int:
     labels = clustering.fit_predict(distance)
 
     # ── label each cluster ───────────────────────────────────────────────────
-    print(\1, flush=True)
+    print(f"[recluster] labelling {len(set(labels))} clusters", flush=True)
     clusters: dict[int, list[int]] = defaultdict(list)
     for i, label in enumerate(labels):
         clusters[label].append(i)
@@ -306,7 +306,7 @@ def build_clusters() -> int:
         cluster_centroids[theme_name] = embs[indices].mean(axis=0)
 
     # ── write to DB (preserve seed + claude) ────────────────────────────────
-    print(\1, flush=True)
+    print(f"[recluster] writing {len(theme_assignments)} keyword assignments to DB", flush=True)
     for kw, theme in theme_assignments.items():
         src = existing_full.get(kw, {}).get("source")
         if src in ("seed", "claude"):
@@ -314,11 +314,11 @@ def build_clusters() -> int:
         upsert_keyword_theme(kw, theme, source="auto")
 
     # ── store centroids, then assign sparse keywords ─────────────────────────
-    print(\1, flush=True)
+    print("[recluster] storing centroids and assigning sparse keywords", flush=True)
     _store_centroids(cluster_centroids)
     assign_new_keywords(sparse_kws)
 
-    print(\1, flush=True)
+    print(f"[recluster] complete — {len(cluster_centroids)} themes", flush=True)
     return len(cluster_centroids)
 
 
