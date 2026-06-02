@@ -60,7 +60,7 @@ from filmprint.db import (
     get_user_ratings, get_user_watchlist,
     get_seen_movie_ids, get_taste_profile, save_taste_profile,
     is_profile_stale, upsert_movie, batch_upsert_movies, update_feature_vector,
-    log_recommendation, get_recent_ratings, get_recommendation_history,
+    log_recommendation, get_recent_ratings, get_recommendation_history, get_recent_recommendation_ids,
     resolve_recommendation_outcomes, get_recommendation_boosts,
     get_ratings_count, get_watchlist_count, get_all_users, get_all_users_with_stats, delete_user,
     get_all_keyword_themes_full, get_keyword_theme_stats, get_candidate_movies,
@@ -1173,6 +1173,8 @@ def get_recommendations(mood: MoodContext, current_user: dict = Depends(get_curr
     prime_score_cache([iid for iid in imdb_ids if iid])
 
     session_ids = state.get("session_recommended_ids", set())
+    # Merge with DB-backed 24h history so exclusions survive backend restarts/redeploys.
+    session_ids = session_ids | get_recent_recommendation_ids(user_id, days=1)
     ranked = [(m, s) for m, s in state["ranked"] if m["id"] not in session_ids]
     keyword_vocab = state["keyword_vocab"]
     affinity = state["affinity"]
