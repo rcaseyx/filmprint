@@ -13,6 +13,7 @@ import logging
 import os
 import sys
 import time
+import urllib.request
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -76,9 +77,34 @@ def main() -> None:
         failed,
         total,
     )
+
+    _rebuild_all_profiles()
+
     close_db()
     if failed:
         sys.exit(1)
+
+
+def _rebuild_all_profiles() -> None:
+    backend_url = os.getenv("BACKEND_URL", "").rstrip("/")
+    internal_secret = os.getenv("INTERNAL_SECRET", "")
+    if not backend_url or not internal_secret:
+        log.warning("BACKEND_URL or INTERNAL_SECRET not set — skipping bulk profile rebuild")
+        return
+    log.info("Starting bulk profile rebuild…")
+    req = urllib.request.Request(
+        f"{backend_url}/api/admin/rebuild-all",
+        method="POST",
+        headers={"X-Internal-Secret": internal_secret},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=7200) as resp:
+            for raw_line in resp:
+                line = raw_line.decode().strip()
+                if line:
+                    log.info("[rebuild-all] %s", line)
+    except Exception:
+        log.exception("Bulk profile rebuild failed")
 
 
 if __name__ == "__main__":
