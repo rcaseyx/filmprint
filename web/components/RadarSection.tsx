@@ -11,9 +11,9 @@ interface DataPoint {
 
 type RadarExamples = Record<string, { id: number; title: string; year: number | null; rating: number; poster_path: string | null }[]>
 
-type Tab = "Genre" | "Sub-genre" | "Era" | "Tone"
+type Tab = "Genre" | "Themes" | "Era" | "Tone"
 
-const TABS: Tab[] = ["Genre", "Sub-genre", "Era", "Tone"]
+const TABS: Tab[] = ["Genre", "Themes", "Era", "Tone"]
 
 interface Props {
   genres: DataPoint[]
@@ -28,14 +28,14 @@ export function RadarSection({ genres, subgenres, decades, tone, examples }: Pro
 
   const datasets: Record<Tab, DataPoint[]> = {
     "Genre": genres.slice(0, 8),
-    "Sub-genre": subgenres,
+    "Themes": subgenres,
     "Era": decades,
     "Tone": tone,
   }
 
   const examplesMap: Record<Tab, RadarExamples> = {
     "Genre": examples.genre,
-    "Sub-genre": examples.subgenre,
+    "Themes": examples.subgenre,
     "Era": examples.era,
     "Tone": examples.tone,
   }
