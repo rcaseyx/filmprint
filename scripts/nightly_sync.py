@@ -22,7 +22,7 @@ load_dotenv(override=True)
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from filmprint.db import init_db, close_db, get_users_with_letterboxd
-from filmprint.sync import sync_scrape
+from filmprint.sync import sync_rss, sync_scrape
 
 logging.basicConfig(
     level=logging.INFO,
@@ -58,6 +58,8 @@ def main() -> None:
         log.info("[%d/%d] Syncing %s (user_id=%d)", i, total, username, user_id)
 
         try:
+            rss_ratings, rss_watchlist = sync_rss(user_id, username)
+            log.info("[%d/%d] RSS: %s — %d ratings, %d watchlist", i, total, username, rss_ratings, rss_watchlist)
             sync_scrape(user_id, username)
             log.info("[%d/%d] Done: %s", i, total, username)
             succeeded += 1

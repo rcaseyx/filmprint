@@ -71,6 +71,10 @@ def fetch_rss_ratings(username: str) -> list[dict]:
     import time as _time
     url = f"https://letterboxd.com/{username}/rss/"
     feed = feedparser.parse(url)
+    status = getattr(feed, "status", None)
+    if status and status != 200:
+        print(f"[rss] {username}: unexpected status {status}, skipping", flush=True)
+        return []
     entries = []
     for entry in feed.entries:
         rating = getattr(entry, "letterboxd_memberrating", None)

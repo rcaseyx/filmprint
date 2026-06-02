@@ -48,11 +48,12 @@ def sync_ratings_csv(
     db_index: dict[tuple[str, int | None], int] | None = None,
 ) -> int:
     rows = load_ratings_csv(path)
-    pending: list[tuple[int, int, float, str | None, str]] = []
+    seen: dict[int, tuple[int, int, float, str | None, str]] = {}
     for row in track(rows, description="Syncing ratings...", total=len(rows)):
         tmdb_id = _ensure_movie(row["title"], row.get("year"), db_index)
         if tmdb_id:
-            pending.append((user_id, tmdb_id, row["rating"], row.get("date"), "csv"))
+            seen[tmdb_id] = (user_id, tmdb_id, row["rating"], row.get("date"), "csv")
+    pending = list(seen.values())
     batch_upsert_ratings(pending)
     return len(pending)
 
