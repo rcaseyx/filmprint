@@ -24,13 +24,19 @@ interface Props {
   initialExamples?: Record<string, Example[]>
 }
 
-function splitLabel(text: string, maxLen = 10): [string, string | null] {
-  if (text.length <= maxLen) return [text, null]
+function splitLabel(text: string, maxLen = 10): [string, string | null, string | null] {
+  if (text.length <= maxLen) return [text, null, null]
   const pivot = text.lastIndexOf(" ", maxLen)
-  if (pivot > 0) return [text.slice(0, pivot), text.slice(pivot + 1)]
+  if (pivot > 0) {
+    const rest = text.slice(pivot + 1)
+    if (rest.length <= maxLen) return [text.slice(0, pivot), rest, null]
+    const pivot2 = rest.lastIndexOf(" ", maxLen)
+    if (pivot2 > 0) return [text.slice(0, pivot), rest.slice(0, pivot2), rest.slice(pivot2 + 1)]
+    return [text.slice(0, pivot), rest, null]
+  }
   const dash = text.lastIndexOf("-", maxLen)
-  if (dash > 0) return [text.slice(0, dash), text.slice(dash + 1)]
-  return [text, null]
+  if (dash > 0) return [text.slice(0, dash), text.slice(dash + 1), null]
+  return [text, null, null]
 }
 
 export function GenreRadar({ data, label = "", initialExamples = {} }: Props) {
@@ -157,13 +163,19 @@ export function GenreRadar({ data, label = "", initialExamples = {} }: Props) {
         {top.map((d, i) => {
           const x = CENTER + LABEL_R * Math.cos(angles[i])
           const y = CENTER + LABEL_R * Math.sin(angles[i])
-          const [line1, line2] = splitLabel(d.shortName ?? d.name)
+          const [line1, line2, line3] = splitLabel(d.shortName ?? d.name)
           return (
             <text key={d.name} x={x} y={y}
               textAnchor="middle" dominantBaseline="middle"
               fontSize={10}
               fill={hovered === i ? "#a3a3a3" : "#737373"}>
-              {line2 ? (
+              {line3 ? (
+                <>
+                  <tspan x={x} dy="-1.2em">{line1}</tspan>
+                  <tspan x={x} dy="1.2em">{line2}</tspan>
+                  <tspan x={x} dy="1.2em">{line3}</tspan>
+                </>
+              ) : line2 ? (
                 <>
                   <tspan x={x} dy="-0.55em">{line1}</tspan>
                   <tspan x={x} dy="1.2em">{line2}</tspan>
