@@ -20,6 +20,8 @@ export function UserTable() {
   const [deleting, setDeleting] = useState<number | null>(null)
   const [rebuilding, setRebuilding] = useState<number | null>(null)
   const [rebuilt, setRebuilt] = useState<Set<number>>(new Set())
+  const [rebuildAllStatus, setRebuildAllStatus] = useState<"idle" | "running" | "done">("idle")
+  const [rebuildAllLog, setRebuildAllLog] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -29,6 +31,33 @@ export function UserTable() {
       .then(d => setUsers(d.users ?? []))
       .catch(() => setUsers([]))
   }, [session])
+
+  const handleRebuildAll = async () => {
+    setRebuildAllStatus("running")
+    setRebuildAllLog([])
+    setError(null)
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/admin/rebuild-all`,
+        { method: "POST", headers: authHeader(session) }
+      )
+      if (!res.ok) throw new Error("Rebuild All failed")
+      const reader = res.body!.getReader()
+      const decoder = new TextDecoder()
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        const text = decoder.decode(value)
+        for (const line of text.split("\n").filter(Boolean)) {
+          setRebuildAllLog(prev => [...prev, line])
+        }
+      }
+      setRebuildAllStatus("done")
+    } catch (e) {
+      setRebuildAllStatus("idle")
+      setError(e instanceof Error ? e.message : "Rebuild All failed")
+    }
+  }
 
   const handleRebuild = async (userId: number) => {
     setRebuilding(userId)
@@ -74,6 +103,21 @@ export function UserTable() {
   return (
     <div className="space-y-3">
       {error && <p className="text-xs text-red-400">{error}</p>}
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-neutral-500">{users?.length ?? 0} users</span>
+        <button
+          onClick={handleRebuildAll}
+          disabled={rebuildAllStatus === "running"}
+          className="text-xs text-neutral-600 hover:text-neutral-300 transition-colors disabled:opacity-50"
+        >
+          {rebuildAllStatus === "running" ? "Rebuilding all…" : rebuildAllStatus === "done" ? "Rebuild all ✓" : "Rebuild all"}
+        </button>
+      </div>
+      {rebuildAllLog.length > 0 && (
+        <pre className="text-xs text-neutral-500 bg-neutral-900 rounded-lg px-4 py-3 overflow-x-auto max-h-48 overflow-y-auto font-mono">
+          {rebuildAllLog.join("\n")}
+        </pre>
+      )}
       <div className="rounded-xl border border-neutral-800 overflow-hidden">
         <table className="w-full text-sm">
           <thead>

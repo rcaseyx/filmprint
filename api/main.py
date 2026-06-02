@@ -23,6 +23,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 load_dotenv(override=True)
@@ -61,7 +62,7 @@ from filmprint.db import (
     is_profile_stale, upsert_movie, batch_upsert_movies, update_feature_vector,
     log_recommendation, get_recent_ratings, get_recommendation_history,
     resolve_recommendation_outcomes, get_recommendation_boosts,
-    get_ratings_count, get_watchlist_count, get_all_users_with_stats, delete_user,
+    get_ratings_count, get_watchlist_count, get_all_users, get_all_users_with_stats, delete_user,
     get_all_keyword_themes_full, get_keyword_theme_stats, get_candidate_movies,
     compute_ratings_hash, get_movies_by_ids,
     get_user_by_email,
@@ -588,6 +589,22 @@ async def get_admin_user(current_user: dict = Depends(get_current_user)) -> dict
     if not _ADMIN_EMAIL or current_user["email"] != _ADMIN_EMAIL:
         raise HTTPException(status_code=403, detail="Forbidden")
     return current_user
+
+
+async def get_admin_or_internal(request: Request) -> dict:
+    """Accept either a JWT admin token or X-Internal-Secret header (for server-to-server calls)."""
+    if _INTERNAL_SECRET and request.headers.get("X-Internal-Secret") == _INTERNAL_SECRET:
+        return {"user_id": 0, "email": _ADMIN_EMAIL, "username": "internal"}
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    payload = _decode_jwt(auth[7:])
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    email = payload.get("email", "")
+    if not _ADMIN_EMAIL or email != _ADMIN_EMAIL:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    return {"user_id": int(payload["sub"]), "username": payload.get("username", ""), "email": email}
 
 
 # --- schemas ---
@@ -1657,6 +1674,42 @@ def admin_rebuild_user(user_id: int, background_tasks: BackgroundTasks, _admin: 
     _user_states.pop(user_id, None)
     background_tasks.add_task(_rebuild_state, user_id, user.get("letterboxd_username") or "")
     return {"status": "rebuilding", "user_id": user_id}
+
+
+@app.post("/api/admin/rebuild-all")
+def admin_rebuild_all(_auth: dict = Depends(get_admin_or_internal)):
+    """Rebuild full state for all users sequentially, streaming NDJSON progress lines."""
+    import json as _json
+
+    def _stream():
+        users = get_all_users()
+        total = len(users)
+        succeeded = 0
+        failed = 0
+        t_start = time.time()
+        for user in users:
+            uid = user["id"]
+            uname = user.get("letterboxd_username") or ""
+            t1 = time.time()
+            try:
+                _user_states.pop(uid, None)
+                _rebuild_state(uid, uname)
+                elapsed = round(time.time() - t1, 1)
+                succeeded += 1
+                yield _json.dumps({"user_id": uid, "username": uname, "status": "done", "elapsed": elapsed}) + "\n"
+            except Exception as exc:
+                elapsed = round(time.time() - t1, 1)
+                failed += 1
+                yield _json.dumps({"user_id": uid, "username": uname, "status": "error", "error": str(exc), "elapsed": elapsed}) + "\n"
+        yield _json.dumps({
+            "status": "complete",
+            "total": total,
+            "succeeded": succeeded,
+            "failed": failed,
+            "total_elapsed": round(time.time() - t_start, 1),
+        }) + "\n"
+
+    return StreamingResponse(_stream(), media_type="application/x-ndjson")
 
 
 @app.delete("/api/admin/users/{user_id}")
