@@ -1251,8 +1251,11 @@ def sync(current_user: dict = Depends(get_current_user)):
 
     t0 = time.time()
     print(f"[sync] user {user_id} ({username}): starting", flush=True)
+    rss_ratings, rss_watchlist = sync_rss(user_id, username)
+    print(f"[sync] user {user_id}: rss done in {time.time()-t0:.1f}s — {rss_ratings} ratings, {rss_watchlist} watchlist", flush=True)
+    t1 = time.time()
     sync_scrape(user_id, username)
-    print(f"[sync] user {user_id}: scrape done in {time.time()-t0:.1f}s", flush=True)
+    print(f"[sync] user {user_id}: scrape done in {time.time()-t1:.1f}s", flush=True)
     _rebuild_state(user_id, username)
 
     ratings_after = get_ratings_count(user_id)
