@@ -294,6 +294,22 @@ def get_users_with_letterboxd() -> list[dict]:
         return [dict(row) for row in cur.fetchall()]
 
 
+def get_top_users_by_ratings(limit: int = 3) -> list[dict]:
+    """Return top users ordered by rating count, excluding users with no letterboxd username."""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT u.id, u.letterboxd_username, COUNT(r.id) AS ratings_count
+            FROM users u
+            JOIN user_ratings r ON r.user_id = u.id
+            WHERE u.letterboxd_username IS NOT NULL
+            GROUP BY u.id
+            ORDER BY ratings_count DESC
+            LIMIT %s
+        """, (limit,))
+        return [dict(row) for row in cur.fetchall()]
+
+
 def get_all_users_with_stats() -> list[dict]:
     with get_connection() as conn:
         cur = conn.cursor()

@@ -3,6 +3,14 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { apiFetch } from "@/lib/api"
 import { ProfileContent, type ProfileData, type RadarExamples } from "@/components/ProfileContent"
+import { MoodSelector } from "@/components/MoodSelector"
+
+const GENRES = [
+  "Action", "Adventure", "Animation", "Comedy", "Crime",
+  "Documentary", "Drama", "Family", "Fantasy", "History",
+  "Horror", "Music", "Mystery", "Romance", "Science Fiction",
+  "Thriller", "War", "Western",
+]
 
 const API = process.env.NEXT_PUBLIC_API_URL
 
@@ -77,13 +85,30 @@ export default async function PublicProfilePage({ params }: Props) {
     if (ownUsername === username) redirect("/profile")
   }
 
+  const showDemo = !session && username === "rcaseyx"
+
   return (
-    <ProfileContent
-      profile={profile}
-      examples={examples}
-      history={history}
-      username={username}
-      isOwner={false}
-    />
+    <>
+      {showDemo && (
+        <div className="max-w-2xl mx-auto px-6 pt-12 pb-10">
+          <h2 className="text-lg font-semibold tracking-tight mb-1">
+            Get picks for {username}&apos;s taste
+          </h2>
+          <p className="text-neutral-400 text-sm mb-6">
+            Pick a mood and genre — filmprint will find films that match both the vibe and {username}&apos;s taste profile.
+          </p>
+          <MoodSelector genres={GENRES} username={username} />
+        </div>
+      )}
+      <div className={showDemo ? "border-t border-neutral-800" : ""}>
+        <ProfileContent
+          profile={profile}
+          examples={examples}
+          history={history}
+          username={username}
+          isOwner={false}
+        />
+      </div>
+    </>
   )
 }

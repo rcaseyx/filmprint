@@ -157,12 +157,33 @@ class StateCache:
                 logger.warning("[cache] Redis delete failed (%s)", exc)
 
 
+_shared_client = None
+
+
 def make_caches() -> tuple["StateCache", "StateCache", "StateCache", "StateCache"]:
     """Return the four per-user caches, all sharing one Redis connection."""
-    client = _connect()
+    global _shared_client
+    _shared_client = _connect()
     return (
-        StateCache(client, "user_states"),
-        StateCache(client, "user_profile_states"),
-        StateCache(client, "profile_response_cache"),
-        StateCache(client, "examples_response_cache"),
+        StateCache(_shared_client, "user_states"),
+        StateCache(_shared_client, "user_profile_states"),
+        StateCache(_shared_client, "profile_response_cache"),
+        StateCache(_shared_client, "examples_response_cache"),
     )
+
+
+def check_rate_limit(key: str, limit: int, window: int) -> bool:
+    """Fixed-window rate limiter using the shared Redis client.
+
+    Returns True if the request is within the limit, False if exceeded.
+    Fails open (returns True) when Redis is unavailable.
+    """
+    if _shared_client is None:
+        return True
+    try:
+        count = _shared_client.incr(key)
+        if count == 1:
+            _shared_client.expire(key, window)
+        return count <= limit
+    except Exception:
+        return True
