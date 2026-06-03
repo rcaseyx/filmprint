@@ -12,7 +12,18 @@ export function Header() {
   const pathname = usePathname()
   const [menuOpen, setMenuOpen] = useState(false)
 
-  if (!session) return null
+  if (!session) {
+    return (
+      <header className="border-b border-neutral-800/60 px-4 sm:px-6 h-14 sm:h-16 flex items-center gap-4">
+        <Link href="/">
+          <PrintLogo className="h-8 sm:h-10 w-auto" />
+        </Link>
+        <Link href="/" className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors">
+          Home
+        </Link>
+      </header>
+    )
+  }
 
   const navLink = (href: string, label: string) => {
     const active = pathname === href
@@ -35,10 +46,10 @@ export function Header() {
     <header className="border-b border-neutral-800/60 px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between">
       <div className="flex items-center gap-3 sm:gap-4">
         <Link href="/">
-          <PrintLogo className="h-10 sm:h-14 w-auto" />
+          <PrintLogo className="h-8 sm:h-10 w-auto" />
         </Link>
         <nav className="flex items-center gap-3 sm:gap-5">
-          {navLink("/", "Picks")}
+          {navLink("/picks", "Picks")}
           {navLink("/profile", "Profile")}
           {navLink("/search", "People")}
         </nav>
