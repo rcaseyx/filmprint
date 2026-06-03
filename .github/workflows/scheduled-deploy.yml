@@ -34,16 +34,21 @@ jobs:
       - name: Wait for backend deployment to complete
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          RAILWAY_PROJECT_ID: 544b18f1-b3ef-4c9f-8ef6-440519f795cf
         run: |
+          PROJECT_ID="544b18f1-b3ef-4c9f-8ef6-440519f795cf"
+          SERVICE_ID="0783e4d0-de52-4dc2-8b3b-d25ecefed666"
+          ENVIRONMENT_ID="7b3610d5-7618-4604-8ce8-be1fecbd4a52"
+          QUERY='{"query":"query{deployments(input:{projectId:\"'$PROJECT_ID'\",serviceId:\"'$SERVICE_ID'\",environmentId:\"'$ENVIRONMENT_ID'\"}){edges{node{status}}}}"}'
+
           echo "Polling backend deployment status..."
           sleep 15
           for i in $(seq 1 40); do
-            STATUS=$(railway status --json 2>/dev/null | jq -r '
-              .environments.edges[0].node.serviceInstances.edges[]
-              | select(.node.serviceName == "filmprint-backend")
-              | .node.latestDeployment.status
-            ' 2>/dev/null || echo "UNKNOWN")
+            STATUS=$(curl -sf -X POST \
+              -H "Authorization: Bearer $RAILWAY_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "$QUERY" \
+              https://backboard.railway.app/graphql/v2 \
+              | jq -r '.data.deployments.edges[0].node.status' 2>/dev/null || echo "UNKNOWN")
             echo "Attempt $i: $STATUS"
             if [ "$STATUS" = "SUCCESS" ]; then
               echo "Backend deployment succeeded."
