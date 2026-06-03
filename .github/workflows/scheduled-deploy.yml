@@ -42,21 +42,38 @@ jobs:
 
           echo "Polling backend deployment status..."
           sleep 15
+          NULL_COUNT=0
           for i in $(seq 1 40); do
             STATUS=$(curl -sf -X POST \
               -H "Authorization: Bearer $RAILWAY_TOKEN" \
               -H "Content-Type: application/json" \
               -d "$QUERY" \
               https://backboard.railway.app/graphql/v2 \
-              | jq -r '.data.deployments.edges[0].node.status' 2>/dev/null || echo "UNKNOWN")
+              | jq -r '[.data.deployments.edges[].node.status] | map(select(. != null and . != "REMOVED")) | last // "null"' 2>/dev/null || echo "UNKNOWN")
             echo "Attempt $i: $STATUS"
-            if [ "$STATUS" = "SUCCESS" ]; then
-              echo "Backend deployment succeeded."
+            if [ "$STATUS" = "SUCCESS" ] || [ "$STATUS" = "SKIPPED" ]; then
+              echo "Backend deployment succeeded (status: $STATUS)."
               exit 0
             fi
             if [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "CRASHED" ]; then
               echo "Backend deployment failed with status: $STATUS"
               exit 1
+            fi
+            # If GraphQL keeps returning null, fall back to health check after 5 minutes
+            if [ "$STATUS" = "null" ] || [ "$STATUS" = "UNKNOWN" ]; then
+              NULL_COUNT=$((NULL_COUNT + 1))
+              if [ "$NULL_COUNT" -ge 10 ]; then
+                echo "GraphQL status unclear after 5 min, falling back to health check..."
+                HEALTH=$(curl -s -o /dev/null -w "%{http_code}" https://filmprint-backend-production.up.railway.app/health)
+                if [ "$HEALTH" = "200" ]; then
+                  echo "Service healthy (HTTP 200), treating as success."
+                  exit 0
+                fi
+                echo "Health check returned $HEALTH, continuing to poll..."
+                NULL_COUNT=0
+              fi
+            else
+              NULL_COUNT=0
             fi
             sleep 30
           done
