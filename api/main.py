@@ -62,7 +62,7 @@ from filmprint.db import (
     is_profile_stale, upsert_movie, batch_upsert_movies, update_feature_vector,
     log_recommendation, get_recent_ratings, get_recommendation_history, get_recent_recommendation_ids,
     resolve_recommendation_outcomes, get_recommendation_boosts,
-    get_ratings_count, get_watchlist_count, get_all_users, get_all_users_with_stats, get_top_users_by_ratings, delete_user,
+    get_ratings_count, get_watchlist_count, get_all_users, get_all_users_with_stats, delete_user,
     get_all_keyword_themes_full, get_keyword_theme_stats, get_candidate_movies,
     compute_ratings_hash, get_movies_by_ids,
     get_user_by_email,
@@ -94,7 +94,7 @@ DATA_DIR = Path(__file__).parent.parent / "data"
 FLOOR_TOLERANCE = 0.5
 
 # Per-user pipeline state — backed by Redis, falls back to in-memory dict if unavailable
-from filmprint.cache import make_caches as _make_caches, check_rate_limit
+from filmprint.cache import make_caches as _make_caches
 _user_states, _user_profile_states, _profile_response_cache, _examples_response_cache = _make_caches()
 _public_profile_cache: dict[int, dict] = {}
 _public_examples_cache: dict[int, dict] = {}
@@ -1364,26 +1364,6 @@ def user_search(q: str = ""):
     return {"users": search_users_by_username(q)}
 
 
-@app.get("/api/users/top")
-def get_top_users(limit: int = 3):
-    rows = get_top_users_by_ratings(limit)
-    result = []
-    for row in rows:
-        user_id = row["id"]
-        username = row["letterboxd_username"]
-        try:
-            profile = _public_profile_response(user_id, username)
-            top_genres = [g["name"] for g in profile.get("genres", [])[:4]]
-        except Exception:
-            top_genres = []
-        result.append({
-            "username": username,
-            "ratings_count": row["ratings_count"],
-            "top_genres": top_genres,
-        })
-    return {"users": result}
-
-
 def _public_profile_response(user_id: int, username: str) -> dict:
     """Build the same response shape as /api/profile for any user."""
     if user_id in _public_profile_cache:
@@ -1572,78 +1552,6 @@ def get_public_history(username: str):
             "mood_tone": mood_filters.get("tone"),
         })
     return {"history": result}
-
-
-@app.post("/api/users/{username}/recommendations")
-def get_public_recommendations(username: str, mood: MoodContext, request: Request):
-    ip = (request.headers.get("x-forwarded-for") or request.client.host or "unknown").split(",")[0].strip()
-    if not check_rate_limit(f"ratelimit:demo:{ip}", limit=10, window=60):
-        raise HTTPException(status_code=429, detail="Too many requests — try again in a minute")
-
-    user = get_user_by_username(username)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    user_id = user["id"]
-
-    state = _get_or_build_state(user_id, username)
-    if not state:
-        raise HTTPException(status_code=428, detail="No profile for this user")
-
-    imdb_ids = [(m.get("raw_tmdb") or m).get("imdb_id") for m, _ in state.get("ranked") or []]
-    prime_score_cache([iid for iid in imdb_ids if iid])
-
-    ranked = list(state["ranked"])
-    keyword_vocab = state["keyword_vocab"]
-    affinity = state["affinity"]
-    profile_vec = state["profile_vec"]
-    user_subgenre_axes = state.get("user_subgenre_axes") or {}
-
-    cluster = _select_cluster(mood, state)
-    active_vec = cluster if cluster is not None else profile_vec
-    if cluster is not None:
-        ranked = rank_watchlist(cluster, [m for m, _ in ranked], keyword_vocab, affinity, user_subgenre_axes)
-        active_summary = taste_summary(cluster, keyword_vocab, user_subgenre_axes)
-    else:
-        active_summary = state["summary"]
-
-    active_vec = _apply_mood_to_vector(active_vec, mood, keyword_vocab, user_subgenre_axes)
-    if mood.tone or mood.pacing or mood.familiarity:
-        ranked = rank_watchlist(active_vec, [m for m, _ in ranked], keyword_vocab, affinity, user_subgenre_axes)
-
-    if mood.required_genres:
-        existing_ids = {m["id"] for m, _ in ranked}
-        excluded = state.get("seen_ids", set()) | existing_ids
-        quality_floor = state.get("quality_floor", 6.0)
-        discovered_raw = discover_by_mood(mood.required_genres, existing_ids=excluded)
-        if discovered_raw:
-            discovered_raw = [d for d in discovered_raw if not d.get("vote_average") or d["vote_average"] >= quality_floor]
-            for d in discovered_raw:
-                upsert_movie(d)
-            discovered = ensure_feature_vectors([{**d, "raw_tmdb": d} for d in discovered_raw])
-            new_ranked = rank_watchlist(active_vec, discovered, keyword_vocab, affinity, user_subgenre_axes)
-            ranked = sorted(ranked + new_ranked, key=lambda x: x[1], reverse=True)
-
-    filtered = _apply_filters(ranked, mood)
-    diverse = diversify(filtered, ranked, keyword_vocab, affinity, user_subgenre_axes)
-
-    quality_floor = state.get("quality_floor", 6.0)
-    from filmprint.db import get_movie_omdb_scores as _get_movie_omdb_scores
-    imdb_filtered = []
-    for m, s in diverse:
-        raw = m.get("raw_tmdb") or m
-        imdb_id = raw.get("imdb_id", "")
-        if imdb_id:
-            scores = _get_movie_omdb_scores(imdb_id)
-            if scores:
-                imdb = scores.get("imdb_rating")
-                if imdb and float(imdb) < quality_floor:
-                    continue
-        imdb_filtered.append((m, s))
-
-    diverse = imdb_filtered or diverse
-    mood_summary = _mood_to_summary(mood)
-    picks = _explain_recommendations(diverse, mood_summary, active_summary, state.get("watchlist_ids", set()))
-    return {"picks": picks, "mood_summary": mood_summary}
 
 
 # --- admin endpoints ---

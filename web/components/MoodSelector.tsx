@@ -22,7 +22,6 @@ interface Pick {
 
 interface Props {
   genres: string[]
-  username?: string
 }
 
 type Tone = "light" | "dark"
@@ -80,7 +79,7 @@ interface TopFilm {
   rating: number
 }
 
-export function MoodSelector({ genres, username }: Props) {
+export function MoodSelector({ genres }: Props) {
   const { data: session } = useSession()
   const [selectedGenres, setSelectedGenres] = useState<string[]>([])
   const [tone, setTone] = useState<Tone | null>(null)
@@ -94,13 +93,6 @@ export function MoodSelector({ genres, username }: Props) {
   const [genreExamples, setGenreExamples] = useState<Record<string, TopFilm[]>>({})
 
   useEffect(() => {
-    if (username) {
-      fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/users/${encodeURIComponent(username)}/examples`)
-        .then((r) => r.json())
-        .then((data) => setGenreExamples(data.genre as Record<string, TopFilm[]>))
-        .catch(() => {})
-      return
-    }
     if (!session) return
     fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/profile/examples`, {
       headers: authHeader(session),
@@ -108,7 +100,7 @@ export function MoodSelector({ genres, username }: Props) {
       .then((r) => r.json())
       .then((data) => setGenreExamples(data.genre as Record<string, TopFilm[]>))
       .catch(() => {})
-  }, [session, username])
+  }, [session])
 
   const toggleGenre = (name: string) => {
     setSelectedGenres((prev) =>
@@ -120,11 +112,8 @@ export function MoodSelector({ genres, username }: Props) {
     setLoading(true)
     setError(null)
     try {
-      const endpoint = username
-        ? `${process.env.NEXT_PUBLIC_API_URL}/api/users/${encodeURIComponent(username)}/recommendations`
-        : `${process.env.NEXT_PUBLIC_API_URL}/api/recommendations`
-      const headers: Record<string, string> = { "Content-Type": "application/json", ...(!username ? authHeader(session) : {}) }
-      const res = await fetch(endpoint, {
+      const headers: Record<string, string> = { "Content-Type": "application/json", ...authHeader(session) }
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/recommendations`, {
         method: "POST",
         headers,
         body: JSON.stringify({
@@ -163,7 +152,7 @@ export function MoodSelector({ genres, username }: Props) {
   }
 
   if (picks) {
-    return <RecommendationResults picks={picks} onReset={handleReset} onRefresh={username ? undefined : handleSubmit} refreshing={loading} />
+    return <RecommendationResults picks={picks} onReset={handleReset} onRefresh={handleSubmit} refreshing={loading} />
   }
 
   const chipsDuration = Math.min(genres.length * 35 + 50, 350)

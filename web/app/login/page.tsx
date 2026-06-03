@@ -15,7 +15,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (status === "authenticated") router.replace("/picks")
+    if (status === "authenticated") router.replace("/")
   }, [status, router])
 
   async function handleSubmit(e: React.FormEvent) {
@@ -27,7 +27,7 @@ export default function LoginPage() {
     if (result?.error) {
       setError("Invalid email or password")
     } else {
-      window.location.href = "/picks"
+      window.location.href = "/"
     }
   }
 
@@ -84,7 +84,7 @@ export default function LoginPage() {
         </div>
 
         <button
-          onClick={() => signIn("google", { callbackUrl: "/picks" })}
+          onClick={() => signIn("google", { callbackUrl: "/" })}
           className="flex items-center gap-3 px-5 py-2.5 bg-neutral-100 text-neutral-900 rounded-lg font-medium text-sm hover:bg-white transition-colors mx-auto"
         >
           <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
