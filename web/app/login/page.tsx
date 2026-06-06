@@ -52,14 +52,21 @@ export default function LoginPage() {
             required
             className="w-full px-4 py-2.5 bg-neutral-900 border border-neutral-800 rounded-lg text-sm placeholder:text-neutral-500 focus:outline-none focus:border-neutral-600"
           />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            required
-            className="w-full px-4 py-2.5 bg-neutral-900 border border-neutral-800 rounded-lg text-sm placeholder:text-neutral-500 focus:outline-none focus:border-neutral-600"
-          />
+          <div className="space-y-1">
+            <input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              required
+              className="w-full px-4 py-2.5 bg-neutral-900 border border-neutral-800 rounded-lg text-sm placeholder:text-neutral-500 focus:outline-none focus:border-neutral-600"
+            />
+            <div className="text-right">
+              <Link href="/forgot-password" className="text-xs text-neutral-500 hover:text-neutral-300 transition-colors">
+                Forgot password?
+              </Link>
+            </div>
+          </div>
           {error && <p className="text-red-400 text-xs">{error}</p>}
           <button
             type="submit"

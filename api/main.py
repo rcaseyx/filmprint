@@ -11,12 +11,14 @@ from typing import Any
 import json
 import os
 import tempfile
+import secrets
 import time
 import zipfile
 
 import datetime
 
 import anthropic
+import bcrypt
 import jwt as pyjwt
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -66,6 +68,7 @@ from filmprint.db import (
     get_all_keyword_themes_full, get_keyword_theme_stats, get_candidate_movies,
     compute_ratings_hash, get_movies_by_ids,
     get_user_by_email,
+    create_reset_token, get_reset_token, consume_reset_token,
     is_whitelisted, get_whitelist, add_to_whitelist, remove_from_whitelist,
     get_movie_title_year_index,
     create_beta_request, get_beta_requests, get_beta_request,
@@ -830,10 +833,18 @@ class ExchangePayload(BaseModel):
     email: str
 
 
+def _validate_password(password: str) -> None:
+    if len(password) < 8:
+        raise HTTPException(status_code=422, detail="Password must be at least 8 characters")
+    if not any(c.isdigit() for c in password):
+        raise HTTPException(status_code=422, detail="Password must contain at least one number")
+
+
 @app.post("/api/auth/register")
 def register(payload: CredentialsPayload):
     if not is_whitelisted(payload.email):
         raise HTTPException(status_code=403, detail="You're not on the beta list")
+    _validate_password(payload.password)
     try:
         user_id = create_user_with_password(payload.email, payload.password)
     except ValueError as e:
@@ -849,6 +860,51 @@ def verify_credentials(payload: CredentialsPayload):
     user_id, username = result
     token = _create_jwt(user_id, payload.email, username)
     return {"user_id": user_id, "email": payload.email, "username": username, "token": token}
+
+
+@app.post("/api/auth/password-reset/request")
+def password_reset_request(payload: CredentialsPayload):
+    from filmprint.email import send_password_reset_email, send_google_account_email
+    user = get_user_by_email(payload.email)
+    if user:
+        if user.get("password_hash"):
+            token = secrets.token_urlsafe(32)
+            expires_at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)
+            create_reset_token(user["id"], token, expires_at)
+            frontend_url = os.environ.get("FRONTEND_URL", "https://myfilmprint.com")
+            reset_url = f"{frontend_url}/reset-password?token={token}"
+            send_password_reset_email(payload.email, reset_url)
+        else:
+            send_google_account_email(payload.email)
+    return {"detail": "If an account with that email exists, you'll receive a reset link."}
+
+
+@app.get("/api/auth/password-reset/validate")
+def password_reset_validate(token: str):
+    row = get_reset_token(token)
+    if not row or row["used"]:
+        return {"valid": False, "reason": "invalid"}
+    if row["expires_at"] < datetime.datetime.now(datetime.timezone.utc):
+        return {"valid": False, "reason": "expired"}
+    return {"valid": True}
+
+
+class ResetPasswordPayload(BaseModel):
+    token: str
+    password: str
+
+
+@app.post("/api/auth/password-reset/confirm")
+def password_reset_confirm(payload: ResetPasswordPayload):
+    _validate_password(payload.password)
+    row = get_reset_token(payload.token)
+    if not row or row["used"]:
+        raise HTTPException(status_code=400, detail="This link has already been used")
+    if row["expires_at"] < datetime.datetime.now(datetime.timezone.utc):
+        raise HTTPException(status_code=400, detail="This link has expired — request a new one")
+    new_hash = bcrypt.hashpw(payload.password.encode(), bcrypt.gensalt()).decode()
+    consume_reset_token(payload.token, new_hash)
+    return {"detail": "Password updated"}
 
 
 @app.post("/api/auth/exchange")
