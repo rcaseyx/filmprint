@@ -164,6 +164,14 @@ def init_db(seed_data: dict | None = None) -> None:
             watchlist_count     INTEGER,
             created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )""",
+        """CREATE TABLE IF NOT EXISTS password_reset_tokens (
+            token       TEXT PRIMARY KEY,
+            user_id     BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            expires_at  TIMESTAMPTZ NOT NULL,
+            used        BOOLEAN NOT NULL DEFAULT false
+        )""",
+        "ALTER TABLE password_reset_tokens DROP CONSTRAINT IF EXISTS password_reset_tokens_user_id_fkey",
+        "ALTER TABLE password_reset_tokens ADD CONSTRAINT password_reset_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE",
     ]
     with get_connection() as conn:
         cur = conn.cursor()
@@ -192,7 +200,7 @@ def get_user_by_id(user_id: int) -> dict | None:
 def get_user_by_email(email: str) -> dict | None:
     with get_connection() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id, letterboxd_username FROM users WHERE email = %s", (email,))
+        cur.execute("SELECT id, letterboxd_username, password_hash FROM users WHERE email = %s", (email,))
         row = cur.fetchone()
         return dict(row) if row else None
 
@@ -483,6 +491,53 @@ def verify_user_password(email: str, password: str) -> tuple[int, str | None] | 
     if bcrypt.checkpw(password.encode(), row["password_hash"].encode()):
         return row["id"], row["letterboxd_username"]
     return None
+
+
+def invalidate_reset_tokens(user_id: int) -> None:
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "DELETE FROM password_reset_tokens WHERE user_id = %s AND used = false",
+            (user_id,),
+        )
+
+
+def create_reset_token(user_id: int, token: str, expires_at) -> None:
+    invalidate_reset_tokens(user_id)
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO password_reset_tokens (token, user_id, expires_at) VALUES (%s, %s, %s)",
+            (token, user_id, expires_at),
+        )
+
+
+def get_reset_token(token: str) -> dict | None:
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT token, user_id, expires_at, used FROM password_reset_tokens WHERE token = %s",
+            (token,),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
+def consume_reset_token(token: str, new_password_hash: str) -> None:
+    """Mark token used and update the user's password in one transaction."""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE password_reset_tokens SET used = true WHERE token = %s RETURNING user_id",
+            (token,),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise ValueError("Token not found")
+        cur.execute(
+            "UPDATE users SET password_hash = %s WHERE id = %s",
+            (new_password_hash, row["user_id"]),
+        )
 
 
 def update_user_username(user_id: int, username: str) -> None:
