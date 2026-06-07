@@ -3,6 +3,10 @@
 import numpy as np
 from .features import build_feature_vector
 
+# Blend weight for the best-matching cluster score vs. global profile score.
+# 0.35 means clusters can lift a strong niche match without overriding global taste.
+_CLUSTER_WEIGHT = 0.35
+
 
 def rank_watchlist(
     taste_profile: np.ndarray,
@@ -10,11 +14,16 @@ def rank_watchlist(
     keyword_vocab: list[str] | None = None,
     affinity: dict | None = None,
     subgenre_axes: dict | None = None,
+    clusters: list[np.ndarray] | None = None,
 ) -> list[tuple[dict, float]]:
     """
     Score each candidate against the taste profile.
     Always builds full vectors (including keywords + affinity) for consistency.
     Returns (movie, score) tuples sorted by score descending.
+
+    When clusters are provided, blends the global profile score with the
+    best-matching cluster score so films that strongly fit any one taste
+    facet rank higher than the flattened global profile alone would place them.
     """
     if not candidates:
         return []
@@ -23,7 +32,15 @@ def rank_watchlist(
         build_feature_vector(m, keyword_vocab, affinity, subgenre_axes)
         for m in candidates
     ])
-    scores = cosine_similarity([taste_profile], matrix)[0]
+    global_scores = cosine_similarity([taste_profile], matrix)[0]
+
+    if clusters and len(clusters) > 1:
+        cluster_matrix = np.array(clusters)
+        best_cluster_scores = cosine_similarity(cluster_matrix, matrix).max(axis=0)
+        scores = (1 - _CLUSTER_WEIGHT) * global_scores + _CLUSTER_WEIGHT * best_cluster_scores
+    else:
+        scores = global_scores
+
     return sorted(zip(candidates, scores.tolist()), key=lambda x: x[1], reverse=True)
 
 

@@ -281,7 +281,7 @@ def _rebuild_state(user_id: int, username: str) -> None:
     prime_score_cache([iid for iid in imdb_ids if iid])
 
     t1 = time.time()
-    ranked = rank_watchlist(profile_vec, all_candidates, keyword_vocab, affinity, user_subgenre_axes)
+    ranked = rank_watchlist(profile_vec, all_candidates, keyword_vocab, affinity, user_subgenre_axes, clusters=clusters)
     print(f"[rebuild_state] ranked {len(ranked)} candidates in {time.time()-t1:.1f}s", flush=True)
 
     _user_states[user_id] = {
