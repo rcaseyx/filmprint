@@ -550,6 +550,16 @@ async def lifespan(app: FastAPI):
                 f"{counters['skipped']} skipped (already in cache), {counters['failed']} failed",
                 flush=True,
             )
+
+            # Return pages freed during prewarm back to the OS. Python's ptmalloc
+            # allocator holds on to freed heap pages indefinitely — malloc_trim
+            # flushes them. Only meaningful on Linux/glibc (Railway); no-ops elsewhere.
+            try:
+                import ctypes
+                ctypes.CDLL("libc.so.6").malloc_trim(0)
+                print("[prewarm] malloc_trim complete", flush=True)
+            except Exception:
+                pass
         except Exception as e:
             print(f"[prewarm] fatal error: {e}", flush=True)
 
