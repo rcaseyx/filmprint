@@ -271,9 +271,23 @@ def _rebuild_state(user_id: int, username: str) -> None:
         va = movie.get("vote_average") or 0
         return va == 0 or va >= quality_floor  # pass through if no votes yet
 
+    def _available_at_home(movie: dict) -> bool:
+        raw = movie.get("raw_tmdb") or movie
+        release_str = (raw.get("release_date") or "")[:10]
+        if len(release_str) < 10:
+            return True
+        try:
+            import datetime as _dt
+            days_old = (_dt.date.today() - _dt.date.fromisoformat(release_str)).days
+        except ValueError:
+            return True
+        if days_old > 90:
+            return True
+        return len(get_watch_providers(movie["id"])) > 0
+
     all_candidates = (
-        [m for m in watchlist if m["id"] not in seen_ids and _above_floor(m)]
-        + [d for d in discovered if d["id"] not in watchlist_ids and _above_floor(d)]
+        [m for m in watchlist if m["id"] not in seen_ids and _above_floor(m) and _available_at_home(m)]
+        + [d for d in discovered if d["id"] not in watchlist_ids and _above_floor(d) and _available_at_home(d)]
     )
 
     # One batch DB query for all OMDB scores so rank_watchlist doesn't hit the DB per movie.
