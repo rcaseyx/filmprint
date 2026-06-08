@@ -170,7 +170,7 @@ export function ProfileContent({ profile, examples, history, username, isOwner }
 
         {profile.favorites?.length > 0 && (
           <section>
-            <h2 className="label mb-4">{isOwner ? "Your favorites" : "Their favorites"}</h2>
+            <h2 className="label mb-4">{isOwner ? "Your favorites" : "Their favorites"} <span className="text-brand">★★★★★</span></h2>
             <div className="-mx-6">
               <div className="flex gap-3 overflow-x-auto scrollbar-hide pb-1 px-6">
                 {profile.favorites.map((f) => (
@@ -195,9 +195,7 @@ export function ProfileContent({ profile, examples, history, username, isOwner }
                           {f.title}
                         </div>
                       )}
-                      <div className="absolute bottom-0 inset-x-0 bg-neutral-950/80 px-2 py-1.5 text-center">
-                        <span className="text-xs text-brand tracking-tight">★★★★★</span>
-                      </div>
+  
                     </div>
                     <div className="text-xs text-neutral-400 truncate leading-snug">{f.title}</div>
                   </a>
