@@ -440,7 +440,7 @@ def search_users_by_username(q: str) -> list[dict]:
                       COUNT(DISTINCT r.movie_id) AS ratings_count
                FROM users u
                LEFT JOIN user_ratings r ON r.user_id = u.id
-               WHERE u.letterboxd_username LIKE %s
+               WHERE u.letterboxd_username ILIKE %s
                GROUP BY u.id
                ORDER BY u.letterboxd_username
                LIMIT 20""",
