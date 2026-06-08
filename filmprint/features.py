@@ -168,7 +168,10 @@ def build_keyword_vocab(
         kw_list = kw_data.get("keywords", []) if isinstance(kw_data, dict) else []
         for kw in kw_list:
             name = kw["name"] if isinstance(kw, dict) else kw
-            if name.lower() not in _NOISE_KEYWORDS:
+            lower = name.lower()
+            # Also check the city part of TMDB's "city, state/country" format
+            city_part = lower.split(",")[0].strip()
+            if lower not in _NOISE_KEYWORDS and city_part not in _NOISE_KEYWORDS:
                 counter[name] += 1
 
     if catalog_counts and total_catalog_films > 0:
