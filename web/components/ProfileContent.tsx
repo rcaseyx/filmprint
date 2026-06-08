@@ -136,20 +136,23 @@ export function ProfileContent({ profile, examples, history, username, isOwner }
                   rel="noopener noreferrer"
                   className="flex-shrink-0 w-24 group"
                 >
-                  <div className="w-24 h-36 rounded-lg overflow-hidden bg-neutral-800 group-hover:ring-1 group-hover:ring-brand/40 transition-all">
+                  <div className="relative w-24 h-36 rounded-lg overflow-hidden bg-neutral-800 group-hover:ring-1 group-hover:ring-brand/40 transition-all">
                     {f.poster_path ? (
                       <Image
                         src={`https://image.tmdb.org/t/p/w185${f.poster_path}`}
                         alt={f.title}
                         width={96}
                         height={144}
-                        className="object-cover w-full h-full"
+                        className="object-cover w-full h-full group-hover:opacity-75 transition-opacity duration-150"
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-neutral-700 text-xs text-center p-2">
                         {f.title}
                       </div>
                     )}
+                    <div className="absolute bottom-0 inset-x-0 bg-neutral-950/80 px-2 py-1.5 text-center">
+                      <span className="text-xs text-brand tracking-tight">★★★★★</span>
+                    </div>
                   </div>
                   <p className="text-xs text-neutral-500 mt-1.5 truncate group-hover:text-neutral-300 transition-colors">{f.title}</p>
                 </a>
