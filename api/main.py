@@ -100,6 +100,7 @@ FLOOR_TOLERANCE = 0.5
 # Catalog-wide keyword film counts for TF-IDF vocab scoring — loaded once at startup
 _catalog_keyword_counts: dict[str, int] = {}
 _total_catalog_films: int = 0
+_idf_weights: dict[str, float] = {}
 
 # Per-user pipeline state — backed by Redis, falls back to in-memory dict if unavailable
 from filmprint.cache import make_caches as _make_caches, check_rate_limit
@@ -227,8 +228,8 @@ def _rebuild_state(user_id: int, username: str) -> None:
 
     t1 = time.time()
     if stale:
-        profile_vec = build_taste_profile(rated_movies, ratings, keyword_vocab, affinity, outcome_boosts, user_subgenre_axes)
-        clusters = build_taste_clusters(rated_movies, ratings, keyword_vocab, affinity, outcome_boosts, user_subgenre_axes)
+        profile_vec = build_taste_profile(rated_movies, ratings, keyword_vocab, affinity, outcome_boosts, user_subgenre_axes, idf=_idf_weights)
+        clusters = build_taste_clusters(rated_movies, ratings, keyword_vocab, affinity, outcome_boosts, user_subgenre_axes, idf=_idf_weights)
         save_taste_profile(user_id, profile_vec.tolist(), len(ratings), PROFILE_VERSION,
                            [c.tolist() for c in clusters])
     else:
@@ -238,8 +239,8 @@ def _rebuild_state(user_id: int, username: str) -> None:
         expected_len = 35 + len(keyword_vocab) + 2 + len(user_subgenre_axes) + len(TONE_AXES)
         if len(profile_vec) != expected_len:
             stale = True
-            profile_vec = build_taste_profile(rated_movies, ratings, keyword_vocab, affinity, subgenre_axes=user_subgenre_axes)
-            clusters = build_taste_clusters(rated_movies, ratings, keyword_vocab, affinity, subgenre_axes=user_subgenre_axes)
+            profile_vec = build_taste_profile(rated_movies, ratings, keyword_vocab, affinity, subgenre_axes=user_subgenre_axes, idf=_idf_weights)
+            clusters = build_taste_clusters(rated_movies, ratings, keyword_vocab, affinity, subgenre_axes=user_subgenre_axes, idf=_idf_weights)
             save_taste_profile(user_id, profile_vec.tolist(), len(ratings), PROFILE_VERSION,
                                [c.tolist() for c in clusters])
     print(f"[rebuild_state] profile built in {time.time()-t1:.1f}s (stale={stale})", flush=True)
@@ -300,7 +301,7 @@ def _rebuild_state(user_id: int, username: str) -> None:
     prime_score_cache([iid for iid in imdb_ids if iid])
 
     t1 = time.time()
-    ranked = rank_watchlist(profile_vec, all_candidates, keyword_vocab, affinity, user_subgenre_axes, clusters=clusters)
+    ranked = rank_watchlist(profile_vec, all_candidates, keyword_vocab, affinity, user_subgenre_axes, clusters=clusters, idf=_idf_weights)
     print(f"[rebuild_state] ranked {len(ranked)} candidates in {time.time()-t1:.1f}s", flush=True)
 
     _user_states[user_id] = {
@@ -357,8 +358,8 @@ def _rebuild_profile_only(user_id: int, username: str) -> None:
         assign_new_keywords(keyword_vocab)
         user_subgenre_axes = build_user_subgenre_axes(keyword_vocab)
         affinity = build_affinity_scores(rated_movies, ratings)
-        profile_vec = build_taste_profile(rated_movies, ratings, keyword_vocab, affinity, outcome_boosts, user_subgenre_axes)
-        clusters = build_taste_clusters(rated_movies, ratings, keyword_vocab, affinity, outcome_boosts, user_subgenre_axes)
+        profile_vec = build_taste_profile(rated_movies, ratings, keyword_vocab, affinity, outcome_boosts, user_subgenre_axes, idf=_idf_weights)
+        clusters = build_taste_clusters(rated_movies, ratings, keyword_vocab, affinity, outcome_boosts, user_subgenre_axes, idf=_idf_weights)
         save_taste_profile(user_id, profile_vec.tolist(), len(ratings), PROFILE_VERSION,
                            [c.tolist() for c in clusters])
         (_STATE_DIR / f"{user_id}.json").unlink(missing_ok=True)
@@ -375,8 +376,8 @@ def _rebuild_profile_only(user_id: int, username: str) -> None:
         expected_len = 35 + len(keyword_vocab) + 2 + len(user_subgenre_axes) + len(TONE_AXES)
         if len(profile_vec) != expected_len:
             rated_movies = ensure_feature_vectors(rated_movies)
-            profile_vec = build_taste_profile(rated_movies, ratings, keyword_vocab, affinity, subgenre_axes=user_subgenre_axes)
-            clusters = build_taste_clusters(rated_movies, ratings, keyword_vocab, affinity, subgenre_axes=user_subgenre_axes)
+            profile_vec = build_taste_profile(rated_movies, ratings, keyword_vocab, affinity, subgenre_axes=user_subgenre_axes, idf=_idf_weights)
+            clusters = build_taste_clusters(rated_movies, ratings, keyword_vocab, affinity, subgenre_axes=user_subgenre_axes, idf=_idf_weights)
             save_taste_profile(user_id, profile_vec.tolist(), len(ratings), PROFILE_VERSION,
                                [c.tolist() for c in clusters])
             (_STATE_DIR / f"{user_id}.json").unlink(missing_ok=True)
@@ -506,11 +507,20 @@ def _get_or_build_state(user_id: int, username: str) -> dict:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     import threading
-    global _catalog_keyword_counts, _total_catalog_films
+    global _catalog_keyword_counts, _total_catalog_films, _idf_weights
     init_db(seed_data=SUBGENRE_AXES)
     load_centroids()  # fast: loads existing themes so requests work immediately
     _catalog_keyword_counts, _total_catalog_films = get_catalog_keyword_counts()
     print(f"[startup] catalog keyword counts loaded: {len(_catalog_keyword_counts)} keywords, {_total_catalog_films} films", flush=True)
+    if _catalog_keyword_counts and _total_catalog_films > 0:
+        import math as _math
+        raw_idf = {
+            kw: _math.log((_total_catalog_films + 1) / (count + 1))
+            for kw, count in _catalog_keyword_counts.items()
+        }
+        max_idf = max(raw_idf.values()) if raw_idf else 1.0
+        _idf_weights = {kw: score / max_idf for kw, score in raw_idf.items()}
+    print(f"[startup] IDF weights computed: {len(_idf_weights)} keywords", flush=True)
 
     def _prewarm():
         import threading as _t
@@ -676,6 +686,7 @@ def _apply_mood_to_vector(
     mood: "MoodContext",
     keyword_vocab: list[str],
     subgenre_axes: dict,
+    idf: dict | None = None,
 ) -> "np.ndarray":
     """Blend a mood direction into a profile vector before ranking.
 
@@ -694,7 +705,7 @@ def _apply_mood_to_vector(
         return vec
 
     synthetic_movie = {"raw_tmdb": {"keywords": [{"name": kw} for kw in synthetic_kws]}}
-    mood_dir = build_feature_vector(synthetic_movie, keyword_vocab, subgenre_axes=subgenre_axes)
+    mood_dir = build_feature_vector(synthetic_movie, keyword_vocab, subgenre_axes=subgenre_axes, idf=idf)
     blended = vec + _MOOD_BOOST_WEIGHT * mood_dir
     norm = np.linalg.norm(blended)
     return blended / norm if norm > 0 else blended
@@ -1276,17 +1287,17 @@ def get_recommendations(mood: MoodContext, current_user: dict = Depends(get_curr
     if cluster is not None:
         all_candidates = [m for m, _ in ranked]
         t_rw = time.time()
-        ranked = rank_watchlist(cluster, all_candidates, keyword_vocab, affinity, user_subgenre_axes)
+        ranked = rank_watchlist(cluster, all_candidates, keyword_vocab, affinity, user_subgenre_axes, idf=_idf_weights)
         print(f"[rec] user {user_id}: cluster rank_watchlist in {time.time()-t_rw:.1f}s", flush=True)
         active_summary = taste_summary(cluster, keyword_vocab, user_subgenre_axes)
     else:
         active_summary = state["summary"]
 
-    active_vec = _apply_mood_to_vector(active_vec, mood, keyword_vocab, user_subgenre_axes)
+    active_vec = _apply_mood_to_vector(active_vec, mood, keyword_vocab, user_subgenre_axes, idf=_idf_weights)
     if mood.tone or mood.pacing or mood.familiarity:
         all_candidates = [m for m, _ in ranked]
         t_rw = time.time()
-        ranked = rank_watchlist(active_vec, all_candidates, keyword_vocab, affinity, user_subgenre_axes)
+        ranked = rank_watchlist(active_vec, all_candidates, keyword_vocab, affinity, user_subgenre_axes, idf=_idf_weights)
         print(f"[rec] user {user_id}: mood rank_watchlist in {time.time()-t_rw:.1f}s", flush=True)
     t1 = time.time()
 
@@ -1304,13 +1315,13 @@ def get_recommendations(mood: MoodContext, current_user: dict = Depends(get_curr
             for d in discovered_raw:
                 upsert_movie(d)
             discovered = ensure_feature_vectors([{**d, "raw_tmdb": d} for d in discovered_raw])
-            new_ranked = rank_watchlist(active_vec, discovered, keyword_vocab, affinity, user_subgenre_axes)
+            new_ranked = rank_watchlist(active_vec, discovered, keyword_vocab, affinity, user_subgenre_axes, idf=_idf_weights)
             ranked = sorted(ranked + new_ranked, key=lambda x: x[1], reverse=True)
         print(f"[rec] user {user_id}: discover_by_mood ({len(mood.required_genres)} genres) in {time.time()-t1:.1f}s", flush=True)
         t1 = time.time()
 
     filtered = _apply_filters(ranked, mood)
-    diverse = diversify(filtered, ranked, keyword_vocab, affinity, user_subgenre_axes)
+    diverse = diversify(filtered, ranked, keyword_vocab, affinity, user_subgenre_axes, idf=_idf_weights)
 
     # Hard-enforce the quality floor using IMDb scores from the DB.
     # Never makes live API calls — only filters if scores are already stored.
@@ -1689,14 +1700,14 @@ def get_public_recommendations(username: str, mood: MoodContext, request: Reques
     cluster = _select_cluster(mood, state)
     active_vec = cluster if cluster is not None else profile_vec
     if cluster is not None:
-        ranked = rank_watchlist(cluster, [m for m, _ in ranked], keyword_vocab, affinity, user_subgenre_axes)
+        ranked = rank_watchlist(cluster, [m for m, _ in ranked], keyword_vocab, affinity, user_subgenre_axes, idf=_idf_weights)
         active_summary = taste_summary(cluster, keyword_vocab, user_subgenre_axes)
     else:
         active_summary = state["summary"]
 
-    active_vec = _apply_mood_to_vector(active_vec, mood, keyword_vocab, user_subgenre_axes)
+    active_vec = _apply_mood_to_vector(active_vec, mood, keyword_vocab, user_subgenre_axes, idf=_idf_weights)
     if mood.tone or mood.pacing or mood.familiarity:
-        ranked = rank_watchlist(active_vec, [m for m, _ in ranked], keyword_vocab, affinity, user_subgenre_axes)
+        ranked = rank_watchlist(active_vec, [m for m, _ in ranked], keyword_vocab, affinity, user_subgenre_axes, idf=_idf_weights)
 
     if mood.required_genres:
         existing_ids = {m["id"] for m, _ in ranked}
@@ -1708,11 +1719,11 @@ def get_public_recommendations(username: str, mood: MoodContext, request: Reques
             for d in discovered_raw:
                 upsert_movie(d)
             discovered = ensure_feature_vectors([{**d, "raw_tmdb": d} for d in discovered_raw])
-            new_ranked = rank_watchlist(active_vec, discovered, keyword_vocab, affinity, user_subgenre_axes)
+            new_ranked = rank_watchlist(active_vec, discovered, keyword_vocab, affinity, user_subgenre_axes, idf=_idf_weights)
             ranked = sorted(ranked + new_ranked, key=lambda x: x[1], reverse=True)
 
     filtered = _apply_filters(ranked, mood)
-    diverse = diversify(filtered, ranked, keyword_vocab, affinity, user_subgenre_axes)
+    diverse = diversify(filtered, ranked, keyword_vocab, affinity, user_subgenre_axes, idf=_idf_weights)
 
     quality_floor = state.get("quality_floor", 6.0)
     from filmprint.db import get_movie_omdb_scores as _get_movie_omdb_scores

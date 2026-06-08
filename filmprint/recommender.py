@@ -15,6 +15,7 @@ def rank_watchlist(
     affinity: dict | None = None,
     subgenre_axes: dict | None = None,
     clusters: list[np.ndarray] | None = None,
+    idf: dict[str, float] | None = None,
 ) -> list[tuple[dict, float]]:
     """
     Score each candidate against the taste profile.
@@ -29,7 +30,7 @@ def rank_watchlist(
         return []
     from sklearn.metrics.pairwise import cosine_similarity
     matrix = np.array([
-        build_feature_vector(m, keyword_vocab, affinity, subgenre_axes)
+        build_feature_vector(m, keyword_vocab, affinity, subgenre_axes, idf)
         for m in candidates
     ])
     global_scores = cosine_similarity([taste_profile], matrix)[0]
@@ -52,6 +53,7 @@ def diversify(
     subgenre_axes: dict | None = None,
     lam: float = 0.7,
     top_n: int = 20,
+    idf: dict[str, float] | None = None,
 ) -> list[tuple[dict, float]]:
     """
     Reorder candidates using Maximal Marginal Relevance so the slice sent to
@@ -76,7 +78,7 @@ def diversify(
         return pool
 
     vecs = np.array([
-        build_feature_vector(movie, keyword_vocab, affinity, subgenre_axes)
+        build_feature_vector(movie, keyword_vocab, affinity, subgenre_axes, idf)
         for movie, _ in pool
     ])
     scores = np.array([score for _, score in pool])
