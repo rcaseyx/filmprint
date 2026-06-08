@@ -251,11 +251,12 @@ TONE_AXES: dict[str, list[str]] = {
     "Dark": [
         "neo-noir", "gore", "serial killer", "psychopath", "supernatural horror",
         "paranoia", "prison", "murder", "nihilism", "bleak", "trauma",
-        "psychological horror",
+        "psychological horror", "dread", "ominous",
     ],
     "Warm": [
         "hilarious", "amused", "excited", "christmas", "family", "friendship",
         "coming of age", "wholesome", "heartwarming", "uplifting", "romantic comedy",
+        "inspiring", "inspirational", "joyful", "playful", "romantic",
     ],
     "Intense": [
         "suspenseful", "intense", "aggressive", "survival", "martial arts",
@@ -270,6 +271,9 @@ TONE_AXES: dict[str, list[str]] = {
         "supernatural", "alien", "magic", "time travel", "super power",
         "dystopia", "ghost", "demon", "monster", "space opera",
         "post-apocalyptic future", "wizard",
+    ],
+    "Melancholic": [
+        "melancholy", "wistful", "longing", "grieving", "despair",
     ],
 }
 
