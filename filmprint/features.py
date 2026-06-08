@@ -89,10 +89,12 @@ def _movie_keywords(movie: dict) -> set[str]:
     return set()
 
 
-def _keyword_vector(movie: dict, vocab: list[str]) -> list[float]:
+def _keyword_vector(movie: dict, vocab: list[str], idf: dict[str, float] | None = None) -> list[float]:
     if not vocab:
         return []
     kw_names = _movie_keywords(movie)
+    if idf:
+        return [idf.get(kw, 0.0) if kw in kw_names else 0.0 for kw in vocab]
     return [1.0 if kw in kw_names else 0.0 for kw in vocab]
 
 
@@ -210,6 +212,7 @@ def build_feature_vector(
     keyword_vocab: list[str] | None = None,
     affinity: dict | None = None,
     subgenre_axes: dict | None = None,
+    idf: dict[str, float] | None = None,
 ) -> np.ndarray:
     """Combine all feature components into a single normalized vector."""
     axes = subgenre_axes if subgenre_axes is not None else SUBGENRE_AXES
@@ -220,7 +223,7 @@ def build_feature_vector(
         + _score_vector(movie)
         + _popularity_vector(movie)
         + _critic_scores_vector(movie)
-        + _keyword_vector(movie, keyword_vocab or [])
+        + _keyword_vector(movie, keyword_vocab or [], idf)
         + _affinity_vector(movie, affinity or {})
         + _axis_vector(movie, axes)
         + _axis_vector(movie, TONE_AXES)

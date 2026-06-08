@@ -75,7 +75,7 @@ def build_critic_profile(rated_movies: list[dict], ratings: list[float]) -> dict
     return {"alignment": alignment, "quality_floor": adjusted_floor, "neutral": neutral}
 
 # Bump this any time the profile algorithm changes to force a rebuild.
-PROFILE_VERSION = "7.1"
+PROFILE_VERSION = "7.2"
 
 
 def build_taste_profile(
@@ -85,6 +85,7 @@ def build_taste_profile(
     affinity: dict | None = None,
     outcome_boosts: dict[int, float] | None = None,
     subgenre_axes: dict | None = None,
+    idf: dict[str, float] | None = None,
 ) -> np.ndarray:
     """
     Build a taste profile using signed exponential weights around a personal neutral.
@@ -110,7 +111,7 @@ def build_taste_profile(
         if abs(delta) < 0.01:
             continue
         w = (1 if delta > 0 else -1) * delta ** 2 * boosts.get(movie["id"], 1.0)
-        vec = build_feature_vector(movie, keyword_vocab, affinity, subgenre_axes)
+        vec = build_feature_vector(movie, keyword_vocab, affinity, subgenre_axes, idf)
         vectors.append(vec)
         signed_weights.append(w)
 
@@ -133,6 +134,7 @@ def build_taste_clusters(
     outcome_boosts: dict[int, float] | None = None,
     subgenre_axes: dict | None = None,
     n_clusters: int = 3,
+    idf: dict[str, float] | None = None,
 ) -> list[np.ndarray]:
     """
     Cluster the user's rated films into distinct taste modes using k-means,
@@ -152,7 +154,7 @@ def build_taste_clusters(
         return []
 
     movies, rtgs = zip(*pairs)
-    vecs = np.array([build_feature_vector(m, keyword_vocab, affinity, subgenre_axes) for m in movies])
+    vecs = np.array([build_feature_vector(m, keyword_vocab, affinity, subgenre_axes, idf) for m in movies])
 
     from sklearn.cluster import KMeans
     km = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
@@ -164,7 +166,7 @@ def build_taste_clusters(
         c_ratings = [r for r, l in zip(rtgs, labels) if l == c]
         if len(c_movies) >= 3:
             try:
-                profile = build_taste_profile(c_movies, c_ratings, keyword_vocab, affinity, outcome_boosts, subgenre_axes)
+                profile = build_taste_profile(c_movies, c_ratings, keyword_vocab, affinity, outcome_boosts, subgenre_axes, idf)
                 clusters.append(profile)
             except ValueError:
                 pass
