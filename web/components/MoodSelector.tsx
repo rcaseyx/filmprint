@@ -12,6 +12,7 @@ interface Pick {
   year: number | string
   source: "watchlist" | "discovered"
   score: number
+  match_pct?: number
   reason: string
   poster_path: string | null
   genres: string[]

@@ -39,6 +39,7 @@ interface Pick {
   year: number | string
   source: "watchlist" | "discovered"
   score: number
+  match_pct?: number
   reason: string
   poster_path: string | null
   genres: string[]
@@ -116,6 +117,9 @@ export function RecommendationResults({ picks, onReset, onRefresh, refreshing }:
                   }`}>
                     {pick.source === "watchlist" ? "On your watchlist" : "New discovery"}
                   </span>
+                  {pick.match_pct != null && (
+                    <span className="text-xs text-brand font-medium">{pick.match_pct}% match</span>
+                  )}
                 </div>
 
                 {/* Genres + runtime */}

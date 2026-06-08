@@ -912,6 +912,33 @@ def get_ratings_count(user_id: int) -> int:
         return cur.fetchone()["count"]
 
 
+def get_five_star_ratings(user_id: int) -> list[dict]:
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT m.id, m.title, m.year, m.raw_tmdb
+            FROM user_ratings r
+            JOIN movies m ON m.id = r.movie_id
+            WHERE r.user_id = %s AND r.letterboxd_rating = 5.0
+            ORDER BY r.rated_at DESC
+        """, (user_id,))
+        rows = cur.fetchall()
+    result = []
+    for row in rows:
+        raw = {}
+        try:
+            raw = json.loads(row["raw_tmdb"]) if row["raw_tmdb"] else {}
+        except Exception:
+            pass
+        result.append({
+            "id": row["id"],
+            "title": row["title"],
+            "year": row["year"],
+            "poster_path": raw.get("poster_path"),
+        })
+    return result
+
+
 # --- user_watchlist ---
 
 def upsert_watchlist_entry(user_id: int, movie_id: int) -> None:
