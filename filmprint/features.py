@@ -2,6 +2,7 @@
 
 import json
 from collections import Counter, defaultdict
+from .themes import _NOISE_KEYWORDS
 
 import numpy as np
 
@@ -167,7 +168,8 @@ def build_keyword_vocab(
         kw_list = kw_data.get("keywords", []) if isinstance(kw_data, dict) else []
         for kw in kw_list:
             name = kw["name"] if isinstance(kw, dict) else kw
-            counter[name] += 1
+            if name.lower() not in _NOISE_KEYWORDS:
+                counter[name] += 1
 
     if catalog_counts and total_catalog_films > 0:
         scored = {
