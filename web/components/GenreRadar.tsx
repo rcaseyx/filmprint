@@ -26,7 +26,9 @@ interface Props {
 
 function splitLabel(text: string, maxLen = 10): [string, string | null, string | null] {
   if (text.length <= maxLen) return [text, null, null]
-  const pivot = text.lastIndexOf(" ", maxLen)
+  // Try last space within maxLen first; fall back to first space anywhere
+  let pivot = text.lastIndexOf(" ", maxLen)
+  if (pivot <= 0) pivot = text.indexOf(" ")
   if (pivot > 0) {
     const rest = text.slice(pivot + 1)
     if (rest.length <= maxLen) return [text.slice(0, pivot), rest, null]
