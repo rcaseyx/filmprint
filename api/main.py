@@ -1322,6 +1322,10 @@ def get_recommendations(mood: MoodContext, current_user: dict = Depends(get_curr
         print(f"[rec] user {user_id}: discover_by_mood ({len(mood.required_genres)} genres) in {time.time()-t1:.1f}s", flush=True)
         t1 = time.time()
 
+    _pool_max = ranked[0][1] if ranked else 1.0
+    _pool_min = ranked[-1][1] if ranked else 0.0
+    _pool_spread = (_pool_max - _pool_min) or 1.0
+
     filtered = _apply_filters(ranked, mood)
     diverse = diversify(filtered, ranked, keyword_vocab, affinity, user_subgenre_axes, idf=_idf_weights)
 
@@ -1349,10 +1353,8 @@ def get_recommendations(mood: MoodContext, current_user: dict = Depends(get_curr
     print(f"[rec] user {user_id}: explain in {time.time()-t1:.1f}s", flush=True)
 
     if picks:
-        _scores = [p["score"] for p in picks]
-        _spread = (max(_scores) - min(_scores)) or 1
         for p in picks:
-            p["match_pct"] = round(65 + ((p["score"] - min(_scores)) / _spread) * 34)
+            p["match_pct"] = round(65 + ((p["score"] - _pool_min) / _pool_spread) * 34)
 
     mood_context = {"summary": mood_summary, "filters": mood.model_dump()}
     for pick in picks:
@@ -1731,6 +1733,10 @@ def get_public_recommendations(username: str, mood: MoodContext, request: Reques
             new_ranked = rank_watchlist(active_vec, discovered, keyword_vocab, affinity, user_subgenre_axes, idf=_idf_weights)
             ranked = sorted(ranked + new_ranked, key=lambda x: x[1], reverse=True)
 
+    _pool_max = ranked[0][1] if ranked else 1.0
+    _pool_min = ranked[-1][1] if ranked else 0.0
+    _pool_spread = (_pool_max - _pool_min) or 1.0
+
     filtered = _apply_filters(ranked, mood)
     diverse = diversify(filtered, ranked, keyword_vocab, affinity, user_subgenre_axes, idf=_idf_weights)
 
@@ -1752,10 +1758,8 @@ def get_public_recommendations(username: str, mood: MoodContext, request: Reques
     mood_summary = _mood_to_summary(mood)
     picks = _explain_recommendations(diverse, mood_summary, active_summary, state.get("watchlist_ids", set()))
     if picks:
-        _scores = [p["score"] for p in picks]
-        _spread = (max(_scores) - min(_scores)) or 1
         for p in picks:
-            p["match_pct"] = round(65 + ((p["score"] - min(_scores)) / _spread) * 34)
+            p["match_pct"] = round(65 + ((p["score"] - _pool_min) / _pool_spread) * 34)
     return {"picks": picks, "mood_summary": mood_summary}
 
 
