@@ -1,3 +1,4 @@
+import Image from "next/image"
 import { RadarSection } from "@/components/RadarSection"
 import { ProfileStats } from "@/components/ProfileStats"
 import { RecommendationHistory } from "@/components/RecommendationHistory"
@@ -14,6 +15,13 @@ export interface ToneAxis {
   weight: number
 }
 
+export interface Favorite {
+  id: number
+  title: string
+  year: number | null
+  poster_path: string | null
+}
+
 export interface ProfileData {
   ratings_count: number
   watchlist_count: number
@@ -26,6 +34,7 @@ export interface ProfileData {
   critic_alignment: number
   quality_floor: number
   neutral: number
+  favorites: Favorite[]
 }
 
 export interface Example {
@@ -115,6 +124,42 @@ export function ProfileContent({ profile, examples, history, username, isOwner }
           examples={examples}
         />
         <div className="space-y-10">
+        {profile.favorites?.length > 0 && (
+          <section>
+            <h2 className="label mb-4">{isOwner ? "Your favorites" : "Their favorites"}</h2>
+            <div className="flex gap-3 overflow-x-auto pb-1 -mx-6 px-6 scrollbar-none">
+              {profile.favorites.map((f) => (
+                <a
+                  key={f.id}
+                  href={`https://letterboxd.com/tmdb/${f.id}/`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-shrink-0 w-24 group"
+                >
+                  <div className="relative w-24 h-36 rounded-lg overflow-hidden bg-neutral-800 group-hover:ring-1 group-hover:ring-brand/40 transition-all">
+                    {f.poster_path ? (
+                      <Image
+                        src={`https://image.tmdb.org/t/p/w185${f.poster_path}`}
+                        alt={f.title}
+                        width={96}
+                        height={144}
+                        className="object-cover w-full h-full group-hover:opacity-75 transition-opacity duration-150"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-neutral-700 text-xs text-center p-2">
+                        {f.title}
+                      </div>
+                    )}
+                    <div className="absolute bottom-0 inset-x-0 bg-neutral-950/80 px-2 py-1.5 text-center">
+                      <span className="text-xs text-brand tracking-tight">★★★★★</span>
+                    </div>
+                  </div>
+                  <p className="text-xs text-neutral-500 mt-1.5 truncate group-hover:text-neutral-300 transition-colors">{f.title}</p>
+                </a>
+              ))}
+            </div>
+          </section>
+        )}
         <section>
           <div className="flex items-center gap-1.5 mb-3">
             <h2 className="label">Genre affinity</h2>

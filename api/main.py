@@ -74,6 +74,7 @@ from filmprint.db import (
     create_beta_request, get_beta_requests, get_beta_request,
     update_beta_request_counts, delete_beta_request,
     get_catalog_keyword_counts,
+    get_five_star_ratings,
 )
 from filmprint.features import (
     build_feature_vector, taste_summary, build_keyword_vocab,
@@ -1069,6 +1070,7 @@ def _build_profile_response(user_id: int, state: dict) -> dict:
         "critic_alignment": state.get("critic_alignment", 0.0),
         "quality_floor": round(state.get("quality_floor", 6.0) - FLOOR_TOLERANCE, 2),
         "neutral": neutral,
+        "favorites": get_five_star_ratings(user_id),
     }
     _profile_response_cache[user_id] = result
     return result
@@ -1346,6 +1348,12 @@ def get_recommendations(mood: MoodContext, current_user: dict = Depends(get_curr
     picks = _explain_recommendations(diverse, mood_summary, active_summary, watchlist_ids)
     print(f"[rec] user {user_id}: explain in {time.time()-t1:.1f}s", flush=True)
 
+    if picks:
+        _scores = [p["score"] for p in picks]
+        _spread = (max(_scores) - min(_scores)) or 1
+        for p in picks:
+            p["match_pct"] = round(65 + ((p["score"] - min(_scores)) / _spread) * 34)
+
     mood_context = {"summary": mood_summary, "filters": mood.model_dump()}
     for pick in picks:
         log_recommendation(user_id, pick["id"], pick["score"], mood_context)
@@ -1541,6 +1549,7 @@ def _public_profile_response(user_id: int, username: str) -> dict:
         "critic_alignment": state.get("critic_alignment", 0.0),
         "quality_floor": round(state.get("quality_floor", 6.0) - FLOOR_TOLERANCE, 2),
         "neutral": neutral,
+        "favorites": get_five_star_ratings(user_id),
     }
     _public_profile_cache[user_id] = result
     return result
@@ -1742,6 +1751,11 @@ def get_public_recommendations(username: str, mood: MoodContext, request: Reques
     diverse = imdb_filtered or diverse
     mood_summary = _mood_to_summary(mood)
     picks = _explain_recommendations(diverse, mood_summary, active_summary, state.get("watchlist_ids", set()))
+    if picks:
+        _scores = [p["score"] for p in picks]
+        _spread = (max(_scores) - min(_scores)) or 1
+        for p in picks:
+            p["match_pct"] = round(65 + ((p["score"] - min(_scores)) / _spread) * 34)
     return {"picks": picks, "mood_summary": mood_summary}
 
 
