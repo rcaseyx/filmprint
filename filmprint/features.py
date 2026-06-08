@@ -2,6 +2,7 @@
 
 import json
 from collections import Counter, defaultdict
+from .themes import _NOISE_KEYWORDS
 
 import numpy as np
 
@@ -144,8 +145,20 @@ def _affinity_vector(movie: dict, affinity: dict) -> list[float]:
     return [director_score, actor_score]
 
 
-def build_keyword_vocab(rated_movies: list[dict], top_k: int = 50) -> list[str]:
-    """Build a keyword vocabulary from the most common keywords across rated films."""
+def build_keyword_vocab(
+    rated_movies: list[dict],
+    top_k: int = 50,
+    catalog_counts: dict[str, int] | None = None,
+    total_catalog_films: int = 0,
+) -> list[str]:
+    """Build a keyword vocabulary from the user's rated films.
+
+    When catalog_counts are provided, ranks by TF-IDF so keywords that are
+    frequent in the user's history but rare catalog-wide (e.g. "giallo",
+    "mumblecore") rank above common soft-noise keywords like "friendship".
+    Falls back to raw frequency when catalog data is unavailable.
+    """
+    import math
     counter: Counter = Counter()
     for movie in rated_movies:
         raw = _raw(movie)
@@ -155,7 +168,16 @@ def build_keyword_vocab(rated_movies: list[dict], top_k: int = 50) -> list[str]:
         kw_list = kw_data.get("keywords", []) if isinstance(kw_data, dict) else []
         for kw in kw_list:
             name = kw["name"] if isinstance(kw, dict) else kw
-            counter[name] += 1
+            if name.lower() not in _NOISE_KEYWORDS:
+                counter[name] += 1
+
+    if catalog_counts and total_catalog_films > 0:
+        scored = {
+            kw: count * math.log((total_catalog_films + 1) / (catalog_counts.get(kw, 0) + 1))
+            for kw, count in counter.items()
+        }
+        return [kw for kw, _ in sorted(scored.items(), key=lambda x: x[1], reverse=True)[:top_k]]
+
     return [kw for kw, _ in counter.most_common(top_k)]
 
 
