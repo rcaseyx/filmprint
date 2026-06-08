@@ -73,6 +73,7 @@ from filmprint.db import (
     get_movie_title_year_index,
     create_beta_request, get_beta_requests, get_beta_request,
     update_beta_request_counts, delete_beta_request,
+    get_catalog_keyword_counts,
 )
 from filmprint.features import (
     build_feature_vector, taste_summary, build_keyword_vocab,
@@ -95,6 +96,10 @@ DATA_DIR = Path(__file__).parent.parent / "data"
 # Buffer subtracted from the computed quality_floor when enforcing and displaying it.
 # Gives under-reviewed films breathing room without changing the floor's derivation.
 FLOOR_TOLERANCE = 0.5
+
+# Catalog-wide keyword film counts for TF-IDF vocab scoring — loaded once at startup
+_catalog_keyword_counts: dict[str, int] = {}
+_total_catalog_films: int = 0
 
 # Per-user pipeline state — backed by Redis, falls back to in-memory dict if unavailable
 from filmprint.cache import make_caches as _make_caches, check_rate_limit
@@ -210,7 +215,7 @@ def _rebuild_state(user_id: int, username: str) -> None:
     rated_movies = ensure_feature_vectors(list(rated_rows), label="rebuild_state/rated")
     print(f"[rebuild_state] rated movies vectorized in {time.time()-t1:.1f}s", flush=True)
 
-    keyword_vocab = build_keyword_vocab(rated_movies)
+    keyword_vocab = build_keyword_vocab(rated_movies, catalog_counts=_catalog_keyword_counts, total_catalog_films=_total_catalog_films)
     assign_new_keywords(keyword_vocab)
     user_subgenre_axes = build_user_subgenre_axes(keyword_vocab)
     affinity = build_affinity_scores(rated_movies, ratings)
@@ -348,7 +353,7 @@ def _rebuild_profile_only(user_id: int, username: str) -> None:
 
     if stale:
         rated_movies = ensure_feature_vectors(list(rated_rows))
-        keyword_vocab = build_keyword_vocab(rated_movies)
+        keyword_vocab = build_keyword_vocab(rated_movies, catalog_counts=_catalog_keyword_counts, total_catalog_films=_total_catalog_films)
         assign_new_keywords(keyword_vocab)
         user_subgenre_axes = build_user_subgenre_axes(keyword_vocab)
         affinity = build_affinity_scores(rated_movies, ratings)
@@ -360,7 +365,7 @@ def _rebuild_profile_only(user_id: int, username: str) -> None:
         _user_states.pop(user_id, None)
     else:
         rated_movies = list(rated_rows)
-        keyword_vocab = build_keyword_vocab(rated_movies)
+        keyword_vocab = build_keyword_vocab(rated_movies, catalog_counts=_catalog_keyword_counts, total_catalog_films=_total_catalog_films)
         assign_new_keywords(keyword_vocab)
         user_subgenre_axes = build_user_subgenre_axes(keyword_vocab)
         affinity = build_affinity_scores(rated_movies, ratings)
@@ -422,7 +427,7 @@ def _prewarm_profile_cache(user_id: int, username: str) -> None:
     ratings = [r["letterboxd_rating"] for r in rated_rows]
     rated_movies = list(rated_rows)
 
-    keyword_vocab = build_keyword_vocab(rated_movies)
+    keyword_vocab = build_keyword_vocab(rated_movies, catalog_counts=_catalog_keyword_counts, total_catalog_films=_total_catalog_films)
     user_subgenre_axes = build_user_subgenre_axes(keyword_vocab)
     affinity = build_affinity_scores(rated_movies, ratings)
     print(f"[prewarm] user {user_id}: vocab/axes/affinity in {time.time()-t1:.1f}s", flush=True)
@@ -501,8 +506,11 @@ def _get_or_build_state(user_id: int, username: str) -> dict:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     import threading
+    global _catalog_keyword_counts, _total_catalog_films
     init_db(seed_data=SUBGENRE_AXES)
     load_centroids()  # fast: loads existing themes so requests work immediately
+    _catalog_keyword_counts, _total_catalog_films = get_catalog_keyword_counts()
+    print(f"[startup] catalog keyword counts loaded: {len(_catalog_keyword_counts)} keywords, {_total_catalog_films} films", flush=True)
 
     def _prewarm():
         import threading as _t

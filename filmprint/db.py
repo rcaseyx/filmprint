@@ -745,6 +745,31 @@ def save_movie_omdb_scores(imdb_id: str, imdb_score, rt_score, mc_score) -> None
         )
 
 
+def get_catalog_keyword_counts() -> tuple[dict[str, int], int]:
+    """Return ({keyword: film_count}, total_film_count) for TF-IDF keyword vocab scoring."""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) as total FROM movies WHERE keywords IS NOT NULL")
+        total = cur.fetchone()["total"]
+        cur.execute("SELECT id, keywords FROM movies WHERE keywords IS NOT NULL")
+        rows = cur.fetchall()
+    counts: dict[str, int] = {}
+    for row in rows:
+        try:
+            kw_data = json.loads(row["keywords"])
+            if isinstance(kw_data, dict):
+                kw_data = kw_data.get("keywords", [])
+            seen: set[str] = set()
+            for k in kw_data:
+                name = k["name"] if isinstance(k, dict) else k
+                if name and name not in seen:
+                    counts[name] = counts.get(name, 0) + 1
+                    seen.add(name)
+        except Exception:
+            pass
+    return counts, total
+
+
 def get_imdb_ids_missing_omdb(limit: int = 2000) -> list[str]:
     """Return imdb_ids for movies that have never had OMDB scores fetched."""
     with get_connection() as conn:
