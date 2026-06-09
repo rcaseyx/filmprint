@@ -1,3 +1,4 @@
+import Link from "next/link"
 import { ImportFlow } from "@/components/ImportFlow"
 
 export default function OnboardingPage() {
@@ -11,11 +12,10 @@ export default function OnboardingPage() {
         </p>
         <div className="mt-5 rounded-xl border border-brand/20 bg-brand/5 px-4 py-3">
           <p className="text-sm text-amber-300 font-medium">
-            A full CSV export is required for personalized recommendations.
+            A full CSV export gives the most accurate recommendations.
           </p>
           <p className="text-xs text-brand/70 mt-1">
-            filmprint analyzes every rating you&rsquo;ve made — the more ratings, the better the
-            recommendations. A partial import won&rsquo;t produce meaningful results.
+            filmprint analyzes every rating you&rsquo;ve made — the more ratings, the better the results.
           </p>
         </div>
       </div>
@@ -49,6 +49,15 @@ export default function OnboardingPage() {
       </div>
 
       <ImportFlow isOnboarding needsUsername />
+
+      <div className="mt-8 pt-6 border-t border-neutral-800 text-center">
+        <p className="text-sm text-neutral-500">
+          Don&rsquo;t use Letterboxd?{" "}
+          <Link href="/onboarding/rate" className="text-neutral-300 hover:text-white underline underline-offset-2 transition-colors">
+            Rate films directly instead
+          </Link>
+        </p>
+      </div>
     </div>
   )
 }

@@ -172,6 +172,8 @@ def init_db(seed_data: dict | None = None) -> None:
         )""",
         "ALTER TABLE password_reset_tokens DROP CONSTRAINT IF EXISTS password_reset_tokens_user_id_fkey",
         "ALTER TABLE password_reset_tokens ADD CONSTRAINT password_reset_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name TEXT",
+        "UPDATE users SET display_name = split_part(email, '@', 1) WHERE display_name IS NULL AND email IS NOT NULL",
     ]
     with get_connection() as conn:
         cur = conn.cursor()
@@ -436,15 +438,16 @@ def search_users_by_username(q: str) -> list[dict]:
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
-            """SELECT u.id, u.letterboxd_username,
+            """SELECT u.id, u.letterboxd_username, u.display_name,
                       COUNT(DISTINCT r.movie_id) AS ratings_count
                FROM users u
                LEFT JOIN user_ratings r ON r.user_id = u.id
                WHERE u.letterboxd_username ILIKE %s
+                  OR u.display_name ILIKE %s
                GROUP BY u.id
-               ORDER BY u.letterboxd_username
+               ORDER BY u.letterboxd_username NULLS LAST, u.display_name
                LIMIT 20""",
-            (f"%{q}%",),
+            (f"%{q}%", f"%{q}%"),
         )
         return [dict(row) for row in cur.fetchall()]
 
@@ -466,12 +469,13 @@ def get_or_create_user_by_email(email: str) -> tuple[int, str | None]:
 def create_user_with_password(email: str, password: str) -> int:
     """Create a credentials-based user. Raises ValueError if email is taken."""
     password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    display_name = email.split("@")[0]
     with get_connection() as conn:
         cur = conn.cursor()
         try:
             cur.execute(
-                "INSERT INTO users (email, password_hash) VALUES (%s, %s) RETURNING id",
-                (email, password_hash),
+                "INSERT INTO users (email, password_hash, display_name) VALUES (%s, %s, %s) RETURNING id",
+                (email, password_hash, display_name),
             )
             return cur.fetchone()["id"]
         except psycopg2.IntegrityError:
@@ -544,7 +548,8 @@ def update_user_username(user_id: int, username: str) -> None:
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
-            "UPDATE users SET letterboxd_username = %s WHERE id = %s", (username, user_id)
+            "UPDATE users SET letterboxd_username = %s, display_name = %s WHERE id = %s",
+            (username, username, user_id),
         )
 
 

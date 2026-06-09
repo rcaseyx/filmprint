@@ -9,7 +9,8 @@ const API = process.env.NEXT_PUBLIC_API_URL
 
 interface UserResult {
   id: number
-  letterboxd_username: string
+  letterboxd_username: string | null
+  display_name: string | null
   ratings_count: number
 }
 
@@ -36,7 +37,7 @@ export default function SearchPage() {
     <div className="max-w-xl mx-auto px-6 py-12 space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Find a user</h1>
-        <p className="text-neutral-400 text-sm mt-1">Search by Letterboxd username</p>
+        <p className="text-neutral-400 text-sm mt-1">Search by username</p>
       </div>
 
       <input
@@ -54,22 +55,36 @@ export default function SearchPage() {
 
       {results.length > 0 && (
         <ul className={`space-y-1 transition-opacity duration-150 ${loading ? "opacity-40" : "opacity-100"}`}>
-          {results.map((user) => (
-            <li key={user.id}>
-              <Link
-                href={`/profile/${user.letterboxd_username}`}
-                className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-neutral-900 transition-colors group"
-              >
-                <Avatar name={user.letterboxd_username} size={36} />
+          {results.map((user) => {
+            const name = user.letterboxd_username ?? user.display_name ?? "Unknown"
+            const inner = (
+              <>
+                <Avatar name={name} size={36} />
                 <div className="min-w-0">
                   <div className="text-sm font-medium text-neutral-200 group-hover:text-white transition-colors">
-                    {user.letterboxd_username}
+                    {name}
                   </div>
                   <div className="text-xs text-neutral-600">{user.ratings_count} ratings</div>
                 </div>
-              </Link>
-            </li>
-          ))}
+              </>
+            )
+            return (
+              <li key={user.id}>
+                {user.letterboxd_username ? (
+                  <Link
+                    href={`/profile/${user.letterboxd_username}`}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-neutral-900 transition-colors group"
+                  >
+                    {inner}
+                  </Link>
+                ) : (
+                  <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg">
+                    {inner}
+                  </div>
+                )}
+              </li>
+            )
+          })}
         </ul>
       )}
     </div>
