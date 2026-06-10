@@ -83,7 +83,7 @@ export function ImportFlow({ isOnboarding, needsUsername }: Props) {
       setStatus("done")
       router.refresh()
       if (isOnboarding) {
-        router.push("/")
+        router.push("/picks")
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Upload failed")

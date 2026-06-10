@@ -157,7 +157,7 @@ export function InAppRatingFlow() {
         }),
       })
       if (!res.ok) throw new Error("Submission failed")
-      router.push("/")
+      router.push("/picks")
       router.refresh()
     } catch {
       setError("Something went wrong — please try again.")

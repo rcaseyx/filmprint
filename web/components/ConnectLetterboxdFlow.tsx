@@ -79,7 +79,7 @@ export function ConnectLetterboxdFlow() {
       }
 
       setStatus("done")
-      router.push("/")
+      router.push("/profile")
       router.refresh()
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong — please try again.")
