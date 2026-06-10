@@ -58,7 +58,7 @@ def _decode_jwt(token: str) -> dict | None:
 from filmprint.db import (
     init_db, get_or_create_user_by_email, update_user_username,
     create_user_with_password, verify_user_password,
-    get_user_by_username, search_users_by_username,
+    get_user_by_id, get_user_by_username, search_users_by_username,
     get_user_ratings, get_user_watchlist,
     get_seen_movie_ids, get_taste_profile, save_taste_profile,
     is_profile_stale, upsert_movie, batch_upsert_movies, update_feature_vector,
@@ -972,7 +972,8 @@ def auth_exchange(payload: ExchangePayload, request: Request):
 @app.get("/api/user")
 def get_user(current_user: dict = Depends(get_current_user)):
     user_id = current_user["user_id"]
-    username = current_user["username"]
+    user_row = get_user_by_id(user_id)
+    username = (user_row or {}).get("letterboxd_username") or ""
     ratings_count = get_ratings_count(user_id)
     return {
         "has_profile": ratings_count > 0,
@@ -2037,8 +2038,7 @@ def admin_remove_from_whitelist(email: str, _admin: dict = Depends(get_admin_use
 @app.post("/api/admin/users/{user_id}/rebuild")
 def admin_rebuild_user(user_id: int, background_tasks: BackgroundTasks, _admin: dict = Depends(get_admin_user)):
     """Trigger a full state rebuild for a user in the background."""
-    from filmprint.db import get_user_by_id as _get_user_by_id
-    user = _get_user_by_id(user_id)
+    user = get_user_by_id(user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     _user_states.pop(user_id, None)
