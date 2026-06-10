@@ -58,7 +58,7 @@ def _decode_jwt(token: str) -> dict | None:
 from filmprint.db import (
     init_db, get_or_create_user_by_email, update_user_username,
     create_user_with_password, verify_user_password,
-    get_user_by_username, search_users_by_username,
+    get_user_by_id, get_user_by_username, search_users_by_username,
     get_user_ratings, get_user_watchlist,
     get_seen_movie_ids, get_taste_profile, save_taste_profile,
     is_profile_stale, upsert_movie, batch_upsert_movies, update_feature_vector,
@@ -75,6 +75,7 @@ from filmprint.db import (
     update_beta_request_counts, delete_beta_request,
     get_catalog_keyword_counts,
     get_five_star_ratings,
+    upsert_rating,
 )
 from filmprint.features import (
     build_feature_vector, taste_summary, build_keyword_vocab,
@@ -85,7 +86,7 @@ from filmprint.profile import build_taste_profile, build_taste_clusters, build_c
 from filmprint.recommender import rank_watchlist, diversify
 from filmprint.discovery import expand_candidates, discover_by_mood
 from filmprint.app import ensure_feature_vectors
-from filmprint.tmdb import get_watch_providers, CACHE_DIR as _TMDB_CACHE_DIR
+from filmprint.tmdb import get_watch_providers, get_movie_details as _tmdb_get_movie_details, CACHE_DIR as _TMDB_CACHE_DIR
 from filmprint.omdb import get_scores, prime_score_cache
 from filmprint.sync import sync_ratings_csv, sync_watchlist_csv, sync_rss, sync_scrape
 from filmprint.letterboxd import validate_username, scrape_ratings, scrape_watchlist
@@ -971,7 +972,8 @@ def auth_exchange(payload: ExchangePayload, request: Request):
 @app.get("/api/user")
 def get_user(current_user: dict = Depends(get_current_user)):
     user_id = current_user["user_id"]
-    username = current_user["username"]
+    user_row = get_user_by_id(user_id)
+    username = (user_row or {}).get("letterboxd_username") or ""
     ratings_count = get_ratings_count(user_id)
     return {
         "has_profile": ratings_count > 0,
@@ -1265,7 +1267,7 @@ def get_recommendations(mood: MoodContext, current_user: dict = Depends(get_curr
     print(f"[rec] user {user_id}: get_or_build_state in {time.time()-t0:.1f}s (cached={user_id in _user_states})", flush=True)
 
     if not state:
-        raise HTTPException(status_code=428, detail="Import your Letterboxd data first")
+        raise HTTPException(status_code=428, detail="Rate some films to get started")
 
     # Batch-prime the in-process OMDb score cache so rank_watchlist doesn't make
     # a DB/API call per movie. _restore_state_from_volume does this too, but when
@@ -1363,6 +1365,163 @@ def get_recommendations(mood: MoodContext, current_user: dict = Depends(get_curr
 
     print(f"[rec] user {user_id}: total {time.time()-t0:.1f}s", flush=True)
     return {"picks": picks, "mood_summary": mood_summary}
+
+
+# ── in-app onboarding ────────────────────────────────────────────────────────
+
+# Taste-differentiating, widely-seen films spanning genres, decades, and tones.
+# Covers: drama/crime, romance, sci-fi, horror, action/adventure, comedy,
+# animation, international prestige, and recent blockbusters.
+ONBOARDING_SEED_IDS: list[int] = [
+    278,    # The Shawshank Redemption
+    238,    # The Godfather
+    155,    # The Dark Knight
+    680,    # Pulp Fiction
+    807,    # Se7en
+    597,    # Titanic
+    313369, # La La Land
+    11036,  # The Notebook
+    376867, # Moonlight
+    244786, # Whiplash
+    62,     # 2001: A Space Odyssey
+    603,    # The Matrix
+    157336, # Interstellar
+    27205,  # Inception
+    438631, # Dune
+    694,    # The Shining
+    493922, # Hereditary
+    274,    # The Silence of the Lambs
+    496243, # Parasite
+    76341,  # Mad Max: Fury Road
+    11,     # Star Wars: A New Hope
+    120,    # The Lord of the Rings: The Fellowship of the Ring
+    329,    # Jurassic Park
+    105,    # Back to the Future
+    27706,  # Mamma Mia
+    218,    # The Truman Show
+    13,     # Forrest Gump
+    129,    # Spirited Away
+    2062,   # Ratatouille
+    862,    # Toy Story
+    10681,  # WALL-E
+    372058, # Your Name
+    637,    # Life is Beautiful
+    424,    # Schindler's List
+    4935,   # Howl's Moving Castle
+    299534, # Avengers: Endgame
+    569094, # Spider-Man: Across the Spider-Verse
+    361743, # Top Gun: Maverick
+    510,    # One Flew Over the Cuckoo's Nest
+    348,    # Alien
+]
+
+
+@app.get("/api/onboarding/seed-films")
+def get_seed_films(current_user: dict = Depends(get_current_user)):
+    """Return the curated seed film list for in-app onboarding.
+
+    Films not yet in the catalog are fetched from TMDB and upserted on first call.
+    Subsequent calls are fast — TMDB responses are file-cached.
+    """
+    present = get_movies_by_ids(ONBOARDING_SEED_IDS)
+    missing = [mid for mid in ONBOARDING_SEED_IDS if mid not in present]
+    for tmdb_id in missing:
+        try:
+            data = _tmdb_get_movie_details(tmdb_id)
+            if data and data.get("id"):
+                upsert_movie(data)
+                fetched = get_movies_by_ids([tmdb_id])
+                if tmdb_id in fetched:
+                    present[tmdb_id] = fetched[tmdb_id]
+        except Exception as e:
+            print(f"[onboarding] failed to seed TMDB {tmdb_id}: {e}", flush=True)
+
+    return [
+        {
+            "id": m["id"],
+            "title": m["title"],
+            "year": m.get("year"),
+            "poster_path": (m.get("raw_tmdb") or {}).get("poster_path"),
+        }
+        for mid in ONBOARDING_SEED_IDS
+        if (m := present.get(mid))
+    ]
+
+
+class _OnboardingRatingItem(BaseModel):
+    movie_id: int
+    rating: float
+
+
+class _OnboardingRatingsPayload(BaseModel):
+    ratings: list[_OnboardingRatingItem]
+
+
+@app.post("/api/onboarding/rate")
+def submit_onboarding_ratings(
+    payload: _OnboardingRatingsPayload,
+    current_user: dict = Depends(get_current_user),
+):
+    """Write in-app ratings and rebuild the user's taste profile."""
+    user_id = current_user["user_id"]
+    username = current_user["username"] or ""
+
+    if not payload.ratings:
+        raise HTTPException(status_code=422, detail="No ratings provided")
+
+    for item in payload.ratings:
+        upsert_rating(user_id, item.movie_id, item.rating, None, source="in_app")
+
+    _rebuild_state(user_id, username)
+    state = _user_states.get(user_id, {})
+    return {
+        "ratings_count": get_ratings_count(user_id),
+        "candidates_count": len(state.get("ranked") or []),
+    }
+
+
+class _ConnectLetterboxdPayload(BaseModel):
+    username: str
+
+
+@app.post("/api/settings/letterboxd")
+def connect_letterboxd(
+    payload: _ConnectLetterboxdPayload,
+    current_user: dict = Depends(get_current_user),
+):
+    """Validate and set a Letterboxd username, then run a full sync."""
+    user_id = current_user["user_id"]
+    username = payload.username.strip()
+
+    if not username:
+        raise HTTPException(status_code=422, detail="Username is required")
+
+    try:
+        exists = validate_username(username)
+    except _requests.RequestException:
+        raise HTTPException(status_code=503, detail="Could not reach Letterboxd — please try again")
+    if not exists:
+        raise HTTPException(status_code=422, detail=f"Letterboxd profile '{username}' not found or not public")
+
+    update_user_username(user_id, username)
+
+    ratings_before = get_ratings_count(user_id)
+    watchlist_before = get_watchlist_count(user_id)
+
+    sync_rss(user_id, username)
+    sync_scrape(user_id, username)
+    _rebuild_state(user_id, username)
+
+    ratings_after = get_ratings_count(user_id)
+    watchlist_after = get_watchlist_count(user_id)
+    state = _user_states.get(user_id, {})
+    return {
+        "ratings_added": ratings_after - ratings_before,
+        "watchlist_added": watchlist_after - watchlist_before,
+        "ratings_count": ratings_after,
+        "watchlist_count": watchlist_after,
+        "candidates_count": len(state.get("ranked") or []),
+    }
 
 
 @app.post("/api/sync")
@@ -1800,17 +1959,18 @@ def submit_beta_request(payload: dict, background_tasks: BackgroundTasks):
     name = (payload.get("name") or "").strip()
     email = (payload.get("email") or "").strip()
     username = (payload.get("letterboxd_username") or "").strip()
-    if not name or not email or not username:
-        raise HTTPException(status_code=400, detail="name, email, and letterboxd_username are required")
+    if not name or not email:
+        raise HTTPException(status_code=400, detail="name and email are required")
     if get_user_by_email(email):
         raise HTTPException(status_code=409, detail="An account with this email already exists")
-    if not validate_username(username):
+    if username and not validate_username(username):
         raise HTTPException(status_code=422, detail="Letterboxd profile not found or not public")
     try:
-        request_id = create_beta_request(name, email, username)
+        request_id = create_beta_request(name, email, username or "")
     except Exception:
         raise HTTPException(status_code=409, detail="A request from this email is already pending")
-    background_tasks.add_task(_scrape_beta_request, request_id, username)
+    if username:
+        background_tasks.add_task(_scrape_beta_request, request_id, username)
     return {"status": "received"}
 
 
@@ -1878,8 +2038,7 @@ def admin_remove_from_whitelist(email: str, _admin: dict = Depends(get_admin_use
 @app.post("/api/admin/users/{user_id}/rebuild")
 def admin_rebuild_user(user_id: int, background_tasks: BackgroundTasks, _admin: dict = Depends(get_admin_user)):
     """Trigger a full state rebuild for a user in the background."""
-    from filmprint.db import get_user_by_id as _get_user_by_id
-    user = _get_user_by_id(user_id)
+    user = get_user_by_id(user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     _user_states.pop(user_id, None)

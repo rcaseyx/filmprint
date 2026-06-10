@@ -53,9 +53,10 @@ interface Props {
   history: unknown[]
   username: string | null
   isOwner: boolean
+  hasLetterboxd: boolean
 }
 
-export function ProfileContent({ profile, examples, history, username, isOwner }: Props) {
+export function ProfileContent({ profile, examples, history, username, isOwner, hasLetterboxd }: Props) {
   const topGenres = profile.genres.slice(0, 8)
   const maxGenreWeight = Math.max(...topGenres.map((g) => g.weight), 0.01)
 
@@ -84,7 +85,7 @@ export function ProfileContent({ profile, examples, history, username, isOwner }
             </h1>
             <p className="text-neutral-400 text-sm mt-1">
               {isOwner ? (
-                <>Built from {profile.ratings_count} Letterboxd ratings</>
+                <>Built from {profile.ratings_count} ratings</>
               ) : (
                 <>
                   {profile.ratings_count} ratings
@@ -105,7 +106,7 @@ export function ProfileContent({ profile, examples, history, username, isOwner }
               )}
             </p>
           </div>
-          {isOwner && <SyncButton />}
+          {isOwner && <SyncButton initialHasLetterboxd={hasLetterboxd} />}
         </div>
 
         <ProfileStats

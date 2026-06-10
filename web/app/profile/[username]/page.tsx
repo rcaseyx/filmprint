@@ -107,6 +107,7 @@ export default async function PublicProfilePage({ params }: Props) {
           history={history}
           username={username}
           isOwner={false}
+          hasLetterboxd={false}
         />
       </div>
     </>

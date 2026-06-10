@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import Link from "next/link"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useSession } from "next-auth/react"
 import { authHeader } from "@/lib/api"
@@ -11,30 +12,51 @@ interface SyncResult {
   ratings_count: number
 }
 
-export function SyncButton() {
+interface Props {
+  initialHasLetterboxd: boolean
+}
+
+export function SyncButton({ initialHasLetterboxd }: Props) {
   const router = useRouter()
   const { data: session } = useSession()
+  const [hasLetterboxd, setHasLetterboxd] = useState(initialHasLetterboxd)
   const [status, setStatus] = useState<"idle" | "syncing" | "done" | "error">("idle")
   const [result, setResult] = useState<SyncResult | null>(null)
+
+  useEffect(() => {
+    if (!session) return
+    fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/user`, {
+      headers: authHeader(session),
+    })
+      .then((r) => r.json())
+      .then((data) => setHasLetterboxd(!data.needs_username))
+      .catch(() => {})
+  }, [session])
 
   const handleSync = async () => {
     setStatus("syncing")
     setResult(null)
-    const headers = authHeader(session)
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/sync`, {
         method: "POST",
-        headers,
+        headers: authHeader(session),
       })
       if (!res.ok) throw new Error()
       const data = await res.json()
       setResult(data)
       setStatus("done")
-      // Refresh server component data (re-fetches /api/profile)
       router.refresh()
     } catch {
       setStatus("error")
     }
+  }
+
+  if (!hasLetterboxd) {
+    return (
+      <Link href="/connect-letterboxd" className="btn-primary px-4 py-2 text-sm">
+        Connect Letterboxd
+      </Link>
+    )
   }
 
   return (

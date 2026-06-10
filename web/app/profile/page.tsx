@@ -74,6 +74,7 @@ export default async function ProfilePage() {
       history={history}
       username={username}
       isOwner={true}
+      hasLetterboxd={!user?.needs_username}
     />
   )
 }
