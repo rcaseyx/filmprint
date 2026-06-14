@@ -1,6 +1,9 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
 import * as SecureStore from 'expo-secure-store'
+import { File, Paths } from 'expo-file-system/next'
 import { TOKEN_KEY } from '@/lib/api'
+
+const launchFlag = new File(Paths.document, '.launched')
 
 interface AuthContextValue {
   token: string | null
@@ -16,9 +19,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    SecureStore.getItemAsync(TOKEN_KEY)
-      .then(setToken)
-      .finally(() => setIsLoading(false))
+    const init = async () => {
+      if (!launchFlag.exists) {
+        // Fresh install — Keychain persists across reinstalls on iOS, so clear it
+        await SecureStore.deleteItemAsync(TOKEN_KEY)
+        launchFlag.create()
+      }
+      const stored = await SecureStore.getItemAsync(TOKEN_KEY)
+      setToken(stored)
+      setIsLoading(false)
+    }
+    init()
   }, [])
 
   const login = async (newToken: string) => {

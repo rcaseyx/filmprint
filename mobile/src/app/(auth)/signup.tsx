@@ -52,7 +52,7 @@ export default function SignupScreen() {
       if (!verifyRes.ok) { setError('Account created — please sign in'); router.replace('/login'); return }
       const data = await verifyRes.json()
       await login(data.token)
-      router.replace('/picks')
+      router.replace('/onboarding')
     } catch {
       setError('Could not reach the server')
     } finally {
