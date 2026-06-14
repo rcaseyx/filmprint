@@ -8,7 +8,17 @@
     "scheme": "filmprint",
     "userInterfaceStyle": "dark",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.filmprint.app",
+      "infoPlist": {
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": [
+              "com.googleusercontent.apps.254721076832-ob0di2jl3qth3a6t16imk9j2ccqmga69"
+            ]
+          }
+        ]
+      }
     },
     "android": {
       "adaptiveIcon": {
