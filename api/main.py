@@ -36,6 +36,7 @@ _JWT_SECRET = os.environ.get("JWT_SECRET", "")
 _JWT_ALGORITHM = "HS256"
 _JWT_EXPIRE_DAYS = 60
 _INTERNAL_SECRET = os.environ.get("INTERNAL_SECRET", "")
+_GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 
 
 def _create_jwt(user_id: int, email: str, username: str | None) -> str:
@@ -878,6 +879,10 @@ class ExchangePayload(BaseModel):
     email: str
 
 
+class GoogleAuthPayload(BaseModel):
+    id_token: str
+
+
 def _validate_password(password: str) -> None:
     if len(password) < 8:
         raise HTTPException(status_code=422, detail="Password must be at least 8 characters")
@@ -964,6 +969,25 @@ def auth_exchange(payload: ExchangePayload, request: Request):
         raise HTTPException(status_code=403, detail="You're not on the beta list")
     user_id, username = get_or_create_user_by_email(payload.email)
     token = _create_jwt(user_id, payload.email, username)
+    return {"token": token, "user_id": user_id}
+
+
+@app.post("/api/auth/google")
+def google_auth(payload: GoogleAuthPayload):
+    r = _requests.get(f"https://oauth2.googleapis.com/tokeninfo?id_token={payload.id_token}")
+    if not r.ok:
+        raise HTTPException(status_code=401, detail="Invalid Google token")
+    claims = r.json()
+    if _GOOGLE_CLIENT_ID and claims.get("aud") != _GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=401, detail="Token audience mismatch")
+    email = claims.get("email")
+    if not email or not claims.get("email_verified"):
+        raise HTTPException(status_code=401, detail="Google email not verified")
+    existing = get_user_by_email(email)
+    if not existing and not is_whitelisted(email):
+        raise HTTPException(status_code=403, detail="You're not on the beta list")
+    user_id, username = get_or_create_user_by_email(email)
+    token = _create_jwt(user_id, email, username)
     return {"token": token, "user_id": user_id}
 
 
