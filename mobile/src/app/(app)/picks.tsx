@@ -3,7 +3,7 @@ import {
   View, Text, ScrollView, TextInput, Pressable, TouchableOpacity,
   StyleSheet, ActivityIndicator, Animated, Easing, Dimensions, Keyboard, PanResponder,
 } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
 import { Colors, Spacing } from '@/constants/theme'
 import { apiFetch } from '@/lib/api'
@@ -490,6 +490,7 @@ const lo = StyleSheet.create({
 export default function PicksScreen() {
   const router = useRouter()
   const { logout } = useAuth()
+  const { bottom: bottomInset } = useSafeAreaInsets()
   const [checking, setChecking] = useState(true)
 
   const [step, setStep] = useState(0)
@@ -620,7 +621,7 @@ export default function PicksScreen() {
   // ── Auth check ──────────────────────────────────────────────────────────────
   if (checking) {
     return (
-      <SafeAreaView style={s.safe}>
+      <SafeAreaView style={s.safe} edges={['top']}>
         <View style={s.center}><ActivityIndicator color={Colors.brand} /></View>
       </SafeAreaView>
     )
@@ -629,7 +630,7 @@ export default function PicksScreen() {
   // ── Loading ─────────────────────────────────────────────────────────────────
   if (screenView === 'loading') {
     return (
-      <SafeAreaView style={s.safe}>
+      <SafeAreaView style={s.safe} edges={['top']}>
         <PicksLoader genreExamples={genreExamples} selectedGenres={selectedGenres} />
       </SafeAreaView>
     )
@@ -638,7 +639,7 @@ export default function PicksScreen() {
   // ── Results ─────────────────────────────────────────────────────────────────
   if (screenView === 'results') {
     return (
-      <SafeAreaView style={s.safe}>
+      <SafeAreaView style={s.safe} edges={['top']}>
         <ScrollView
           ref={resultsScrollRef}
           contentContainerStyle={s.resultsScroll}
@@ -663,7 +664,7 @@ export default function PicksScreen() {
 
   // ── Selector ────────────────────────────────────────────────────────────────
   return (
-    <SafeAreaView style={s.safe}>
+    <SafeAreaView style={s.safe} edges={['top']}>
       {/* Top nav */}
       <View style={s.topBar}>
         <TouchableOpacity
@@ -704,7 +705,7 @@ export default function PicksScreen() {
       </View>
 
       {/* Bottom actions */}
-      <View style={s.bottom}>
+      <View style={[s.bottom, { paddingBottom: bottomInset + Spacing.lg }]}>
         {error && <Text style={s.error}>{error}</Text>}
         {step === 0 && (
           <TouchableOpacity style={s.btnPrimary} activeOpacity={0.85} onPress={() => goToStep(1)}>
@@ -744,7 +745,7 @@ const s = StyleSheet.create({
   slide: { width: SCREEN_W },
 
   bottom: {
-    paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm, paddingBottom: Spacing.md, gap: 10,
+    paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm, gap: 10,
   },
   error: { fontSize: 13, color: Colors.error },
   btnPrimary: { backgroundColor: Colors.brand, borderRadius: 16, paddingVertical: 17, alignItems: 'center' },
@@ -754,7 +755,7 @@ const s = StyleSheet.create({
     paddingVertical: 17, alignItems: 'center',
   },
   btnSecondaryText: { fontSize: 16, fontWeight: '600', color: Colors.textSecondary },
-  resultsScroll: { padding: Spacing.lg, gap: Spacing.md },
+  resultsScroll: { padding: Spacing.lg, paddingBottom: 100, gap: Spacing.md },
   resultsHeading: { fontSize: 24, fontWeight: '800', color: Colors.text },
   stack: { gap: Spacing.md },
   resultActions: { gap: 10, marginTop: 4 },
