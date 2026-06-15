@@ -264,7 +264,7 @@ function FiltersStep({ familiarity, setFamiliarity, niche, setNiche, runtime, se
   return (
     <View style={fs.wrap}>
       <View style={fs.header}>
-        <Text style={fs.heading}>Anything{'\n'}else?</Text>
+        <Text style={fs.heading}>Anything else?</Text>
         <Text style={fs.sub}>All optional.</Text>
       </View>
 
@@ -281,16 +281,13 @@ function FiltersStep({ familiarity, setFamiliarity, niche, setNiche, runtime, se
         />
       </View>
 
-      <Pressable
-        onPress={() => setNiche(!niche)}
-        style={[fs.nicheBtn, niche && fs.nicheBtnActive]}
-      >
-        <Gem size={18} color={niche ? '#0a0a0a' : Colors.textMuted} strokeWidth={1.5} />
-        <View>
-          <Text style={[fs.nicheLabel, niche && fs.nicheLabelActive]}>Hidden gems</Text>
-          <Text style={[fs.nicheSub, niche && fs.nicheSubActive]}>obscure & under-seen</Text>
-        </View>
-      </Pressable>
+      <View style={fs.nicheRow}>
+        <OptionCard
+          Icon={Gem} label="Hidden gems" sub="obscure & under-seen"
+          selected={niche}
+          onPress={() => setNiche(!niche)}
+        />
+      </View>
 
       <View style={fs.lengthRow}>
         <OptionCard Icon={Zap}      label="Short"    sub="< 90 min"   selected={runtime === 90}   onPress={() => setRuntime(runtime === 90   ? 'any' : 90)}   />
@@ -317,17 +314,7 @@ const fs = StyleSheet.create({
   heading: { fontSize: 26, fontWeight: '800', color: Colors.text, lineHeight: 32 },
   sub: { fontSize: 14, color: Colors.textMuted },
   vibeRow: { flex: 2, flexDirection: 'row', gap: 10 },
-  nicheBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    borderRadius: 16, borderWidth: 1.5, borderColor: Colors.border,
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    paddingHorizontal: Spacing.md, paddingVertical: 12,
-  },
-  nicheBtnActive: { backgroundColor: Colors.brand, borderColor: Colors.brand },
-  nicheLabel: { fontSize: 15, fontWeight: '700', color: Colors.text },
-  nicheLabelActive: { color: '#0a0a0a' },
-  nicheSub: { fontSize: 12, color: Colors.textMuted, marginTop: 1 },
-  nicheSubActive: { color: '#1a1a1a' },
+  nicheRow: { flex: 1.5, flexDirection: 'row' },
   lengthRow: { flex: 2, flexDirection: 'row', gap: 10 },
   input: {
     backgroundColor: Colors.card,
