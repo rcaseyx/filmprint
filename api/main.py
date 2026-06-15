@@ -666,6 +666,7 @@ class MoodContext(BaseModel):
     pacing: str | None = None      # "slow" | "fast"
     familiarity: str | None = None # "familiar" | "challenging"
     free_text: str | None = None
+    niche: bool | None = None      # True → hidden gems / popularity penalty
 
 
 # --- helpers ---
@@ -772,6 +773,8 @@ def _mood_to_summary(mood: MoodContext) -> str:
         parts.append(f"Pacing: {mood.pacing}-burn")
     if mood.familiarity:
         parts.append(f"Familiarity: {mood.familiarity}")
+    if mood.niche:
+        parts.append("Prefer lesser-known, under-seen films — avoid obvious mainstream picks")
     if mood.free_text:
         parts.append(mood.free_text)
     return ". ".join(parts) if parts else "No specific mood preference."
@@ -1328,6 +1331,11 @@ def get_recommendations(mood: MoodContext, current_user: dict = Depends(get_curr
         t_rw = time.time()
         ranked = rank_watchlist(active_vec, all_candidates, keyword_vocab, affinity, user_subgenre_axes, idf=_idf_weights)
         print(f"[rec] user {user_id}: mood rank_watchlist in {time.time()-t_rw:.1f}s", flush=True)
+    if mood.niche:
+        all_candidates = [m for m, _ in ranked]
+        t_rw = time.time()
+        ranked = rank_watchlist(active_vec, all_candidates, keyword_vocab, affinity, user_subgenre_axes, idf=_idf_weights, popularity_penalty=0.4)
+        print(f"[rec] user {user_id}: niche rank_watchlist in {time.time()-t_rw:.1f}s", flush=True)
     t1 = time.time()
 
     # Augment with TMDB Discover when mood specifies genres

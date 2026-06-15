@@ -1,11 +1,16 @@
 """Score and rank candidates against a taste profile."""
 
+import math
 import numpy as np
 from .features import build_feature_vector
 
 # Blend weight for the best-matching cluster score vs. global profile score.
 # 0.35 means clusters can lift a strong niche match without overriding global taste.
 _CLUSTER_WEIGHT = 0.35
+
+# TMDB popularity above this threshold starts incurring a penalty when
+# popularity_penalty > 0. Films below ~50 are genuinely under-seen.
+_POP_PENALTY_THRESHOLD = 50.0
 
 
 def rank_watchlist(
@@ -16,6 +21,7 @@ def rank_watchlist(
     subgenre_axes: dict | None = None,
     clusters: list[np.ndarray] | None = None,
     idf: dict[str, float] | None = None,
+    popularity_penalty: float = 0.0,
 ) -> list[tuple[dict, float]]:
     """
     Score each candidate against the taste profile.
@@ -25,6 +31,10 @@ def rank_watchlist(
     When clusters are provided, blends the global profile score with the
     best-matching cluster score so films that strongly fit any one taste
     facet rank higher than the flattened global profile alone would place them.
+
+    When popularity_penalty > 0, candidates with TMDB popularity above
+    _POP_PENALTY_THRESHOLD are down-ranked using a log-scale ramp so
+    lesser-known films with competitive taste scores surface higher.
     """
     if not candidates:
         return []
@@ -42,7 +52,20 @@ def rank_watchlist(
     else:
         scores = global_scores
 
-    return sorted(zip(candidates, scores.tolist()), key=lambda x: x[1], reverse=True)
+    score_list = scores.tolist()
+
+    if popularity_penalty > 0:
+        log_range = math.log(1000.0 / _POP_PENALTY_THRESHOLD)
+        adjusted = []
+        for score, candidate in zip(score_list, candidates):
+            pop = min(float((candidate.get("raw_tmdb") or candidate).get("popularity") or 0.0), 1000.0)
+            if pop > _POP_PENALTY_THRESHOLD:
+                ramp = math.log(pop / _POP_PENALTY_THRESHOLD) / log_range
+                score *= 1.0 - popularity_penalty * min(ramp, 1.0)
+            adjusted.append(score)
+        score_list = adjusted
+
+    return sorted(zip(candidates, score_list), key=lambda x: x[1], reverse=True)
 
 
 def diversify(
