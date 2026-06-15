@@ -20,6 +20,13 @@ export default function AppLayout() {
           src={require('@/assets/images/tabIcons/home.png')}
         />
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="search">
+        <NativeTabs.Trigger.Label>People</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon
+          sf={{ default: 'person.2', selected: 'person.2.fill' }}
+          src={require('@/assets/images/tabIcons/explore.png')}
+        />
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="profile">
         <NativeTabs.Trigger.Label>Profile</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
