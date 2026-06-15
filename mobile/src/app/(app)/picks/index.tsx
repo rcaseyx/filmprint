@@ -491,8 +491,6 @@ export default function PicksScreen() {
   const router = useRouter()
   const { logout } = useAuth()
   const { bottom: bottomInset } = useSafeAreaInsets()
-  const [checking, setChecking] = useState(true)
-
   const initialFocus = useRef(true)
 
   const [step, setStep] = useState(0)
@@ -528,7 +526,6 @@ export default function PicksScreen() {
         }).catch(() => {})
       })
       .catch(() => {})
-      .finally(() => setChecking(false))
   }, [])
 
   const goToStep = (next: number) => {
@@ -625,14 +622,6 @@ export default function PicksScreen() {
     handleReset()
   }, [handleReset]))
 
-  // ── Auth check ──────────────────────────────────────────────────────────────
-  if (checking) {
-    return (
-      <SafeAreaView style={s.safe} edges={['top']}>
-        <View style={s.center}><ActivityIndicator color={Colors.brand} /></View>
-      </SafeAreaView>
-    )
-  }
 
   // ── Loading ─────────────────────────────────────────────────────────────────
   if (screenView === 'loading') {
@@ -712,7 +701,7 @@ export default function PicksScreen() {
       </View>
 
       {/* Bottom actions */}
-      <View style={[s.bottom, { paddingBottom: bottomInset + Spacing.lg }]}>
+      <View style={[s.bottom, { paddingBottom: bottomInset + 56 }]}>
         {error && <Text style={s.error}>{error}</Text>}
         {step === 0 && (
           <TouchableOpacity style={s.btnPrimary} activeOpacity={0.85} onPress={() => goToStep(1)}>
