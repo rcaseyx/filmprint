@@ -10,7 +10,7 @@ import { apiFetch } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { FilmCard } from '@/components/FilmCard'
 import { Image } from 'expo-image'
-import { Coffee, Moon, Sparkles, Flame, Popcorn, Drama, Zap, Film, Hourglass, Check } from 'lucide-react-native'
+import { Coffee, Moon, Sparkles, Flame, Popcorn, Drama, Zap, Film, Hourglass, Check, Gem } from 'lucide-react-native'
 import type { LucideIcon } from 'lucide-react-native'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -255,8 +255,9 @@ const oc = StyleSheet.create({
 
 // ── Step 2: Filters ───────────────────────────────────────────────────────────
 
-function FiltersStep({ familiarity, setFamiliarity, runtime, setRuntime, freeText, setFreeText }: {
+function FiltersStep({ familiarity, setFamiliarity, niche, setNiche, runtime, setRuntime, freeText, setFreeText }: {
   familiarity: Familiarity | null; setFamiliarity: (v: Familiarity | null) => void
+  niche: boolean; setNiche: (v: boolean) => void
   runtime: RuntimeOption | 'any'; setRuntime: (v: RuntimeOption | 'any') => void
   freeText: string; setFreeText: (v: string) => void
 }) {
@@ -277,6 +278,14 @@ function FiltersStep({ familiarity, setFamiliarity, runtime, setRuntime, freeTex
           Icon={Drama} label="Challenging" sub="bold & unconventional"
           selected={familiarity === 'challenging'}
           onPress={() => setFamiliarity(familiarity === 'challenging' ? null : 'challenging')}
+        />
+      </View>
+
+      <View style={fs.nicheRow}>
+        <OptionCard
+          Icon={Gem} label="Hidden gems" sub="obscure & under-seen"
+          selected={niche}
+          onPress={() => setNiche(!niche)}
         />
       </View>
 
@@ -304,7 +313,8 @@ const fs = StyleSheet.create({
   header: { gap: 6 },
   heading: { fontSize: 26, fontWeight: '800', color: Colors.text, lineHeight: 32 },
   sub: { fontSize: 14, color: Colors.textMuted },
-  vibeRow: { flex: 3, flexDirection: 'row', gap: 10 },
+  vibeRow: { flex: 2, flexDirection: 'row', gap: 10 },
+  nicheRow: { flex: 1, flexDirection: 'row' },
   lengthRow: { flex: 2, flexDirection: 'row', gap: 10 },
   input: {
     backgroundColor: Colors.card,
@@ -503,6 +513,7 @@ export default function PicksScreen() {
   const [pacing, setPacing] = useState<Pacing | null>(null)
   const [selectedGenres, setSelectedGenres] = useState<string[]>([])
   const [familiarity, setFamiliarity] = useState<Familiarity | null>(null)
+  const [niche, setNiche] = useState(false)
   const [runtime, setRuntime] = useState<RuntimeOption | 'any'>('any')
   const [freeText, setFreeText] = useState('')
 
@@ -591,6 +602,7 @@ export default function PicksScreen() {
           max_runtime: runtime === 'any' ? null : runtime,
           tone, pacing, familiarity,
           free_text: freeText.trim() || null,
+          niche: niche || null,
         }),
       })
       if (!res.ok) {
@@ -610,7 +622,7 @@ export default function PicksScreen() {
   const handleReset = useCallback(() => {
     setTone(null); setPacing(null)
     setSelectedGenres([])
-    setFamiliarity(null); setRuntime('any'); setFreeText('')
+    setFamiliarity(null); setNiche(false); setRuntime('any'); setFreeText('')
     setError(null); setPicks([])
     setStep(0); stepRef.current = 0
     slideAnim.setValue(0)
@@ -693,6 +705,7 @@ export default function PicksScreen() {
           <View style={s.slide} pointerEvents={step === 2 ? 'auto' : 'none'}>
             <FiltersStep
               familiarity={familiarity} setFamiliarity={setFamiliarity}
+              niche={niche} setNiche={setNiche}
               runtime={runtime} setRuntime={setRuntime}
               freeText={freeText} setFreeText={setFreeText}
             />

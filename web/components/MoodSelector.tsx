@@ -87,6 +87,7 @@ export function MoodSelector({ genres, username }: Props) {
   const [tone, setTone] = useState<Tone | null>(null)
   const [pacing, setPacing] = useState<Pacing | null>(null)
   const [familiarity, setFamiliarity] = useState<Familiarity | null>(null)
+  const [niche, setNiche] = useState(false)
   const [runtime, setRuntime] = useState<number | null | "any">("any")
   const [freeText, setFreeText] = useState("")
   const [loading, setLoading] = useState(false)
@@ -136,6 +137,7 @@ export function MoodSelector({ genres, username }: Props) {
           pacing,
           familiarity,
           free_text: freeText.trim() || null,
+          niche: niche || null,
         }),
       })
       if (!res.ok) throw new Error("API error")
@@ -154,6 +156,7 @@ export function MoodSelector({ genres, username }: Props) {
     setTone(null)
     setPacing(null)
     setFamiliarity(null)
+    setNiche(false)
     setRuntime("any")
     setFreeText("")
     setError(null)
@@ -224,6 +227,17 @@ export function MoodSelector({ genres, username }: Props) {
             </button>
           ))}
         </div>
+
+        {/* Hidden gems */}
+        <button
+          onClick={() => setNiche(!niche)}
+          className={`w-full rounded-xl border py-3 text-center transition-colors duration-150 active:scale-95 ${
+            niche ? "bg-brand border-brand" : "border-neutral-800 hover:bg-neutral-900"
+          }`}
+        >
+          <span className={`block text-sm font-medium ${niche ? "text-neutral-950" : "text-neutral-400"}`}>Hidden gems</span>
+          <span className={`block text-xs mt-0.5 ${niche ? "text-neutral-800" : "text-neutral-600"}`}>obscure & under-seen</span>
+        </button>
 
         {/* Runtime */}
         <div className="grid grid-cols-3 rounded-xl border border-neutral-800 overflow-hidden">
