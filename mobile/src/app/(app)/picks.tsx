@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   View, Text, ScrollView, TextInput, Pressable, TouchableOpacity,
   StyleSheet, ActivityIndicator, Animated, Easing, Dimensions, Keyboard, PanResponder,
 } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
-import { useRouter } from 'expo-router'
+import { useRouter, useFocusEffect } from 'expo-router'
 import { Colors, Spacing } from '@/constants/theme'
 import { apiFetch } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
@@ -493,6 +493,8 @@ export default function PicksScreen() {
   const { bottom: bottomInset } = useSafeAreaInsets()
   const [checking, setChecking] = useState(true)
 
+  const initialFocus = useRef(true)
+
   const [step, setStep] = useState(0)
   const stepRef = useRef(0)
   const slideAnim = useRef(new Animated.Value(0)).current
@@ -608,15 +610,20 @@ export default function PicksScreen() {
     }
   }
 
-  const handleReset = () => {
+  const handleReset = useCallback(() => {
     setTone(null); setPacing(null)
     setSelectedGenres([])
     setFamiliarity(null); setRuntime('any'); setFreeText('')
     setError(null); setPicks([])
-    setStep(0)
+    setStep(0); stepRef.current = 0
     slideAnim.setValue(0)
     setScreenView('selector')
-  }
+  }, [])
+
+  useFocusEffect(useCallback(() => {
+    if (initialFocus.current) { initialFocus.current = false; return }
+    handleReset()
+  }, [handleReset]))
 
   // ── Auth check ──────────────────────────────────────────────────────────────
   if (checking) {

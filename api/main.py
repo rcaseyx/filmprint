@@ -16,6 +16,7 @@ import time
 import zipfile
 
 import datetime
+import requests as _requests
 
 import anthropic
 import bcrypt
@@ -2237,3 +2238,37 @@ def cache_stats(_admin: dict = Depends(get_admin_user)):
         "omdb_pending": omdb_pending,
         "total_size_mb": round(sum(f.stat().st_size for f in tmdb_files) / 1_000_000, 2),
     }
+
+
+class SupportRequest(BaseModel):
+    title: str
+    description: str
+
+
+_GITHUB_SUPPORT_TOKEN = os.getenv("GITHUB_SUPPORT_TOKEN", "")
+
+
+@app.post("/api/support")
+async def file_support_issue(
+    body: SupportRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    if not body.title.strip() or not body.description.strip():
+        raise HTTPException(status_code=400, detail="Title and description are required")
+    if not _GITHUB_SUPPORT_TOKEN:
+        raise HTTPException(status_code=503, detail="Support unavailable")
+
+    issue_body = f"**Reported by:** {current_user.get('email', 'unknown')}\n\n{body.description.strip()}"
+    res = _requests.post(
+        "https://api.github.com/repos/rcaseyx/filmprint/issues",
+        headers={
+            "Authorization": f"Bearer {_GITHUB_SUPPORT_TOKEN}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+        json={"title": body.title.strip(), "body": issue_body, "labels": ["bug", "beta-feedback"]},
+        timeout=10,
+    )
+    if not res.ok:
+        raise HTTPException(status_code=502, detail="Failed to file issue")
+    return {"number": res.json()["number"]}

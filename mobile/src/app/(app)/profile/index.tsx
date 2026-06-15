@@ -4,7 +4,7 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
-import { RefreshCw, LogOut, Link2 } from 'lucide-react-native'
+import { RefreshCw, LogOut, Link2, HelpCircle } from 'lucide-react-native'
 import { Colors, Spacing } from '@/constants/theme'
 import { apiFetch } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
@@ -266,6 +266,10 @@ export default function ProfileScreen() {
             <LogOut size={15} color={Colors.textMuted} />
             <Text style={s.logoutText}>Sign out</Text>
           </TouchableOpacity>
+          <TouchableOpacity style={s.supportBtn} onPress={() => router.push('/profile/support')} activeOpacity={0.7}>
+            <HelpCircle size={14} color={Colors.textFaint} />
+            <Text style={s.supportText}>Support</Text>
+          </TouchableOpacity>
         </View>
 
       </ScrollView>
@@ -275,7 +279,7 @@ export default function ProfileScreen() {
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
-  scroll: { padding: Spacing.lg, gap: 28, paddingBottom: 100 },
+  scroll: { padding: Spacing.lg, gap: 28, paddingBottom: 40 },
   header: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
   heading: { fontSize: 24, fontWeight: '600', color: Colors.text, letterSpacing: -0.3 },
   subheading: { fontSize: 13, color: Colors.textMuted, marginTop: 3 },
@@ -299,15 +303,17 @@ const s = StyleSheet.create({
   insightRow: { flexDirection: 'column', gap: 8 },
   insightPair: { flexDirection: 'row', gap: 8 },
   posterRow: { gap: 10 },
-  account: { gap: 12, marginTop: 4 },
+  account: { gap: 4, marginTop: 4 },
   connectBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     borderWidth: 1, borderColor: Colors.brand, borderRadius: 14,
-    paddingVertical: 14, justifyContent: 'center',
+    paddingVertical: 14, justifyContent: 'center', marginBottom: 8,
   },
   connectText: { fontSize: 15, fontWeight: '600', color: Colors.brand },
   logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14 },
   logoutText: { fontSize: 15, color: Colors.textMuted },
+  supportBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 10 },
+  supportText: { fontSize: 13, color: Colors.textFaint },
   badgeStars: { fontSize: 11, color: Colors.brand },
   badgeWatched: { fontSize: 10, color: '#4ade80' },
   errWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16 },
