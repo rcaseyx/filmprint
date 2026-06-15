@@ -135,7 +135,7 @@ const s = StyleSheet.create({
   },
   posterWrap: {
     width: '100%',
-    aspectRatio: 3 / 4,
+    aspectRatio: 2 / 3,
     backgroundColor: Colors.border,
   },
   poster: { width: '100%', height: '100%' },

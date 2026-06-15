@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   View, Text, ScrollView, TextInput, Pressable, TouchableOpacity,
   StyleSheet, ActivityIndicator, Animated, Easing, Dimensions, Keyboard, PanResponder,
 } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
-import { useRouter } from 'expo-router'
+import { useRouter, useFocusEffect } from 'expo-router'
 import { Colors, Spacing } from '@/constants/theme'
 import { apiFetch } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
@@ -491,7 +491,7 @@ export default function PicksScreen() {
   const router = useRouter()
   const { logout } = useAuth()
   const { bottom: bottomInset } = useSafeAreaInsets()
-  const [checking, setChecking] = useState(true)
+  const initialFocus = useRef(true)
 
   const [step, setStep] = useState(0)
   const stepRef = useRef(0)
@@ -526,7 +526,6 @@ export default function PicksScreen() {
         }).catch(() => {})
       })
       .catch(() => {})
-      .finally(() => setChecking(false))
   }, [])
 
   const goToStep = (next: number) => {
@@ -608,24 +607,21 @@ export default function PicksScreen() {
     }
   }
 
-  const handleReset = () => {
+  const handleReset = useCallback(() => {
     setTone(null); setPacing(null)
     setSelectedGenres([])
     setFamiliarity(null); setRuntime('any'); setFreeText('')
     setError(null); setPicks([])
-    setStep(0)
+    setStep(0); stepRef.current = 0
     slideAnim.setValue(0)
     setScreenView('selector')
-  }
+  }, [])
 
-  // ── Auth check ──────────────────────────────────────────────────────────────
-  if (checking) {
-    return (
-      <SafeAreaView style={s.safe} edges={['top']}>
-        <View style={s.center}><ActivityIndicator color={Colors.brand} /></View>
-      </SafeAreaView>
-    )
-  }
+  useFocusEffect(useCallback(() => {
+    if (initialFocus.current) { initialFocus.current = false; return }
+    handleReset()
+  }, [handleReset]))
+
 
   // ── Loading ─────────────────────────────────────────────────────────────────
   if (screenView === 'loading') {
@@ -705,7 +701,7 @@ export default function PicksScreen() {
       </View>
 
       {/* Bottom actions */}
-      <View style={[s.bottom, { paddingBottom: bottomInset + Spacing.lg }]}>
+      <View style={[s.bottom, { paddingBottom: bottomInset + 56 }]}>
         {error && <Text style={s.error}>{error}</Text>}
         {step === 0 && (
           <TouchableOpacity style={s.btnPrimary} activeOpacity={0.85} onPress={() => goToStep(1)}>
