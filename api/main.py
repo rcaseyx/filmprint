@@ -515,6 +515,16 @@ def _get_or_build_state(user_id: int, username: str) -> dict:
     return _user_states.get(user_id, {})
 
 
+def _run_rebuild_background(user_id: int, username: str) -> None:
+    """Background task: rebuild state only (e.g. after in-app ratings)."""
+    try:
+        _rebuild_state(user_id, username)
+        _rebuild_jobs[user_id] = "done"
+    except Exception:
+        _rebuild_jobs[user_id] = "error"
+        raise
+
+
 def _run_sync_background(user_id: int, username: str) -> None:
     """Background task: scrape Letterboxd then rebuild state."""
     try:
@@ -1546,9 +1556,10 @@ class _OnboardingRatingsPayload(BaseModel):
 @app.post("/api/onboarding/rate")
 def submit_onboarding_ratings(
     payload: _OnboardingRatingsPayload,
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
 ):
-    """Write in-app ratings and rebuild the user's taste profile."""
+    """Write in-app ratings and kick off a background profile rebuild."""
     user_id = current_user["user_id"]
     username = current_user["username"] or ""
 
@@ -1558,11 +1569,13 @@ def submit_onboarding_ratings(
     for item in payload.ratings:
         upsert_rating(user_id, item.movie_id, item.rating, None, source="in_app")
 
-    _rebuild_state(user_id, username)
-    state = _user_states.get(user_id, {})
+    if _rebuild_jobs.get(user_id) != "running":
+        _rebuild_jobs[user_id] = "running"
+        background_tasks.add_task(_run_rebuild_background, user_id, username)
+
     return {
         "ratings_count": get_ratings_count(user_id),
-        "candidates_count": len(state.get("ranked") or []),
+        "rebuild_status": "pending",
     }
 
 

@@ -5,7 +5,6 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useSession } from "next-auth/react"
 import { authHeader } from "@/lib/api"
-import { ProfileBuildLoader } from "@/components/ProfileBuildLoader"
 
 const MIN_RATINGS = 8
 
@@ -158,19 +157,10 @@ export function InAppRatingFlow() {
       })
       if (!res.ok) throw new Error("Submission failed")
       router.push("/picks")
-      router.refresh()
     } catch {
       setError("Something went wrong — please try again.")
       setSubmitting(false)
     }
-  }
-
-  if (submitting) {
-    const ratedFilms = Object.entries(ratings).map(([id, rating]) => {
-      const film = films.find((f) => f.id === Number(id))!
-      return { id: Number(id), title: film.title, poster_path: film.poster_path, rating }
-    })
-    return <ProfileBuildLoader ratedFilms={ratedFilms} />
   }
 
   if (loading) {
