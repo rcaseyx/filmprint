@@ -315,7 +315,7 @@ export default function ProfileScreen() {
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
-  scroll: { padding: Spacing.lg, gap: 28, paddingBottom: 40 },
+  scroll: { padding: Spacing.lg, gap: 28, paddingBottom: 80 },
   header: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
   heading: { fontSize: 24, fontWeight: '600', color: Colors.text, letterSpacing: -0.3 },
   subheading: { fontSize: 13, color: Colors.textMuted, marginTop: 3 },
