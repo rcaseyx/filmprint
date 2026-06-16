@@ -6,10 +6,12 @@ enrichment, profile build, ranking) happens once at boot.
 """
 
 from contextlib import asynccontextmanager
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 import json
 import os
+import shutil
 import tempfile
 import secrets
 import time
@@ -111,6 +113,7 @@ from filmprint.cache import make_caches as _make_caches, check_rate_limit
 _user_states, _user_profile_states, _profile_response_cache, _examples_response_cache = _make_caches()
 _public_profile_cache: dict[int, dict] = {}
 _public_examples_cache: dict[int, dict] = {}
+_rebuild_jobs: dict[int, str] = {}  # user_id → "running" | "done" | "error"
 
 # Per-user lock so concurrent requests don't double-run _rebuild_profile_only
 import threading as _threading
@@ -486,6 +489,8 @@ def _get_or_build_profile(user_id: int, username: str) -> dict:
     Volume-restored states have rated_movies=[] intentionally (not needed for recs), so we
     can't use them for profile display. Fall through to the profile-only rebuild in that case.
     """
+    if _rebuild_jobs.get(user_id) == "running":
+        return _user_states.get(user_id, {}) or _user_profile_states.get(user_id, {})
     state = _user_states.get(user_id)
     if state and state.get("rated_movies"):
         return state
@@ -502,10 +507,44 @@ def _get_or_build_profile(user_id: int, username: str) -> dict:
 
 def _get_or_build_state(user_id: int, username: str) -> dict:
     """Return cached state for user, building it lazily if they have data in the DB."""
+    if _rebuild_jobs.get(user_id) == "running":
+        return _user_states.get(user_id, {})
     if user_id not in _user_states and username and get_ratings_count(user_id) > 0:
         if not _restore_state_from_volume(user_id, username):
             _rebuild_state(user_id, username)
     return _user_states.get(user_id, {})
+
+
+def _run_sync_background(user_id: int, username: str) -> None:
+    """Background task: scrape Letterboxd then rebuild state."""
+    try:
+        sync_rss(user_id, username)
+        sync_scrape(user_id, username)
+        _rebuild_state(user_id, username)
+        _rebuild_jobs[user_id] = "done"
+    except Exception:
+        _rebuild_jobs[user_id] = "error"
+        raise
+
+
+def _run_import_background(user_id: int, username: str, tmp_dir: str) -> None:
+    """Background task: ingest CSV files from tmp_dir, then rebuild state."""
+    try:
+        tmp = Path(tmp_dir)
+        db_index = get_movie_title_year_index()
+        ratings_csv = next(tmp.rglob("ratings.csv"), None)
+        watchlist_csv = next(tmp.rglob("watchlist.csv"), None)
+        if ratings_csv:
+            sync_ratings_csv(user_id, str(ratings_csv), db_index)
+        if watchlist_csv:
+            sync_watchlist_csv(user_id, str(watchlist_csv), db_index)
+        _rebuild_state(user_id, username)
+        _rebuild_jobs[user_id] = "done"
+    except Exception:
+        _rebuild_jobs[user_id] = "error"
+        raise
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 @asynccontextmanager
@@ -1009,7 +1048,21 @@ def get_user(current_user: dict = Depends(get_current_user)):
         "username": username or None,
         "ratings_count": ratings_count,
         "watchlist_count": get_watchlist_count(user_id),
+        "rebuild_in_progress": _rebuild_jobs.get(user_id) == "running" and user_id not in _user_states,
     }
+
+
+@app.get("/api/rebuild/status")
+def rebuild_status(current_user: dict = Depends(get_current_user)):
+    user_id = current_user["user_id"]
+    job = _rebuild_jobs.get(user_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="No rebuild in progress")
+    candidates_count = None
+    if job == "done":
+        state = _user_states.get(user_id, {})
+        candidates_count = len(state.get("ranked") or [])
+    return {"status": job, "candidates_count": candidates_count}
 
 
 def _build_profile_response(user_id: int, state: dict) -> dict:
@@ -1520,9 +1573,10 @@ class _ConnectLetterboxdPayload(BaseModel):
 @app.post("/api/settings/letterboxd")
 def connect_letterboxd(
     payload: _ConnectLetterboxdPayload,
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
 ):
-    """Validate and set a Letterboxd username, then run a full sync."""
+    """Validate and set a Letterboxd username, then kick off a background sync."""
     user_id = current_user["user_id"]
     username = payload.username.strip()
 
@@ -1538,65 +1592,46 @@ def connect_letterboxd(
 
     update_user_username(user_id, username)
 
-    ratings_before = get_ratings_count(user_id)
-    watchlist_before = get_watchlist_count(user_id)
+    if _rebuild_jobs.get(user_id) != "running":
+        _rebuild_jobs[user_id] = "running"
+        background_tasks.add_task(_run_sync_background, user_id, username)
 
-    sync_rss(user_id, username)
-    sync_scrape(user_id, username)
-    _rebuild_state(user_id, username)
-
-    ratings_after = get_ratings_count(user_id)
-    watchlist_after = get_watchlist_count(user_id)
-    state = _user_states.get(user_id, {})
-    return {
-        "ratings_added": ratings_after - ratings_before,
-        "watchlist_added": watchlist_after - watchlist_before,
-        "ratings_count": ratings_after,
-        "watchlist_count": watchlist_after,
-        "candidates_count": len(state.get("ranked") or []),
-    }
+    return {"rebuild_status": "pending"}
 
 
 @app.post("/api/sync")
-def sync(current_user: dict = Depends(get_current_user)):
-    """Scrape latest ratings and watchlist from Letterboxd, rebuild profile and ranking."""
+def sync(background_tasks: BackgroundTasks, current_user: dict = Depends(get_current_user)):
+    """Scrape latest ratings and watchlist from Letterboxd in the background."""
     user_id = current_user["user_id"]
     username = current_user["username"]
 
     if not username:
         raise HTTPException(status_code=428, detail="Set your Letterboxd username before syncing")
 
-    ratings_before = get_ratings_count(user_id)
-    watchlist_before = get_watchlist_count(user_id)
+    if _rebuild_jobs.get(user_id) == "running":
+        return {
+            "ratings_count": get_ratings_count(user_id),
+            "watchlist_count": get_watchlist_count(user_id),
+            "rebuild_status": "pending",
+        }
 
-    t0 = time.time()
-    print(f"[sync] user {user_id} ({username}): starting", flush=True)
-    rss_ratings, rss_watchlist = sync_rss(user_id, username)
-    print(f"[sync] user {user_id}: rss done in {time.time()-t0:.1f}s — {rss_ratings} ratings, {rss_watchlist} watchlist", flush=True)
-    t1 = time.time()
-    sync_scrape(user_id, username)
-    print(f"[sync] user {user_id}: scrape done in {time.time()-t1:.1f}s", flush=True)
-    _rebuild_state(user_id, username)
-
-    ratings_after = get_ratings_count(user_id)
-    watchlist_after = get_watchlist_count(user_id)
-    new_state = _user_states.get(user_id, {})
+    _rebuild_jobs[user_id] = "running"
+    background_tasks.add_task(_run_sync_background, user_id, username)
     return {
-        "ratings_added": ratings_after - ratings_before,
-        "watchlist_added": watchlist_after - watchlist_before,
-        "ratings_count": ratings_after,
-        "watchlist_count": watchlist_after,
-        "candidates_count": len(new_state.get("ranked") or []),
+        "ratings_count": get_ratings_count(user_id),
+        "watchlist_count": get_watchlist_count(user_id),
+        "rebuild_status": "pending",
     }
 
 
 @app.post("/api/import")
 async def import_csv(
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
     file: UploadFile = File(...),
     username: str | None = Form(None),
 ):
-    """Accept a Letterboxd data export (.zip or individual CSV) and ingest it."""
+    """Accept a Letterboxd data export (.zip or individual CSV) and ingest it in the background."""
     user_id = current_user["user_id"]
     active_username = current_user["username"]
 
@@ -1611,48 +1646,43 @@ async def import_csv(
         update_user_username(user_id, username)
         active_username = username
 
-    state = _user_states.get(user_id, {})
-    ratings_before = len(state.get("ratings") or [])
-    watchlist_before = len(state.get("watchlist_ids") or [])
-
     is_zip = bool(file.filename and file.filename.endswith(".zip"))
     content = await file.read()
-    print(f"[import] user {user_id} ({active_username}): starting ({'zip' if is_zip else 'csv'}, {len(content)} bytes)", flush=True)
 
-    t0 = time.time()
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp_path = Path(tmp)
+    # Quick pre-validation before firing background task
+    if is_zip:
+        try:
+            with zipfile.ZipFile(BytesIO(content)) as zf:
+                names = zf.namelist()
+        except zipfile.BadZipFile:
+            raise HTTPException(status_code=422, detail="Upload is not a valid zip file")
+        if not any("ratings.csv" in n or "watchlist.csv" in n for n in names):
+            raise HTTPException(status_code=422, detail="No ratings.csv or watchlist.csv found in zip")
+    else:
+        fname = file.filename or ""
+        if "ratings" not in fname and "watchlist" not in fname:
+            raise HTTPException(status_code=422, detail="File must be ratings.csv or watchlist.csv")
 
-        if is_zip:
-            zip_path = tmp_path / "export.zip"
-            zip_path.write_bytes(content)
-            with zipfile.ZipFile(zip_path) as zf:
-                zf.extractall(tmp_path)
-        else:
-            (tmp_path / (file.filename or "ratings.csv")).write_bytes(content)
+    # Save to persistent temp dir (background task owns cleanup)
+    tmp_dir = tempfile.mkdtemp()
+    tmp_path = Path(tmp_dir)
+    if is_zip:
+        with zipfile.ZipFile(BytesIO(content)) as zf:
+            zf.extractall(tmp_path)
+    else:
+        (tmp_path / (file.filename or "ratings.csv")).write_bytes(content)
 
-        ratings_csv = next(tmp_path.rglob("ratings.csv"), None)
-        watchlist_csv = next(tmp_path.rglob("watchlist.csv"), None)
+    if _rebuild_jobs.get(user_id) != "running":
+        _rebuild_jobs[user_id] = "running"
+        background_tasks.add_task(_run_import_background, user_id, active_username, tmp_dir)
+    else:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
-        if not any([ratings_csv, watchlist_csv]):
-            raise HTTPException(status_code=422, detail="No ratings.csv or watchlist.csv found in upload")
-
-        db_index = get_movie_title_year_index()
-        if ratings_csv:
-            sync_ratings_csv(user_id, str(ratings_csv), db_index)
-        if watchlist_csv:
-            sync_watchlist_csv(user_id, str(watchlist_csv), db_index)
-
-    print(f"[import] user {user_id}: csv ingestion done in {time.time()-t0:.1f}s (ratings={'yes' if ratings_csv else 'no'}, watchlist={'yes' if watchlist_csv else 'no'})", flush=True)
-    _rebuild_state(user_id, active_username)
-
-    new_state = _user_states.get(user_id, {})
     return {
-        "ratings_added": len(new_state.get("ratings") or []) - ratings_before,
-        "watchlist_added": len(new_state.get("watchlist_ids") or []) - watchlist_before,
-        "ratings_count": len(new_state.get("ratings") or []),
-        "watchlist_count": len(new_state.get("watchlist_ids") or []),
-        "candidates_count": len(new_state.get("ranked") or []),
+        "ratings_count": get_ratings_count(user_id),
+        "watchlist_count": get_watchlist_count(user_id),
+        "candidates_count": None,
+        "rebuild_status": "pending",
     }
 
 
