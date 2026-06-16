@@ -95,7 +95,7 @@ export function ProfileBuilding({ onComplete, onError, currentUsername }: Props)
             key={u.username}
             style={s.profileCard}
             activeOpacity={0.7}
-            onPress={() => router.push(`/profile/${u.username}` as any)}
+            onPress={() => router.push(`/search/${u.username}` as any)}
           >
             <Text style={s.profileName}>{u.username}</Text>
             <Text style={s.profileCount}>{u.ratings_count.toLocaleString()} ratings</Text>
