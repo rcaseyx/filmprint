@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { View, Text, StyleSheet, ActivityIndicator, Animated, TouchableOpacity, ScrollView } from 'react-native'
+import { View, Text, StyleSheet, ActivityIndicator, Animated, TouchableOpacity, ScrollView, Alert } from 'react-native'
 import { useRouter } from 'expo-router'
 import { Colors, Spacing } from '@/constants/theme'
 import { apiFetch } from '@/lib/api'
@@ -47,9 +47,15 @@ export function ProfileBuilding({ onComplete, onError, currentUsername }: Props)
         if (data.status === 'done') {
           clearInterval(interval)
           onComplete()
+          Alert.alert(
+            'Profile ready',
+            'Your taste profile has been built.',
+            [{ text: 'View Picks', onPress: () => router.replace('/picks') }],
+          )
         } else if (data.status === 'error') {
           clearInterval(interval)
           onError()
+          Alert.alert('Something went wrong', 'We couldn\'t build your profile. Try importing again.')
         }
       } catch {
         // transient — keep polling
@@ -95,7 +101,7 @@ export function ProfileBuilding({ onComplete, onError, currentUsername }: Props)
             key={u.username}
             style={s.profileCard}
             activeOpacity={0.7}
-            onPress={() => router.push(`/search/${u.username}` as any)}
+            onPress={() => router.push({ pathname: '/search/[username]', params: { username: u.username } } as any)}
           >
             <Text style={s.profileName}>{u.username}</Text>
             <Text style={s.profileCount}>{u.ratings_count.toLocaleString()} ratings</Text>
