@@ -3,6 +3,11 @@ import { View, Text, StyleSheet, ActivityIndicator, Animated, TouchableOpacity, 
 import { useRouter } from 'expo-router'
 import { Colors, Spacing } from '@/constants/theme'
 import { apiFetch } from '@/lib/api'
+import { setPendingProfile } from '@/lib/pendingNavigation'
+
+// Module-level guard: prevents two simultaneously-mounted ProfileBuilding instances
+// (picks tab + profile tab) from both showing the alert.
+let _alertShown = false
 
 interface TopUser {
   username: string
@@ -22,6 +27,9 @@ export function ProfileBuilding({ onComplete, onError, currentUsername }: Props)
   const dot3 = useRef(new Animated.Value(0.3)).current
   const [topUsers, setTopUsers] = useState<TopUser[]>([])
   const [usersLoading, setUsersLoading] = useState(true)
+  // Prevents this instance from calling onComplete/Alert more than once,
+  // even if the effect restarts due to prop reference changes.
+  const completedRef = useRef(false)
 
   useEffect(() => {
     const pulse = (dot: Animated.Value, delay: number) =>
@@ -46,15 +54,30 @@ export function ProfileBuilding({ onComplete, onError, currentUsername }: Props)
         const data = await res.json()
         if (data.status === 'done') {
           clearInterval(interval)
-          onComplete()
-          Alert.alert(
-            'Profile ready',
-            'Your taste profile has been built.',
-            [{ text: 'View Picks', onPress: () => router.navigate('/(app)/picks' as any) }],
-          )
+          if (!completedRef.current) {
+            completedRef.current = true
+            onComplete()
+          }
+          if (!_alertShown) {
+            _alertShown = true
+            Alert.alert(
+              'Profile ready',
+              'Your taste profile has been built.',
+              [{
+                text: 'View Picks',
+                onPress: () => {
+                  _alertShown = false
+                  router.navigate('/(app)/picks' as any)
+                },
+              }],
+            )
+          }
         } else if (data.status === 'error') {
           clearInterval(interval)
-          onError()
+          if (!completedRef.current) {
+            completedRef.current = true
+            onError()
+          }
           Alert.alert('Something went wrong', "We couldn't build your profile. Try importing again.")
         }
       } catch {
@@ -101,7 +124,10 @@ export function ProfileBuilding({ onComplete, onError, currentUsername }: Props)
             key={u.username}
             style={s.profileCard}
             activeOpacity={0.7}
-            onPress={() => router.navigate({ pathname: '/(app)/search/[username]', params: { username: u.username } } as any)}
+            onPress={() => {
+              setPendingProfile(u.username)
+              router.navigate('/(app)/search' as any)
+            }}
           >
             <Text style={s.profileName}>{u.username}</Text>
             <Text style={s.profileCount}>{u.ratings_count.toLocaleString()} ratings</Text>

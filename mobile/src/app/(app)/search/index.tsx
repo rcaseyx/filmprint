@@ -1,14 +1,14 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   View, Text, TextInput, FlatList, TouchableOpacity, ActivityIndicator, StyleSheet,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { useRouter } from 'expo-router'
+import { useRouter, useFocusEffect } from 'expo-router'
 import { Colors, Spacing } from '@/constants/theme'
 import { Avatar } from '@/components/Avatar'
 import { useDebounce } from '@/lib/useDebounce'
 import { apiFetch } from '@/lib/api'
-import { useEffect } from 'react'
+import { getPendingProfile, clearPendingProfile } from '@/lib/pendingNavigation'
 
 interface UserResult {
   id: number
@@ -19,6 +19,15 @@ interface UserResult {
 
 export default function PeopleScreen() {
   const router = useRouter()
+
+  useFocusEffect(useCallback(() => {
+    const pending = getPendingProfile()
+    if (pending) {
+      clearPendingProfile()
+      router.push(`/search/${pending}`)
+    }
+  }, [router]))
+
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<UserResult[]>([])
   const [loading, setLoading] = useState(false)

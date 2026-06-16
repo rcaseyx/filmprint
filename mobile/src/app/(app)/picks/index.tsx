@@ -526,29 +526,32 @@ export default function PicksScreen() {
   const [error, setError] = useState<string | null>(null)
   const resultsScrollRef = useRef<ScrollView>(null)
 
-  useEffect(() => {
-    apiFetch('/api/user')
-      .then(async r => {
-        if (r.status === 401) { await logout(); router.replace('/login'); return }
-        const data = await r.json()
-        if (data.rebuild_in_progress) {
-          setCurrentUsername(data.username ?? null)
-          setRebuildInProgress(true)
-          setUserChecked(true)
-          return
-        }
-        if (!data.has_profile) { router.replace('/onboarding'); return }
+  const checkUser = useCallback(async () => {
+    try {
+      const r = await apiFetch('/api/user')
+      if (r.status === 401) { await logout(); router.replace('/login'); return }
+      const data = await r.json()
+      if (data.rebuild_in_progress) {
+        setCurrentUsername(data.username ?? null)
+        setRebuildInProgress(true)
         setUserChecked(true)
-        Promise.all([
-          apiFetch('/api/genres').then(r => r.json()),
-          apiFetch('/api/profile/examples').then(r => r.json()),
-        ]).then(([gd, ex]) => {
-          setGenres(gd.genres ?? [])
-          setGenreExamples(ex.genre ?? {})
-        }).catch(() => {})
-      })
-      .catch(() => { setUserChecked(true) })
-  }, [])
+        return
+      }
+      if (!data.has_profile) { router.replace('/onboarding'); return }
+      setUserChecked(true)
+      Promise.all([
+        apiFetch('/api/genres').then(r => r.json()),
+        apiFetch('/api/profile/examples').then(r => r.json()),
+      ]).then(([gd, ex]) => {
+        setGenres(gd.genres ?? [])
+        setGenreExamples(ex.genre ?? {})
+      }).catch(() => {})
+    } catch {
+      setUserChecked(true)
+    }
+  }, [logout, router])
+
+  useEffect(() => { checkUser() }, [])
 
   const goToStep = (next: number) => {
     Keyboard.dismiss()
@@ -642,8 +645,11 @@ export default function PicksScreen() {
 
   useFocusEffect(useCallback(() => {
     if (initialFocus.current) { initialFocus.current = false; return }
+    // If userChecked is still false, we got here via onboarding redirect — re-run
+    // the check now that the user may have completed onboarding.
+    if (!userChecked) { checkUser(); return }
     handleReset()
-  }, [handleReset]))
+  }, [handleReset, userChecked, checkUser]))
 
 
   // ── User check pending — blank screen to avoid selector flash ───────────────
@@ -657,7 +663,16 @@ export default function PicksScreen() {
       <SafeAreaView style={s.safe} edges={['top']}>
         <ProfileBuilding
           currentUsername={currentUsername}
-          onComplete={() => setRebuildInProgress(false)}
+          onComplete={() => {
+            setRebuildInProgress(false)
+            Promise.all([
+              apiFetch('/api/genres').then(r => r.json()),
+              apiFetch('/api/profile/examples').then(r => r.json()),
+            ]).then(([gd, ex]) => {
+              setGenres(gd.genres ?? [])
+              setGenreExamples(ex.genre ?? {})
+            }).catch(() => {})
+          }}
           onError={() => setRebuildInProgress(false)}
         />
       </SafeAreaView>

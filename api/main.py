@@ -1296,7 +1296,6 @@ def get_genres(current_user: dict = Depends(get_current_user)):
     genres = [
         {"name": g, "count": genre_counts[g], "weight": genre_weights.get(g, 0.0)}
         for g in GENRES
-        if genre_counts[g] > 0
     ]
     genres.sort(key=lambda x: x["weight"], reverse=True)
     return {"genres": genres}
