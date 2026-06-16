@@ -96,6 +96,10 @@ export default function SupportPage() {
           {status === "loading" ? "Submitting…" : "Submit report"}
         </button>
       </form>
+
+      <p className="text-xs text-neutral-600 mt-10">
+        <a href="/privacy" className="hover:text-neutral-400 transition-colors">Privacy Policy</a>
+      </p>
     </div>
   )
 }
