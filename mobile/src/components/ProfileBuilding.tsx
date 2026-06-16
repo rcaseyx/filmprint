@@ -50,12 +50,12 @@ export function ProfileBuilding({ onComplete, onError, currentUsername }: Props)
           Alert.alert(
             'Profile ready',
             'Your taste profile has been built.',
-            [{ text: 'View Picks', onPress: () => router.replace('/picks') }],
+            [{ text: 'View Picks', onPress: () => router.navigate('/(app)/picks' as any) }],
           )
         } else if (data.status === 'error') {
           clearInterval(interval)
           onError()
-          Alert.alert('Something went wrong', 'We couldn\'t build your profile. Try importing again.')
+          Alert.alert('Something went wrong', "We couldn't build your profile. Try importing again.")
         }
       } catch {
         // transient — keep polling
@@ -101,7 +101,7 @@ export function ProfileBuilding({ onComplete, onError, currentUsername }: Props)
             key={u.username}
             style={s.profileCard}
             activeOpacity={0.7}
-            onPress={() => router.push({ pathname: '/search/[username]', params: { username: u.username } } as any)}
+            onPress={() => router.navigate({ pathname: '/(app)/search/[username]', params: { username: u.username } } as any)}
           >
             <Text style={s.profileName}>{u.username}</Text>
             <Text style={s.profileCount}>{u.ratings_count.toLocaleString()} ratings</Text>
