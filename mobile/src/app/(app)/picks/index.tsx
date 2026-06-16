@@ -12,6 +12,7 @@ import { FilmCard } from '@/components/FilmCard'
 import { Image } from 'expo-image'
 import { Coffee, Moon, Sparkles, Flame, Popcorn, Drama, Zap, Film, Hourglass, Check, Gem } from 'lucide-react-native'
 import type { LucideIcon } from 'lucide-react-native'
+import { ProfileBuilding } from '@/components/ProfileBuilding'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -517,6 +518,7 @@ export default function PicksScreen() {
   const [runtime, setRuntime] = useState<RuntimeOption | 'any'>('any')
   const [freeText, setFreeText] = useState('')
 
+  const [rebuildInProgress, setRebuildInProgress] = useState(false)
   const [screenView, setScreenView] = useState<ScreenView>('selector')
   const [picks, setPicks] = useState<Pick[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -527,6 +529,7 @@ export default function PicksScreen() {
       .then(async r => {
         if (r.status === 401) { await logout(); router.replace('/login'); return }
         const data = await r.json()
+        if (data.rebuild_in_progress) { setRebuildInProgress(true); return }
         if (!data.has_profile) { router.replace('/onboarding'); return }
         Promise.all([
           apiFetch('/api/genres').then(r => r.json()),
@@ -634,6 +637,18 @@ export default function PicksScreen() {
     handleReset()
   }, [handleReset]))
 
+
+  // ── Rebuild in progress ─────────────────────────────────────────────────────
+  if (rebuildInProgress) {
+    return (
+      <SafeAreaView style={s.safe} edges={['top']}>
+        <ProfileBuilding
+          onComplete={() => setRebuildInProgress(false)}
+          onError={() => setRebuildInProgress(false)}
+        />
+      </SafeAreaView>
+    )
+  }
 
   // ── Loading ─────────────────────────────────────────────────────────────────
   if (screenView === 'loading') {

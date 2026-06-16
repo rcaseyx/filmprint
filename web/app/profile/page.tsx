@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { apiFetch } from "@/lib/api"
 import { ProfileContent, type ProfileData, type RadarExamples } from "@/components/ProfileContent"
+import { ProfileBuilding } from "@/components/ProfileBuilding"
 
 async function getUserStatus() {
   try {
@@ -45,17 +46,28 @@ async function getExamples(): Promise<{ genre: RadarExamples; subgenre: RadarExa
 }
 
 export default async function ProfilePage() {
-  const [session, user, profile, history, examples] = await Promise.all([
+  const [session, user] = await Promise.all([
     getServerSession(authOptions),
     getUserStatus(),
+  ])
+
+  if (user && !user.has_profile && !user.rebuild_in_progress) {
+    redirect("/onboarding")
+  }
+
+  if (user?.rebuild_in_progress) {
+    return (
+      <div className="max-w-2xl mx-auto px-6 py-12">
+        <ProfileBuilding currentUsername={user.username} />
+      </div>
+    )
+  }
+
+  const [profile, history, examples] = await Promise.all([
     getProfile(),
     getHistory(),
     getExamples(),
   ])
-
-  if (user && !user.has_profile) {
-    redirect("/onboarding")
-  }
 
   if (!profile) {
     return (

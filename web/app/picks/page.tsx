@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation"
 import { MoodSelector } from "@/components/MoodSelector"
+import { ProfileBuilding } from "@/components/ProfileBuilding"
 import { apiFetch } from "@/lib/api"
 
 const GENRES = [
@@ -23,7 +24,15 @@ export default async function PicksPage() {
   const user = await getUserStatus()
 
   if (!user) redirect("/login")
-  if (user && !user.has_profile) redirect("/onboarding")
+  if (user && !user.has_profile && !user.rebuild_in_progress) redirect("/onboarding")
+
+  if (user.rebuild_in_progress) {
+    return (
+      <div className="max-w-2xl mx-auto px-6 py-12">
+        <ProfileBuilding currentUsername={user.username} />
+      </div>
+    )
+  }
 
   return (
     <div className="max-w-2xl mx-auto px-6 py-12">

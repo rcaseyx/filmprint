@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   ScrollView, View, Text, TouchableOpacity, ActivityIndicator, StyleSheet,
 } from 'react-native'
@@ -13,6 +13,7 @@ import { PosterCard } from '@/components/PosterCard'
 import { InsightCard } from '@/components/InsightCard'
 import { SectionLabel } from '@/components/SectionLabel'
 import { ProfileSkeleton } from '@/components/ProfileSkeleton'
+import { ProfileBuilding } from '@/components/ProfileBuilding'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -57,6 +58,7 @@ export default function ProfileScreen() {
   const router = useRouter()
 
   const [loading, setLoading] = useState(true)
+  const [rebuildInProgress, setRebuildInProgress] = useState(false)
   const [profile, setProfile] = useState<ProfileData | null>(null)
   const [examples, setExamples] = useState<{
     genre: RadarExamples; subgenre: RadarExamples; era: RadarExamples; tone: RadarExamples
@@ -65,19 +67,26 @@ export default function ProfileScreen() {
   const [needsUsername, setNeedsUsername] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState('')
+  const syncPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const load = useCallback(async () => {
     try {
-      const [pd, ed, hd, ud] = await Promise.all([
+      const ud = await apiFetch('/api/user').then(r => r.json())
+      if (ud.rebuild_in_progress) {
+        setRebuildInProgress(true)
+        setLoading(false)
+        return
+      }
+      setNeedsUsername(ud.needs_username)
+      const [pd, ed, hd] = await Promise.all([
         apiFetch('/api/profile').then(r => r.json()),
         apiFetch('/api/profile/examples').then(r => r.json()),
         apiFetch('/api/recommendations/history').then(r => r.json()),
-        apiFetch('/api/user').then(r => r.json()),
       ])
       setProfile(pd)
       setExamples(ed)
       setHistory(hd.history ?? [])
-      setNeedsUsername(ud.needs_username)
+      setRebuildInProgress(false)
     } catch {
       // leave null
     } finally {
@@ -87,19 +96,35 @@ export default function ProfileScreen() {
 
   useEffect(() => { load() }, [load])
 
+  useEffect(() => () => { if (syncPollRef.current) clearInterval(syncPollRef.current) }, [])
+
   const handleSync = async () => {
     setSyncing(true)
-    setSyncMsg('')
+    setSyncMsg('Syncing in background…')
     try {
       const r = await apiFetch('/api/sync', { method: 'POST' })
       const data = await r.json()
-      const added = data.ratings_added ?? 0
-      setSyncMsg(added > 0 ? `+${added} ratings synced` : 'Already up to date')
-      load()
+      if (data.rebuild_status === 'pending') {
+        syncPollRef.current = setInterval(async () => {
+          try {
+            const sr = await apiFetch('/api/rebuild/status')
+            const s = await sr.json()
+            if (s.status === 'done' || s.status === 'error') {
+              clearInterval(syncPollRef.current!)
+              setSyncing(false)
+              setSyncMsg(s.status === 'done' ? 'Profile updated' : 'Sync failed — try again')
+              if (s.status === 'done') load()
+            }
+          } catch { /* keep polling */ }
+        }, 3000)
+      } else {
+        setSyncing(false)
+        setSyncMsg('Already up to date')
+        load()
+      }
     } catch {
-      setSyncMsg('Sync failed — try again')
-    } finally {
       setSyncing(false)
+      setSyncMsg('Sync failed — try again')
     }
   }
 
@@ -109,6 +134,17 @@ export default function ProfileScreen() {
   }
 
   if (loading) return <ProfileSkeleton />
+
+  if (rebuildInProgress) {
+    return (
+      <SafeAreaView style={s.safe}>
+        <ProfileBuilding
+          onComplete={() => { setRebuildInProgress(false); load() }}
+          onError={() => setRebuildInProgress(false)}
+        />
+      </SafeAreaView>
+    )
+  }
 
   if (!profile || !examples) {
     return (

@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth";
 import "./globals.css";
 import { SessionProvider } from "@/components/SessionProvider";
 import { Header } from "@/components/Header";
+import { RebuildTracker } from "@/components/RebuildTracker";
 
 const geist = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 
@@ -27,6 +28,7 @@ export default async function RootLayout({
         <SessionProvider session={session}>
           <Header />
           <main className="flex-1">{children}</main>
+          <RebuildTracker />
         </SessionProvider>
       </body>
     </html>

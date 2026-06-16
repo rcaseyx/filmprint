@@ -17,14 +17,11 @@ import * as SecureStore from 'expo-secure-store'
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000'
 
-type Step = 'idle' | 'syncing' | 'done'
-
 export default function LetterboxdScreen() {
   const router = useRouter()
   const [username, setUsername] = useState('')
   const [file, setFile] = useState<DocumentPicker.DocumentPickerAsset | null>(null)
-  const [step, setStep] = useState<Step>('idle')
-  const [stepLabel, setStepLabel] = useState('')
+  const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
   const pickFile = async () => {
@@ -44,11 +41,10 @@ export default function LetterboxdScreen() {
       return
     }
     setError('')
-    setStep('syncing')
+    setSubmitting(true)
 
     try {
       if (file) {
-        setStepLabel('Uploading your export…')
         const token = await SecureStore.getItemAsync(TOKEN_KEY)
         const form = new FormData()
         form.append('file', {
@@ -70,7 +66,6 @@ export default function LetterboxdScreen() {
           throw new Error(d.detail ?? 'Import failed')
         }
       } else {
-        setStepLabel('Validating username…')
         const res = await apiFetch('/api/settings/letterboxd', {
           method: 'POST',
           body: JSON.stringify({ username: trimmed }),
@@ -81,31 +76,19 @@ export default function LetterboxdScreen() {
         }
       }
 
-      setStep('done')
-      setStepLabel('')
-      setTimeout(() => router.replace('/picks'), 800)
+      router.replace('/picks')
     } catch (e: any) {
       setError(e.message)
-      setStep('idle')
+      setSubmitting(false)
     }
   }
 
-  if (step === 'syncing' || step === 'done') {
+  if (submitting) {
     return (
       <SafeAreaView style={s.safe}>
         <View style={s.center}>
-          {step === 'syncing' ? (
-            <>
-              <ActivityIndicator size="large" color={Colors.brand} />
-              <Text style={s.syncLabel}>{stepLabel || 'Syncing your ratings…'}</Text>
-              <Text style={s.syncHint}>This may take a moment</Text>
-            </>
-          ) : (
-            <>
-              <Text style={s.doneIcon}>✓</Text>
-              <Text style={s.doneLabel}>Connected!</Text>
-            </>
-          )}
+          <ActivityIndicator size="large" color={Colors.brand} />
+          <Text style={s.syncLabel}>Connecting your account…</Text>
         </View>
       </SafeAreaView>
     )
@@ -208,7 +191,4 @@ const s = StyleSheet.create({
   disabled: { opacity: 0.4 },
   error: { fontSize: 12, color: Colors.error },
   syncLabel: { fontSize: 16, fontWeight: '600', color: Colors.text },
-  syncHint: { fontSize: 13, color: Colors.textMuted },
-  doneIcon: { fontSize: 48, color: Colors.brand },
-  doneLabel: { fontSize: 20, fontWeight: '700', color: Colors.text },
 })
