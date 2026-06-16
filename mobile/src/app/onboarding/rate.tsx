@@ -29,7 +29,6 @@ export default function RateScreen() {
   const [index, setIndex] = useState(0)
   const [ratings, setRatings] = useState<Record<number, number>>({})
   const [submitting, setSubmitting] = useState(false)
-  const [submitLabel, setSubmitLabel] = useState('')
   const [submitError, setSubmitError] = useState('')
 
   const slideAnim = useRef(new Animated.Value(0)).current
@@ -114,7 +113,6 @@ export default function RateScreen() {
   const submit = async () => {
     setSubmitting(true)
     setSubmitError('')
-    setSubmitLabel('Saving your ratings…')
     try {
       const res = await apiFetch('/api/onboarding/rate', {
         method: 'POST',
@@ -129,12 +127,10 @@ export default function RateScreen() {
         const d = await res.json().catch(() => ({}))
         throw new Error(d.detail ?? 'Something went wrong')
       }
-      setSubmitLabel('Building your taste profile…')
       router.replace('/picks')
     } catch (e: any) {
       setSubmitError(e.message)
       setSubmitting(false)
-      setSubmitLabel('')
     }
   }
 
@@ -159,8 +155,7 @@ export default function RateScreen() {
       <SafeAreaView style={s.safe}>
         <View style={s.center}>
           <ActivityIndicator size="large" color={Colors.brand} />
-          <Text style={s.submitLabel}>{submitLabel}</Text>
-          <Text style={s.submitHint}>This may take a moment</Text>
+          <Text style={s.submitLabel}>Saving your ratings…</Text>
         </View>
       </SafeAreaView>
     )
@@ -324,6 +319,5 @@ const s = StyleSheet.create({
   submitText: { fontSize: 15, fontWeight: '700', color: Colors.background },
   submitTextDim: { color: Colors.textMuted, fontWeight: '500' },
   submitLabel: { fontSize: 16, fontWeight: '600', color: Colors.text },
-  submitHint: { fontSize: 13, color: Colors.textMuted },
   errorText: { fontSize: 12, color: Colors.error, textAlign: 'center' },
 })

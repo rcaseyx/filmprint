@@ -7,9 +7,9 @@ import { useSession } from "next-auth/react"
 import { authHeader } from "@/lib/api"
 
 interface SyncResult {
-  ratings_added: number
-  watchlist_added: number
   ratings_count: number
+  watchlist_count: number
+  rebuild_status?: string
 }
 
 interface Props {
@@ -20,7 +20,7 @@ export function SyncButton({ initialHasLetterboxd }: Props) {
   const router = useRouter()
   const { data: session } = useSession()
   const [hasLetterboxd, setHasLetterboxd] = useState(initialHasLetterboxd)
-  const [status, setStatus] = useState<"idle" | "syncing" | "done" | "error">("idle")
+  const [status, setStatus] = useState<"idle" | "syncing" | "updating" | "done" | "error">("idle")
   const [result, setResult] = useState<SyncResult | null>(null)
 
   useEffect(() => {
@@ -44,8 +44,26 @@ export function SyncButton({ initialHasLetterboxd }: Props) {
       if (!res.ok) throw new Error()
       const data = await res.json()
       setResult(data)
-      setStatus("done")
-      router.refresh()
+      if (data.rebuild_status === "pending") {
+        setStatus("updating")
+        const interval = setInterval(async () => {
+          try {
+            const r = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/rebuild/status`, {
+              headers: authHeader(session),
+            })
+            if (!r.ok) { clearInterval(interval); setStatus("done"); router.refresh(); return }
+            const s = await r.json()
+            if (s.status === "done" || s.status === "error") {
+              clearInterval(interval)
+              setStatus("done")
+              router.refresh()
+            }
+          } catch { /* keep polling */ }
+        }, 3000)
+      } else {
+        setStatus("done")
+        router.refresh()
+      }
     } catch {
       setStatus("error")
     }
@@ -64,10 +82,10 @@ export function SyncButton({ initialHasLetterboxd }: Props) {
       <div className="flex flex-col gap-1.5">
         <button
           onClick={handleSync}
-          disabled={status === "syncing"}
+          disabled={status === "syncing" || status === "updating"}
           className="btn-primary px-4 py-2 text-sm"
         >
-          {status === "syncing" ? "Syncing..." : "Sync my data"}
+          {status === "syncing" ? "Syncing..." : status === "updating" ? "Updating..." : "Sync my data"}
         </button>
         <a href="/import" className="hidden sm:block btn-secondary px-4 py-2 text-sm text-center">
           Re-import data
@@ -77,12 +95,11 @@ export function SyncButton({ initialHasLetterboxd }: Props) {
         <span>Sync picks up new activity.</span>
         <span>Re-import if your history is out of date.</span>
       </div>
-      {status === "done" && result && (
-        <span className="text-xs text-neutral-500">
-          {result.ratings_added > 0 || result.watchlist_added > 0
-            ? `+${result.ratings_added} ratings · +${result.watchlist_added} watchlist`
-            : "Already up to date"}
-        </span>
+      {status === "updating" && (
+        <span className="text-xs text-neutral-500">Updating your profile in background…</span>
+      )}
+      {status === "done" && (
+        <span className="text-xs text-neutral-500">Profile updated</span>
       )}
       {status === "error" && (
         <span className="text-xs text-red-400">Sync failed — is the API running?</span>

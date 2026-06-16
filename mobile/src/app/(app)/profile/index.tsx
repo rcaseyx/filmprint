@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   ScrollView, View, Text, TouchableOpacity, ActivityIndicator, StyleSheet,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { useRouter } from 'expo-router'
+import { useRouter, useFocusEffect } from 'expo-router'
 import { RefreshCw, LogOut, Link2, HelpCircle } from 'lucide-react-native'
 import { Colors, Spacing } from '@/constants/theme'
 import { apiFetch } from '@/lib/api'
@@ -13,6 +13,7 @@ import { PosterCard } from '@/components/PosterCard'
 import { InsightCard } from '@/components/InsightCard'
 import { SectionLabel } from '@/components/SectionLabel'
 import { ProfileSkeleton } from '@/components/ProfileSkeleton'
+import { ProfileBuilding } from '@/components/ProfileBuilding'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -57,6 +58,8 @@ export default function ProfileScreen() {
   const router = useRouter()
 
   const [loading, setLoading] = useState(true)
+  const [rebuildInProgress, setRebuildInProgress] = useState(false)
+  const [currentUsername, setCurrentUsername] = useState<string | null>(null)
   const [profile, setProfile] = useState<ProfileData | null>(null)
   const [examples, setExamples] = useState<{
     genre: RadarExamples; subgenre: RadarExamples; era: RadarExamples; tone: RadarExamples
@@ -65,19 +68,27 @@ export default function ProfileScreen() {
   const [needsUsername, setNeedsUsername] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState('')
+  const syncPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const load = useCallback(async () => {
     try {
-      const [pd, ed, hd, ud] = await Promise.all([
+      const ud = await apiFetch('/api/user').then(r => r.json())
+      setCurrentUsername(ud.username ?? null)
+      if (ud.rebuild_in_progress) {
+        setRebuildInProgress(true)
+        setLoading(false)
+        return
+      }
+      setNeedsUsername(ud.needs_username)
+      const [pd, ed, hd] = await Promise.all([
         apiFetch('/api/profile').then(r => r.json()),
         apiFetch('/api/profile/examples').then(r => r.json()),
         apiFetch('/api/recommendations/history').then(r => r.json()),
-        apiFetch('/api/user').then(r => r.json()),
       ])
       setProfile(pd)
       setExamples(ed)
       setHistory(hd.history ?? [])
-      setNeedsUsername(ud.needs_username)
+      setRebuildInProgress(false)
     } catch {
       // leave null
     } finally {
@@ -85,21 +96,45 @@ export default function ProfileScreen() {
     }
   }, [])
 
+  const initialFocus = useRef(true)
+
   useEffect(() => { load() }, [load])
+
+  useEffect(() => () => { if (syncPollRef.current) clearInterval(syncPollRef.current) }, [])
+
+  // Silent refresh on re-focus so profile updates after connecting Letterboxd
+  useFocusEffect(useCallback(() => {
+    if (initialFocus.current) { initialFocus.current = false; return }
+    load()
+  }, [load]))
 
   const handleSync = async () => {
     setSyncing(true)
-    setSyncMsg('')
+    setSyncMsg('Syncing in background…')
     try {
       const r = await apiFetch('/api/sync', { method: 'POST' })
       const data = await r.json()
-      const added = data.ratings_added ?? 0
-      setSyncMsg(added > 0 ? `+${added} ratings synced` : 'Already up to date')
-      load()
+      if (data.rebuild_status === 'pending') {
+        syncPollRef.current = setInterval(async () => {
+          try {
+            const sr = await apiFetch('/api/rebuild/status')
+            const s = await sr.json()
+            if (s.status === 'done' || s.status === 'error') {
+              clearInterval(syncPollRef.current!)
+              setSyncing(false)
+              setSyncMsg(s.status === 'done' ? 'Profile updated' : 'Sync failed — try again')
+              if (s.status === 'done') load()
+            }
+          } catch { /* keep polling */ }
+        }, 3000)
+      } else {
+        setSyncing(false)
+        setSyncMsg('Already up to date')
+        load()
+      }
     } catch {
-      setSyncMsg('Sync failed — try again')
-    } finally {
       setSyncing(false)
+      setSyncMsg('Sync failed — try again')
     }
   }
 
@@ -109,6 +144,18 @@ export default function ProfileScreen() {
   }
 
   if (loading) return <ProfileSkeleton />
+
+  if (rebuildInProgress) {
+    return (
+      <SafeAreaView style={s.safe} edges={['top']}>
+        <ProfileBuilding
+          currentUsername={currentUsername}
+          onComplete={() => { setRebuildInProgress(false); load() }}
+          onError={() => setRebuildInProgress(false)}
+        />
+      </SafeAreaView>
+    )
+  }
 
   if (!profile || !examples) {
     return (
@@ -150,12 +197,23 @@ export default function ProfileScreen() {
             <Text style={s.heading}>Your taste profile</Text>
             <Text style={s.subheading}>Built from {profile.ratings_count} ratings</Text>
           </View>
-          <TouchableOpacity onPress={handleSync} disabled={syncing} activeOpacity={0.7} style={s.syncIcon}>
-            {syncing
-              ? <ActivityIndicator size="small" color={Colors.brand} />
-              : <RefreshCw size={20} color={Colors.brand} />
-            }
-          </TouchableOpacity>
+          {needsUsername ? (
+            <TouchableOpacity
+              style={s.connectHeaderBtn}
+              onPress={() => router.push('/profile/letterboxd' as any)}
+              activeOpacity={0.8}
+            >
+              <Link2 size={14} color={Colors.brand} />
+              <Text style={s.connectHeaderText}>Connect Letterboxd</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity onPress={handleSync} disabled={syncing} activeOpacity={0.7} style={s.syncIcon}>
+              {syncing
+                ? <ActivityIndicator size="small" color={Colors.brand} />
+                : <RefreshCw size={20} color={Colors.brand} />
+              }
+            </TouchableOpacity>
+          )}
         </View>
 
         {!!syncMsg && <Text style={s.syncMsg}>{syncMsg}</Text>}
@@ -252,16 +310,6 @@ export default function ProfileScreen() {
 
         {/* Account */}
         <View style={s.account}>
-          {needsUsername && (
-            <TouchableOpacity
-              style={s.connectBtn}
-              onPress={() => router.push('/onboarding/letterboxd')}
-              activeOpacity={0.8}
-            >
-              <Link2 size={16} color={Colors.brand} />
-              <Text style={s.connectText}>Connect Letterboxd</Text>
-            </TouchableOpacity>
-          )}
           <TouchableOpacity style={s.logoutBtn} onPress={handleLogout} activeOpacity={0.7}>
             <LogOut size={15} color={Colors.textMuted} />
             <Text style={s.logoutText}>Sign out</Text>
@@ -279,11 +327,17 @@ export default function ProfileScreen() {
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
-  scroll: { padding: Spacing.lg, gap: 28, paddingBottom: 40 },
+  scroll: { padding: Spacing.lg, gap: 28, paddingBottom: 80 },
   header: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
   heading: { fontSize: 24, fontWeight: '600', color: Colors.text, letterSpacing: -0.3 },
   subheading: { fontSize: 13, color: Colors.textMuted, marginTop: 3 },
   syncIcon: { padding: 4 },
+  connectHeaderBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    borderWidth: 1, borderColor: Colors.brand, borderRadius: 10,
+    paddingVertical: 6, paddingHorizontal: 10,
+  },
+  connectHeaderText: { fontSize: 12, fontWeight: '600', color: Colors.brand },
   syncMsg: { fontSize: 13, color: Colors.textSecondary, marginTop: -18 },
   statsRow: { flexDirection: 'row', gap: 10 },
   statCard: {
@@ -304,12 +358,6 @@ const s = StyleSheet.create({
   insightPair: { flexDirection: 'row', gap: 8 },
   posterRow: { gap: 10 },
   account: { gap: 4, marginTop: 4 },
-  connectBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    borderWidth: 1, borderColor: Colors.brand, borderRadius: 14,
-    paddingVertical: 14, justifyContent: 'center', marginBottom: 8,
-  },
-  connectText: { fontSize: 15, fontWeight: '600', color: Colors.brand },
   logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14 },
   logoutText: { fontSize: 15, color: Colors.textMuted },
   supportBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 10 },

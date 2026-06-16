@@ -17,7 +17,7 @@ import * as SecureStore from 'expo-secure-store'
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000'
 
-export default function LetterboxdScreen() {
+export default function ProfileLetterboxdScreen() {
   const router = useRouter()
   const [username, setUsername] = useState('')
   const [file, setFile] = useState<DocumentPicker.DocumentPickerAsset | null>(null)
@@ -76,7 +76,7 @@ export default function LetterboxdScreen() {
         }
       }
 
-      router.replace('/picks')
+      router.back()
     } catch (e: any) {
       setError(e.message)
       setSubmitting(false)

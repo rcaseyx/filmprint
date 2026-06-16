@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useSession } from "next-auth/react"
 import { authHeader } from "@/lib/api"
@@ -8,23 +8,16 @@ import { authHeader } from "@/lib/api"
 type Status = "idle" | "file_selected" | "uploading" | "done" | "error"
 
 interface ImportResult {
-  ratings_added: number
-  watchlist_added: number
   ratings_count: number
-  candidates_count: number
+  watchlist_count: number
+  candidates_count: number | null
+  rebuild_status?: string
 }
 
 interface Props {
   isOnboarding?: boolean
   needsUsername?: boolean
 }
-
-const IMPORT_STEPS = [
-  "Reading your export",
-  "Enriching films against TMDB",
-  "Updating your taste profile",
-]
-const STEP_DELAYS_MS = [4000, 12000]
 
 export function ImportFlow({ isOnboarding, needsUsername }: Props) {
   const router = useRouter()
@@ -36,25 +29,6 @@ export function ImportFlow({ isOnboarding, needsUsername }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const [username, setUsername] = useState("")
-  const [step, setStep] = useState(0)
-  const [dotCount, setDotCount] = useState(1)
-
-  useEffect(() => {
-    if (status !== "uploading") return
-    setStep(0)
-    const timers = STEP_DELAYS_MS.map((delay, i) =>
-      setTimeout(() => setStep(i + 1), delay)
-    )
-    return () => timers.forEach(clearTimeout)
-  }, [status])
-
-  useEffect(() => {
-    if (status !== "uploading") return
-    const interval = setInterval(() => {
-      setDotCount((n) => (n % 3) + 1)
-    }, 500)
-    return () => clearInterval(interval)
-  }, [status])
 
   const upload = async (file: File) => {
     setStatus("uploading")
@@ -81,9 +55,10 @@ export function ImportFlow({ isOnboarding, needsUsername }: Props) {
       const data = await res.json()
       setResult(data)
       setStatus("done")
-      router.refresh()
-      if (isOnboarding) {
+      if (isOnboarding && data.rebuild_status === "pending") {
         router.push("/picks")
+      } else {
+        router.refresh()
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Upload failed")
@@ -124,47 +99,15 @@ export function ImportFlow({ isOnboarding, needsUsername }: Props) {
     if (file) selectFile(file)
   }
 
-  const importSteps = (
-    <div className="flex flex-col gap-3 py-2">
-      {IMPORT_STEPS.map((label, i) => {
-        const done = i < step
-        const active = i === step
-        return (
-          <div
-            key={label}
-            className={`flex items-center gap-3 transition-opacity duration-500 ${
-              i > step ? "opacity-25" : "opacity-100"
-            }`}
-          >
-            <div className="w-5 h-5 shrink-0 flex items-center justify-center">
-              {done ? (
-                <svg viewBox="0 0 20 20" fill="none" className="w-5 h-5">
-                  <circle cx="10" cy="10" r="9" stroke="rgb(251 191 36)" strokeWidth="1.5" />
-                  <path d="M6 10l3 3 5-5" stroke="rgb(251 191 36)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              ) : active ? (
-                <span className="w-2 h-2 rounded-full bg-brand animate-pulse mx-auto block" />
-              ) : (
-                <span className="w-2 h-2 rounded-full border border-neutral-700 mx-auto block" />
-              )}
-            </div>
-            <span className={`text-sm ${done ? "text-neutral-500" : active ? "text-neutral-100" : "text-neutral-600"}`}>
-              {active ? `${label}${".".repeat(dotCount)}` : label}
-            </span>
-          </div>
-        )
-      })}
+  const uploadingSpinner = (
+    <div className="flex items-center gap-3 py-2">
+      <span className="w-2 h-2 rounded-full bg-brand animate-pulse shrink-0" />
+      <p className="text-sm text-neutral-400">Uploading your export…</p>
     </div>
   )
 
-  // Onboarding: step-based loading view
   if (isOnboarding && status === "uploading") {
-    return (
-      <div className="space-y-3 py-4">
-        <p className="text-sm text-neutral-400">Building your taste profile…</p>
-        {importSteps}
-      </div>
-    )
+    return <div className="space-y-3 py-4">{uploadingSpinner}</div>
   }
 
   return (
@@ -188,7 +131,7 @@ export function ImportFlow({ isOnboarding, needsUsername }: Props) {
       {status !== "done" && (
         <>
           {status === "uploading" ? (
-            importSteps
+            uploadingSpinner
           ) : status === "file_selected" && pendingFile ? (
             <div className="flex items-center justify-between rounded-xl border border-neutral-700 bg-neutral-900 px-4 py-3">
               <div className="flex items-center gap-3 min-w-0">
@@ -247,9 +190,15 @@ export function ImportFlow({ isOnboarding, needsUsername }: Props) {
       {status === "done" && result && (
         <div className="rounded-xl border border-neutral-800 bg-neutral-900 px-5 py-4 space-y-1">
           <p className="text-sm font-medium text-neutral-200">Import complete</p>
-          <p className="text-xs text-neutral-500">
-            +{result.ratings_added} ratings · {result.ratings_count} total · {result.candidates_count} candidates ranked
-          </p>
+          {result.candidates_count == null ? (
+            <p className="text-xs text-neutral-500">
+              {result.ratings_count} ratings · profile building in background
+            </p>
+          ) : (
+            <p className="text-xs text-neutral-500">
+              {result.ratings_count} ratings · {result.candidates_count} candidates ranked
+            </p>
+          )}
           {!isOnboarding && (
             <button
               onClick={() => { setStatus("idle"); setResult(null); setPendingFile(null) }}
