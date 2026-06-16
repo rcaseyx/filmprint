@@ -59,6 +59,7 @@ export default function ProfileScreen() {
 
   const [loading, setLoading] = useState(true)
   const [rebuildInProgress, setRebuildInProgress] = useState(false)
+  const [currentUsername, setCurrentUsername] = useState<string | null>(null)
   const [profile, setProfile] = useState<ProfileData | null>(null)
   const [examples, setExamples] = useState<{
     genre: RadarExamples; subgenre: RadarExamples; era: RadarExamples; tone: RadarExamples
@@ -72,6 +73,7 @@ export default function ProfileScreen() {
   const load = useCallback(async () => {
     try {
       const ud = await apiFetch('/api/user').then(r => r.json())
+      setCurrentUsername(ud.username ?? null)
       if (ud.rebuild_in_progress) {
         setRebuildInProgress(true)
         setLoading(false)
@@ -137,8 +139,9 @@ export default function ProfileScreen() {
 
   if (rebuildInProgress) {
     return (
-      <SafeAreaView style={s.safe}>
+      <SafeAreaView style={s.safe} edges={['top']}>
         <ProfileBuilding
+          currentUsername={currentUsername}
           onComplete={() => { setRebuildInProgress(false); load() }}
           onError={() => setRebuildInProgress(false)}
         />

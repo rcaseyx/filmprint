@@ -518,6 +518,8 @@ export default function PicksScreen() {
   const [runtime, setRuntime] = useState<RuntimeOption | 'any'>('any')
   const [freeText, setFreeText] = useState('')
 
+  const [userChecked, setUserChecked] = useState(false)
+  const [currentUsername, setCurrentUsername] = useState<string | null>(null)
   const [rebuildInProgress, setRebuildInProgress] = useState(false)
   const [screenView, setScreenView] = useState<ScreenView>('selector')
   const [picks, setPicks] = useState<Pick[]>([])
@@ -529,8 +531,14 @@ export default function PicksScreen() {
       .then(async r => {
         if (r.status === 401) { await logout(); router.replace('/login'); return }
         const data = await r.json()
-        if (data.rebuild_in_progress) { setRebuildInProgress(true); return }
+        if (data.rebuild_in_progress) {
+          setCurrentUsername(data.username ?? null)
+          setRebuildInProgress(true)
+          setUserChecked(true)
+          return
+        }
         if (!data.has_profile) { router.replace('/onboarding'); return }
+        setUserChecked(true)
         Promise.all([
           apiFetch('/api/genres').then(r => r.json()),
           apiFetch('/api/profile/examples').then(r => r.json()),
@@ -539,7 +547,7 @@ export default function PicksScreen() {
           setGenreExamples(ex.genre ?? {})
         }).catch(() => {})
       })
-      .catch(() => {})
+      .catch(() => { setUserChecked(true) })
   }, [])
 
   const goToStep = (next: number) => {
@@ -638,11 +646,17 @@ export default function PicksScreen() {
   }, [handleReset]))
 
 
+  // ── User check pending — blank screen to avoid selector flash ───────────────
+  if (!userChecked) {
+    return <View style={s.safe} />
+  }
+
   // ── Rebuild in progress ─────────────────────────────────────────────────────
   if (rebuildInProgress) {
     return (
       <SafeAreaView style={s.safe} edges={['top']}>
         <ProfileBuilding
+          currentUsername={currentUsername}
           onComplete={() => setRebuildInProgress(false)}
           onError={() => setRebuildInProgress(false)}
         />
