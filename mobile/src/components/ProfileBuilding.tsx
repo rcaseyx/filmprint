@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { View, Text, StyleSheet, ActivityIndicator, Animated, TouchableOpacity } from 'react-native'
+import { View, Text, StyleSheet, ActivityIndicator, Animated, TouchableOpacity, ScrollView } from 'react-native'
 import { useRouter } from 'expo-router'
 import { Colors, Spacing } from '@/constants/theme'
 import { apiFetch } from '@/lib/api'
@@ -21,6 +21,7 @@ export function ProfileBuilding({ onComplete, onError, currentUsername }: Props)
   const dot2 = useRef(new Animated.Value(0.3)).current
   const dot3 = useRef(new Animated.Value(0.3)).current
   const [topUsers, setTopUsers] = useState<TopUser[]>([])
+  const [usersLoading, setUsersLoading] = useState(true)
 
   useEffect(() => {
     const pulse = (dot: Animated.Value, delay: number) =>
@@ -65,10 +66,15 @@ export function ProfileBuilding({ onComplete, onError, currentUsername }: Props)
         setTopUsers(filtered.slice(0, 3))
       })
       .catch(() => {})
+      .finally(() => setUsersLoading(false))
   }, [currentUsername])
 
   return (
-    <View style={s.wrap}>
+    <ScrollView
+      style={s.scroll}
+      contentContainerStyle={s.content}
+      showsVerticalScrollIndicator={false}
+    >
       <View style={s.loader}>
         <ActivityIndicator size="large" color={Colors.brand} />
         <Text style={s.heading}>Building your taste profile</Text>
@@ -80,36 +86,36 @@ export function ProfileBuilding({ onComplete, onError, currentUsername }: Props)
         <Text style={s.sub}>This takes a minute — browse while you wait.</Text>
       </View>
 
-      {topUsers.length > 0 && (
-        <View style={s.explore}>
-          <Text style={s.exploreLabel}>Explore other profiles</Text>
-          {topUsers.map(u => (
-            <TouchableOpacity
-              key={u.username}
-              style={s.profileCard}
-              activeOpacity={0.7}
-              onPress={() => router.push(`/profile/${u.username}` as any)}
-            >
-              <Text style={s.profileName}>{u.username}</Text>
-              <Text style={s.profileCount}>{u.ratings_count.toLocaleString()} ratings</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
-    </View>
+      <View style={s.explore}>
+        <Text style={s.exploreLabel}>Explore other profiles</Text>
+        {usersLoading ? (
+          [0, 1, 2].map(i => <View key={i} style={s.skeleton} />)
+        ) : topUsers.map(u => (
+          <TouchableOpacity
+            key={u.username}
+            style={s.profileCard}
+            activeOpacity={0.7}
+            onPress={() => router.push(`/profile/${u.username}` as any)}
+          >
+            <Text style={s.profileName}>{u.username}</Text>
+            <Text style={s.profileCount}>{u.ratings_count.toLocaleString()} ratings</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </ScrollView>
   )
 }
 
 const s = StyleSheet.create({
-  wrap: {
-    flex: 1,
+  scroll: { flex: 1 },
+  content: {
     padding: Spacing.xl,
+    paddingBottom: 100,
     gap: Spacing.xl,
   },
   loader: {
-    flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
+    paddingTop: Spacing.xl,
     gap: Spacing.md,
   },
   heading: {
@@ -138,7 +144,6 @@ const s = StyleSheet.create({
   },
   explore: {
     gap: Spacing.sm,
-    paddingBottom: Spacing.md,
   },
   exploreLabel: {
     fontSize: 11,
@@ -146,6 +151,13 @@ const s = StyleSheet.create({
     letterSpacing: 0.8,
     textTransform: 'uppercase',
     color: Colors.textFaint,
+  },
+  skeleton: {
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: Colors.card,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   profileCard: {
     flexDirection: 'row',
