@@ -1,15 +1,7 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
+import { Animated } from 'react-native'
 import Svg, { G, Path } from 'react-native-svg'
-import Animated, {
-  useSharedValue,
-  useAnimatedProps,
-  withDelay,
-  withTiming,
-  Easing,
-} from 'react-native-reanimated'
 import { Colors } from '@/constants/theme'
-
-const AnimatedPath = Animated.createAnimatedComponent(Path)
 
 const PATHS = [
   "M5690 11744 c-14 -2 -79 -11 -145 -20 -231 -30 -502 -106 -735 -206\n-1006 -430 -1820 -1423 -2248 -2739 -97 -300 -188 -670 -177 -726 14 -79 105\n-124 174 -87 50 27 66 61 101 223 225 1031 759 1991 1430 2576 559 487 1185\n735 1852 735 686 0 1339 -262 1923 -771 850 -740 1457 -1929 1664 -3263 21\n-132 36 -168 82 -192 63 -32 136 -8 169 57 l21 40 -26 157 c-116 690 -296\n1259 -585 1847 -258 524 -569 965 -945 1340 -316 315 -619 537 -980 715 -218\n107 -404 178 -613 231 -258 66 -379 81 -677 84 -143 2 -271 1 -285 -1z",
@@ -40,58 +32,34 @@ const PATHS = [
   "M7003 811 c-77 -77 -140 -129 -219 -180 -117 -76 -134 -96 -134 -160\n0 -63 61 -121 128 -121 64 0 274 164 400 312 85 100 96 125 82 178 -13 50 -55\n80 -109 80 -38 0 -46 -6 -148 -109z",
 ]
 
-const N = PATHS.length
-const STEP_MS = 70
-const DRAW_MS = 500
-
-interface LogoPathProps {
-  d: string
-  index: number
-}
-
-function LogoPath({ d, index }: LogoPathProps) {
-  const dashOffset = useSharedValue(1)
-  const fillOpacity = useSharedValue(0)
-
-  useEffect(() => {
-    const delay = (N - 1 - index) * STEP_MS
-    const config = { duration: DRAW_MS, easing: Easing.out(Easing.quad) }
-    dashOffset.value = withDelay(delay, withTiming(0, config))
-    fillOpacity.value = withDelay(delay, withTiming(1, config))
-  }, [])
-
-  const animatedProps = useAnimatedProps(() => ({
-    strokeDashoffset: dashOffset.value,
-    fillOpacity: fillOpacity.value,
-  }))
-
-  return (
-    <AnimatedPath
-      d={d}
-      fill={Colors.brand}
-      stroke={Colors.brand}
-      strokeWidth={140}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      pathLength={1}
-      strokeDasharray={[1]}
-      animatedProps={animatedProps}
-    />
-  )
-}
-
 interface PrintLogoProps {
   size?: number
 }
 
 export function PrintLogo({ size = 120 }: PrintLogoProps) {
+  const opacity = useRef(new Animated.Value(0)).current
+
+  useEffect(() => {
+    Animated.timing(opacity, {
+      toValue: 1,
+      duration: 600,
+      useNativeDriver: true,
+    }).start()
+  }, [])
+
   return (
-    <Svg width={size} height={size} viewBox="0 0 1200 1200">
-      <G transform="translate(0,1200) scale(0.1,-0.1)">
-        {PATHS.map((d, i) => (
-          <LogoPath key={i} d={d} index={i} />
-        ))}
-      </G>
-    </Svg>
+    <Animated.View style={{ opacity }}>
+      <Svg width={size} height={size} viewBox="0 0 1200 1200">
+        <G transform="translate(0,1200) scale(0.1,-0.1)">
+          {PATHS.map((d, i) => (
+            <Path
+              key={i}
+              d={d}
+              fill={Colors.brand}
+            />
+          ))}
+        </G>
+      </Svg>
+    </Animated.View>
   )
 }
