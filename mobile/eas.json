@@ -1,6 +1,7 @@
 {
   "cli": {
-    "version": ">= 16.0.0"
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
   },
   "build": {
     "development": {
@@ -27,7 +28,7 @@
     "production": {
       "ios": {
         "appleId": "rcaseyx@gmail.com",
-        "ascAppId": "",
+        "ascAppId": "6781483312",
         "bundleIdentifier": "com.filmprint.app"
       }
     }
