@@ -8,7 +8,7 @@ export const Colors = {
   borderFocus: '#404040',
   text: '#f5f5f5',
   textSecondary: '#a3a3a3',
-  textMuted: '#737373',
+  textMuted: '#8a8a8a',
   textFaint: '#525252',
   error: '#f87171',
 } as const
