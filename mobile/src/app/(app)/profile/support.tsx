@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import {
-  View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator,
+  View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator, Linking,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
@@ -115,6 +115,10 @@ export default function SupportScreen() {
                   : <Text style={s.submitText}>Submit report</Text>
                 }
               </TouchableOpacity>
+
+              <TouchableOpacity onPress={() => Linking.openURL('https://myfilmprint.com/privacy')} activeOpacity={0.7}>
+                <Text style={s.privacyLink}>Privacy Policy</Text>
+              </TouchableOpacity>
             </View>
 
           </>
@@ -153,4 +157,5 @@ const s = StyleSheet.create({
   successWrap: { gap: 8 },
   anotherBtn: { marginTop: 12 },
   anotherText: { fontSize: 14, color: Colors.textMuted },
+  privacyLink: { fontSize: 13, color: Colors.textFaint },
 })

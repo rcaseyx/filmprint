@@ -8,15 +8,10 @@
     "scheme": "filmprint",
     "userInterfaceStyle": "dark",
     "ios": {
-      "icon": "./assets/expo.icon",
+      "icon": "./assets/images/icon.png",
       "bundleIdentifier": "com.filmprint.app",
       "infoPlist": {
         "CFBundleURLTypes": [
-          {
-            "CFBundleURLSchemes": [
-              "com.googleusercontent.apps.254721076832-ob0di2jl3qth3a6t16imk9j2ccqmga69"
-            ]
-          },
           {
             "CFBundleURLSchemes": [
               "com.googleusercontent.apps.254721076832-ob0di2jl3qth3a6t16imk9j2ccqmga69"
@@ -45,6 +40,10 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#0a0a0a",
+          "ios": {
+            "image": "./assets/images/splash-icon.png",
+            "imageWidth": 200
+          },
           "android": {
             "image": "./assets/images/splash-icon.png",
             "imageWidth": 76
