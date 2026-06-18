@@ -20,7 +20,7 @@ const s = StyleSheet.create({
     backgroundColor: Colors.card, borderRadius: 14, padding: 14,
     borderWidth: 1, borderColor: Colors.border, gap: 3,
   },
-  label: { fontSize: 10, fontWeight: '700', color: Colors.textFaint, letterSpacing: 0.8, textTransform: 'uppercase' },
-  value: { fontSize: 18, fontWeight: '600', color: Colors.text },
-  sub: { fontSize: 11, color: Colors.textFaint },
+  label: { fontSize: 11, fontWeight: '700', color: Colors.textMuted, letterSpacing: 0.8, textTransform: 'uppercase' },
+  value: { fontSize: 20, fontWeight: '600', color: Colors.text },
+  sub: { fontSize: 12, color: Colors.textMuted },
 })

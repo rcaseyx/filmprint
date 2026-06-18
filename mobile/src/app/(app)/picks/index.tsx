@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  View, Text, ScrollView, TextInput, Pressable, TouchableOpacity,
+  View, Text, ScrollView, TextInput, Pressable, TouchableOpacity, TouchableWithoutFeedback,
   StyleSheet, ActivityIndicator, Animated, Easing, Dimensions, Keyboard, PanResponder,
+  KeyboardAvoidingView, Platform, AppState,
 } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter, useFocusEffect } from 'expo-router'
@@ -263,49 +264,56 @@ function FiltersStep({ familiarity, setFamiliarity, niche, setNiche, runtime, se
   freeText: string; setFreeText: (v: string) => void
 }) {
   return (
-    <View style={fs.wrap}>
-      <View style={fs.header}>
-        <Text style={fs.heading}>Anything else?</Text>
-        <Text style={fs.sub}>All optional.</Text>
-      </View>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <View style={fs.wrap}>
+          <View style={fs.header}>
+            <Text style={fs.heading}>Anything else?</Text>
+            <Text style={fs.sub}>All optional.</Text>
+          </View>
 
-      <View style={fs.vibeRow}>
-        <OptionCard
-          Icon={Popcorn} label="Crowd-pleaser" sub="mainstream & accessible"
-          selected={familiarity === 'familiar'}
-          onPress={() => setFamiliarity(familiarity === 'familiar' ? null : 'familiar')}
-        />
-        <OptionCard
-          Icon={Drama} label="Challenging" sub="bold & unconventional"
-          selected={familiarity === 'challenging'}
-          onPress={() => setFamiliarity(familiarity === 'challenging' ? null : 'challenging')}
-        />
-      </View>
+          <View style={fs.vibeRow}>
+            <OptionCard
+              Icon={Popcorn} label="Crowd-pleaser" sub="mainstream & accessible"
+              selected={familiarity === 'familiar'}
+              onPress={() => setFamiliarity(familiarity === 'familiar' ? null : 'familiar')}
+            />
+            <OptionCard
+              Icon={Drama} label="Challenging" sub="bold & unconventional"
+              selected={familiarity === 'challenging'}
+              onPress={() => setFamiliarity(familiarity === 'challenging' ? null : 'challenging')}
+            />
+          </View>
 
-      <View style={fs.nicheRow}>
-        <OptionCard
-          Icon={Gem} label="Hidden gems" sub="obscure & under-seen"
-          selected={niche}
-          onPress={() => setNiche(!niche)}
-        />
-      </View>
+          <View style={fs.nicheRow}>
+            <OptionCard
+              Icon={Gem} label="Hidden gems" sub="obscure & under-seen"
+              selected={niche}
+              onPress={() => setNiche(!niche)}
+            />
+          </View>
 
-      <View style={fs.lengthRow}>
-        <OptionCard Icon={Zap}      label="Short"    sub="< 90 min"   selected={runtime === 90}   onPress={() => setRuntime(runtime === 90   ? 'any' : 90)}   />
-        <OptionCard Icon={Film}     label="Standard" sub="90–120 min" selected={runtime === 120}  onPress={() => setRuntime(runtime === 120  ? 'any' : 120)}  />
-        <OptionCard Icon={Hourglass} label="Long"    sub="2+ hours"   selected={runtime === null} onPress={() => setRuntime(runtime === null ? 'any' : null)} />
-      </View>
+          <View style={fs.lengthRow}>
+            <OptionCard Icon={Zap}      label="Short"    sub="< 90 min"   selected={runtime === 90}   onPress={() => setRuntime(runtime === 90   ? 'any' : 90)}   />
+            <OptionCard Icon={Film}     label="Standard" sub="90–120 min" selected={runtime === 120}  onPress={() => setRuntime(runtime === 120  ? 'any' : 120)}  />
+            <OptionCard Icon={Hourglass} label="Long"    sub="2+ hours"   selected={runtime === null} onPress={() => setRuntime(runtime === null ? 'any' : null)} />
+          </View>
 
-      <TextInput
-        style={fs.input}
-        value={freeText}
-        onChangeText={setFreeText}
-        placeholder="Anything specific? (set in Japan, a director I haven't seen…)"
-        placeholderTextColor={Colors.textFaint}
-        multiline
-        numberOfLines={2}
-      />
-    </View>
+          <TextInput
+            style={fs.input}
+            value={freeText}
+            onChangeText={setFreeText}
+            placeholder="Anything specific? (set in Japan, a director I haven't seen…)"
+            placeholderTextColor={Colors.textFaint}
+            multiline
+            numberOfLines={2}
+            returnKeyType="done"
+            blurOnSubmit
+            onSubmitEditing={Keyboard.dismiss}
+          />
+        </View>
+      </TouchableWithoutFeedback>
+    </KeyboardAvoidingView>
   )
 }
 
@@ -628,7 +636,13 @@ export default function PicksScreen() {
       setScreenView('results')
       setTimeout(() => resultsScrollRef.current?.scrollTo({ y: 0, animated: false }), 50)
     } catch (e: any) {
-      setError(e.message || 'Something went wrong — try again.')
+      const msg: string = e.message || ''
+      const isAbort = e.name === 'AbortError' || msg === 'fetch failed' || msg.toLowerCase().includes('network request failed')
+      if (isAbort && AppState.currentState !== 'active') {
+        setScreenView('selector')
+        return
+      }
+      setError(msg || 'Something went wrong — try again.')
       setScreenView('selector')
     }
   }
