@@ -18,16 +18,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const init = async () => {
-      const launchFlagUri = FileSystem.documentDirectory + '.launched'
-      const launchInfo = await FileSystem.getInfoAsync(launchFlagUri)
-      if (!launchInfo.exists) {
-        // Fresh install — Keychain persists across reinstalls on iOS, so clear it
-        await SecureStore.deleteItemAsync(TOKEN_KEY)
-        await FileSystem.writeAsStringAsync(launchFlagUri, '1')
+      try {
+        const launchFlagUri = FileSystem.documentDirectory + '.launched'
+        const launchInfo = await FileSystem.getInfoAsync(launchFlagUri)
+        if (!launchInfo.exists) {
+          // Fresh install — Keychain persists across reinstalls on iOS, so clear it
+          await SecureStore.deleteItemAsync(TOKEN_KEY)
+          await FileSystem.writeAsStringAsync(launchFlagUri, '1')
+        }
+        const stored = await SecureStore.getItemAsync(TOKEN_KEY)
+        setToken(stored)
+      } finally {
+        setIsLoading(false)
       }
-      const stored = await SecureStore.getItemAsync(TOKEN_KEY)
-      setToken(stored)
-      setIsLoading(false)
     }
     init()
   }, [])
