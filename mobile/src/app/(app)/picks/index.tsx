@@ -550,6 +550,7 @@ export default function PicksScreen() {
   const fetchPicksFnRef = useRef<() => Promise<void>>(async () => {})
   const appStateRef = useRef<AppStateStatus>(AppState.currentState)
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const screenViewRef = useRef<ScreenView>('selector')
 
   const checkUser = useCallback(async () => {
     try {
@@ -682,6 +683,8 @@ export default function PicksScreen() {
     }
   }
 
+  useEffect(() => { screenViewRef.current = screenView }, [screenView])
+
   // Always point the ref at the latest closure so the AppState listener retries with current params.
   useEffect(() => { fetchPicksFnRef.current = fetchPicks })
 
@@ -711,9 +714,10 @@ export default function PicksScreen() {
 
   useFocusEffect(useCallback(() => {
     if (initialFocus.current) { initialFocus.current = false; return }
-    // If userChecked is still false, we got here via onboarding redirect — re-run
-    // the check now that the user may have completed onboarding.
     if (!userChecked) { checkUser(); return }
+    // With NativeTabs, useFocusEffect fires on app foreground (UIViewController.viewDidAppear),
+    // not just on tab switch. Don't interrupt an in-flight request.
+    if (screenViewRef.current === 'loading') return
     handleReset()
   }, [handleReset, userChecked, checkUser]))
 
