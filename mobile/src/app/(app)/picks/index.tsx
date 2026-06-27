@@ -271,7 +271,7 @@ function FiltersStep({ familiarity, setFamiliarity, niche, setNiche, runtime, se
       automaticallyAdjustKeyboardInsets
     >
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <View>
+        <View style={fs.inner}>
           <View style={fs.header}>
             <Text style={fs.heading}>Anything else?</Text>
             <Text style={fs.sub}>All optional.</Text>
@@ -323,8 +323,9 @@ function FiltersStep({ familiarity, setFamiliarity, niche, setNiche, runtime, se
 }
 
 const fs = StyleSheet.create({
-  scrollContent: { padding: Spacing.lg, paddingTop: Spacing.md, gap: 10 },
-  header: { gap: 6, marginBottom: 4 },
+  scrollContent: { padding: Spacing.lg, paddingTop: Spacing.md },
+  inner: { gap: 12 },
+  header: { gap: 6 },
   heading: { fontSize: 26, fontWeight: '800', color: Colors.text, lineHeight: 32 },
   sub: { fontSize: 14, color: Colors.textMuted },
   vibeRow: { height: 120, flexDirection: 'row', gap: 10 },
