@@ -263,8 +263,12 @@ function FiltersStep({ familiarity, setFamiliarity, niche, setNiche, runtime, se
   runtime: RuntimeOption | 'any'; setRuntime: (v: RuntimeOption | 'any') => void
   freeText: string; setFreeText: (v: string) => void
 }) {
+  const scrollRef = useRef<ScrollView>(null)
+
   return (
     <ScrollView
+      ref={scrollRef}
+      style={fs.scroll}
       contentContainerStyle={fs.scrollContent}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
@@ -315,6 +319,7 @@ function FiltersStep({ familiarity, setFamiliarity, niche, setNiche, runtime, se
             returnKeyType="done"
             blurOnSubmit
             onSubmitEditing={Keyboard.dismiss}
+            onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 150)}
           />
         </View>
       </TouchableWithoutFeedback>
@@ -323,6 +328,7 @@ function FiltersStep({ familiarity, setFamiliarity, niche, setNiche, runtime, se
 }
 
 const fs = StyleSheet.create({
+  scroll: { flex: 1 },
   scrollContent: { padding: Spacing.lg, paddingTop: Spacing.md },
   inner: { gap: 12 },
   header: { gap: 6 },
