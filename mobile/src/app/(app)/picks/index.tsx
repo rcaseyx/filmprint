@@ -543,6 +543,7 @@ export default function PicksScreen() {
   const needsRetryRef = useRef(false)
   const fetchPicksFnRef = useRef<() => Promise<void>>(async () => {})
   const appStateRef = useRef<AppStateStatus>(AppState.currentState)
+  const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const checkUser = useCallback(async () => {
     try {
@@ -622,18 +623,11 @@ export default function PicksScreen() {
     setSelectedGenres(prev => prev.includes(name) ? prev.filter(g => g !== name) : [...prev, name])
 
   const fetchPicks = async () => {
+    if (errorTimerRef.current) { clearTimeout(errorTimerRef.current); errorTimerRef.current = null }
     needsRetryRef.current = false
     Keyboard.dismiss()
     setScreenView('loading')
     setError(null)
-
-    // Track if the app was backgrounded while this request was in-flight.
-    // We can't rely on AppState.currentState at catch-time — by then the user
-    // may have already foregrounded the app and the check would be wrong.
-    let wasBackgrounded = false
-    const bgSub = AppState.addEventListener('change', next => {
-      if (next === 'background' || next === 'inactive') wasBackgrounded = true
-    })
 
     try {
       const res = await apiFetch('/api/recommendations', {
@@ -647,7 +641,6 @@ export default function PicksScreen() {
           niche: niche || null,
         }),
       })
-      bgSub.remove()
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         throw new Error((err as any).detail || 'API error')
@@ -657,15 +650,27 @@ export default function PicksScreen() {
       setScreenView('results')
       setTimeout(() => resultsScrollRef.current?.scrollTo({ y: 0, animated: false }), 50)
     } catch (e: any) {
-      bgSub.remove()
       const msg: string = e.message || ''
       const isNetworkError = e.name === 'AbortError' || msg === 'fetch failed' || msg.toLowerCase().includes('network request failed')
-      // wasBackgrounded catches the normal case; appStateRef covers the race where iOS
-      // kills the socket before the 'background' AppState event fires.
-      if (isNetworkError && (wasBackgrounded || appStateRef.current !== 'active')) {
+
+      if (isNetworkError) {
+        // iOS can kill the socket before the AppState 'background' event reaches JS,
+        // so we can't reliably detect backgrounding at catch-time. Instead: defer the
+        // error display by 800ms. By then AppState has definitely fired. If the app
+        // backgrounded, skip the error and let the 'active' listener trigger a retry.
         needsRetryRef.current = true
+        const pendingMsg = msg || 'Something went wrong — try again.'
+        errorTimerRef.current = setTimeout(() => {
+          errorTimerRef.current = null
+          if (!needsRetryRef.current) return  // retry already fired via AppState 'active'
+          if (appStateRef.current !== 'active') return  // still backgrounded, wait for 'active'
+          needsRetryRef.current = false
+          setError(pendingMsg)
+          setScreenView('selector')
+        }, 800)
         return
       }
+
       setError(msg || 'Something went wrong — try again.')
       setScreenView('selector')
     }
@@ -674,11 +679,12 @@ export default function PicksScreen() {
   // Always point the ref at the latest closure so the AppState listener retries with current params.
   useEffect(() => { fetchPicksFnRef.current = fetchPicks })
 
-  // Keep appStateRef current and retry if the request was killed while backgrounded.
+  // Keep appStateRef current; when foregrounding after a background-killed request, retry.
   useEffect(() => {
     const sub = AppState.addEventListener('change', next => {
       appStateRef.current = next
       if (next === 'active' && needsRetryRef.current) {
+        if (errorTimerRef.current) { clearTimeout(errorTimerRef.current); errorTimerRef.current = null }
         fetchPicksFnRef.current()
       }
     })
@@ -686,6 +692,8 @@ export default function PicksScreen() {
   }, [])
 
   const handleReset = useCallback(() => {
+    if (errorTimerRef.current) { clearTimeout(errorTimerRef.current); errorTimerRef.current = null }
+    needsRetryRef.current = false
     setTone(null); setPacing(null)
     setSelectedGenres([])
     setFamiliarity(null); setNiche(false); setRuntime('any'); setFreeText('')
