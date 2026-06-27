@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   View, Text, ScrollView, TextInput, Pressable, TouchableOpacity, TouchableWithoutFeedback,
   StyleSheet, ActivityIndicator, Animated, Easing, Dimensions, Keyboard, PanResponder,
-  KeyboardAvoidingView, Platform, AppState,
+  AppState, AppStateStatus,
 } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter, useFocusEffect } from 'expo-router'
@@ -268,6 +268,7 @@ function FiltersStep({ familiarity, setFamiliarity, niche, setNiche, runtime, se
       contentContainerStyle={fs.scrollContent}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
+      automaticallyAdjustKeyboardInsets
     >
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View>
@@ -540,6 +541,7 @@ export default function PicksScreen() {
 
   const needsRetryRef = useRef(false)
   const fetchPicksFnRef = useRef<() => Promise<void>>(async () => {})
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState)
 
   const checkUser = useCallback(async () => {
     try {
@@ -657,9 +659,9 @@ export default function PicksScreen() {
       bgSub.remove()
       const msg: string = e.message || ''
       const isNetworkError = e.name === 'AbortError' || msg === 'fetch failed' || msg.toLowerCase().includes('network request failed')
-      if (isNetworkError && wasBackgrounded) {
-        // iOS killed the socket while backgrounded. The server already did the work —
-        // stay in loading and retry the call when the user returns to the foreground.
+      // wasBackgrounded catches the normal case; appStateRef covers the race where iOS
+      // kills the socket before the 'background' AppState event fires.
+      if (isNetworkError && (wasBackgrounded || appStateRef.current !== 'active')) {
         needsRetryRef.current = true
         return
       }
@@ -671,9 +673,10 @@ export default function PicksScreen() {
   // Always point the ref at the latest closure so the AppState listener retries with current params.
   useEffect(() => { fetchPicksFnRef.current = fetchPicks })
 
-  // Retry the picks fetch when the app comes back to the foreground after being backgrounded mid-request.
+  // Keep appStateRef current and retry if the request was killed while backgrounded.
   useEffect(() => {
     const sub = AppState.addEventListener('change', next => {
+      appStateRef.current = next
       if (next === 'active' && needsRetryRef.current) {
         fetchPicksFnRef.current()
       }
@@ -765,7 +768,6 @@ export default function PicksScreen() {
   // ── Selector ────────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
       {/* Top nav */}
       <View style={s.topBar}>
         <TouchableOpacity
@@ -825,7 +827,6 @@ export default function PicksScreen() {
           </TouchableOpacity>
         )}
       </View>
-    </KeyboardAvoidingView>
     </SafeAreaView>
   )
 }
