@@ -264,9 +264,13 @@ function FiltersStep({ familiarity, setFamiliarity, niche, setNiche, runtime, se
   freeText: string; setFreeText: (v: string) => void
 }) {
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+    <ScrollView
+      contentContainerStyle={fs.scrollContent}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+    >
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <View style={fs.wrap}>
+        <View>
           <View style={fs.header}>
             <Text style={fs.heading}>Anything else?</Text>
             <Text style={fs.sub}>All optional.</Text>
@@ -313,18 +317,18 @@ function FiltersStep({ familiarity, setFamiliarity, niche, setNiche, runtime, se
           />
         </View>
       </TouchableWithoutFeedback>
-    </KeyboardAvoidingView>
+    </ScrollView>
   )
 }
 
 const fs = StyleSheet.create({
-  wrap: { flex: 1, padding: Spacing.lg, paddingTop: Spacing.md, gap: 10 },
-  header: { gap: 6 },
+  scrollContent: { padding: Spacing.lg, paddingTop: Spacing.md, gap: 10 },
+  header: { gap: 6, marginBottom: 4 },
   heading: { fontSize: 26, fontWeight: '800', color: Colors.text, lineHeight: 32 },
   sub: { fontSize: 14, color: Colors.textMuted },
-  vibeRow: { flex: 2, flexDirection: 'row', gap: 10 },
-  nicheRow: { flex: 1.5, flexDirection: 'row' },
-  lengthRow: { flex: 2, flexDirection: 'row', gap: 10 },
+  vibeRow: { height: 120, flexDirection: 'row', gap: 10 },
+  nicheRow: { height: 90, flexDirection: 'row' },
+  lengthRow: { height: 120, flexDirection: 'row', gap: 10 },
   input: {
     backgroundColor: Colors.card,
     borderWidth: 1, borderColor: Colors.border, borderRadius: 14,
@@ -534,6 +538,9 @@ export default function PicksScreen() {
   const [error, setError] = useState<string | null>(null)
   const resultsScrollRef = useRef<ScrollView>(null)
 
+  const needsRetryRef = useRef(false)
+  const fetchPicksFnRef = useRef<() => Promise<void>>(async () => {})
+
   const checkUser = useCallback(async () => {
     try {
       const r = await apiFetch('/api/user')
@@ -612,9 +619,19 @@ export default function PicksScreen() {
     setSelectedGenres(prev => prev.includes(name) ? prev.filter(g => g !== name) : [...prev, name])
 
   const fetchPicks = async () => {
+    needsRetryRef.current = false
     Keyboard.dismiss()
     setScreenView('loading')
     setError(null)
+
+    // Track if the app was backgrounded while this request was in-flight.
+    // We can't rely on AppState.currentState at catch-time — by then the user
+    // may have already foregrounded the app and the check would be wrong.
+    let wasBackgrounded = false
+    const bgSub = AppState.addEventListener('change', next => {
+      if (next === 'background' || next === 'inactive') wasBackgrounded = true
+    })
+
     try {
       const res = await apiFetch('/api/recommendations', {
         method: 'POST',
@@ -627,6 +644,7 @@ export default function PicksScreen() {
           niche: niche || null,
         }),
       })
+      bgSub.remove()
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         throw new Error((err as any).detail || 'API error')
@@ -636,16 +654,32 @@ export default function PicksScreen() {
       setScreenView('results')
       setTimeout(() => resultsScrollRef.current?.scrollTo({ y: 0, animated: false }), 50)
     } catch (e: any) {
+      bgSub.remove()
       const msg: string = e.message || ''
-      const isAbort = e.name === 'AbortError' || msg === 'fetch failed' || msg.toLowerCase().includes('network request failed')
-      if (isAbort && AppState.currentState !== 'active') {
-        setScreenView('selector')
+      const isNetworkError = e.name === 'AbortError' || msg === 'fetch failed' || msg.toLowerCase().includes('network request failed')
+      if (isNetworkError && wasBackgrounded) {
+        // iOS killed the socket while backgrounded. The server already did the work —
+        // stay in loading and retry the call when the user returns to the foreground.
+        needsRetryRef.current = true
         return
       }
       setError(msg || 'Something went wrong — try again.')
       setScreenView('selector')
     }
   }
+
+  // Always point the ref at the latest closure so the AppState listener retries with current params.
+  useEffect(() => { fetchPicksFnRef.current = fetchPicks })
+
+  // Retry the picks fetch when the app comes back to the foreground after being backgrounded mid-request.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', next => {
+      if (next === 'active' && needsRetryRef.current) {
+        fetchPicksFnRef.current()
+      }
+    })
+    return () => sub.remove()
+  }, [])
 
   const handleReset = useCallback(() => {
     setTone(null); setPacing(null)
@@ -731,6 +765,7 @@ export default function PicksScreen() {
   // ── Selector ────────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
       {/* Top nav */}
       <View style={s.topBar}>
         <TouchableOpacity
@@ -790,6 +825,7 @@ export default function PicksScreen() {
           </TouchableOpacity>
         )}
       </View>
+    </KeyboardAvoidingView>
     </SafeAreaView>
   )
 }

@@ -5,6 +5,7 @@ export default function AppLayout() {
   return (
     <NativeTabs
       blurEffect="systemChromeMaterialDark"
+      disableTransparentOnScrollEdge
       minimizeBehavior="never"
       iconColor={{ default: Colors.textMuted, selected: Colors.brand }}
       labelStyle={{
