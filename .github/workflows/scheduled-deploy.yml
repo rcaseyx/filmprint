@@ -147,33 +147,16 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
       - name: Redeploy backend (memory flush, no source changes)
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: |
-          PROJECT_ID="544b18f1-b3ef-4c9f-8ef6-440519f795cf"
-          SERVICE_ID="0783e4d0-de52-4dc2-8b3b-d25ecefed666"
-          ENVIRONMENT_ID="7b3610d5-7618-4604-8ce8-be1fecbd4a52"
-
-          # Fetch the latest deployment ID for this service
-          DEPLOYMENT_ID=$(curl -sf -X POST \
-            -H "Authorization: Bearer $RAILWAY_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "{\"query\":\"query{deployments(input:{projectId:\\\"$PROJECT_ID\\\",serviceId:\\\"$SERVICE_ID\\\",environmentId:\\\"$ENVIRONMENT_ID\\\",first:1}){edges{node{id}}}}\"}" \
-            https://backboard.railway.app/graphql/v2 \
-            | jq -r '.data.deployments.edges[0].node.id')
-
-          if [ -z "$DEPLOYMENT_ID" ] || [ "$DEPLOYMENT_ID" = "null" ]; then
-            echo "Could not fetch latest deployment ID — aborting"
-            exit 1
-          fi
-
-          echo "Redeploying backend deployment: $DEPLOYMENT_ID"
-          curl -sf -X POST \
-            -H "Authorization: Bearer $RAILWAY_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "{\"query\":\"mutation{deploymentRedeploy(id:\\\"$DEPLOYMENT_ID\\\"){id}}\"}" \
-            https://backboard.railway.app/graphql/v2
+          RAILWAY_PROJECT_ID: 544b18f1-b3ef-4c9f-8ef6-440519f795cf
+        run: railway up --service filmprint-backend --detach
 
       - name: Wait for restart
         run: sleep 60
