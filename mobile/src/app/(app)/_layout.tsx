@@ -1,3 +1,4 @@
+import { ThemeProvider, DarkTheme } from 'expo-router'
 import { NativeTabs } from 'expo-router/unstable-native-tabs'
 import { Colors } from '@/constants/theme'
 
@@ -16,6 +17,7 @@ const hostProps = {
 
 export default function AppLayout() {
   return (
+    <ThemeProvider value={DarkTheme}>
     <NativeTabs
       tintColor={Colors.brand}
       minimizeBehavior="never"
@@ -43,5 +45,6 @@ export default function AppLayout() {
         />
       </NativeTabs.Trigger>
     </NativeTabs>
+    </ThemeProvider>
   )
 }
