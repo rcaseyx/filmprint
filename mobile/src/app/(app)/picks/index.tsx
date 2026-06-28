@@ -551,6 +551,11 @@ export default function PicksScreen() {
   const appStateRef = useRef<AppStateStatus>(AppState.currentState)
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const screenViewRef = useRef<ScreenView>('selector')
+  // Track when each fetch started and when the app last went background.
+  // Used together to detect the race where iOS kills the socket ~30s after
+  // backgrounding, exactly when the user is returning (appState already 'active').
+  const fetchStartedAt = useRef<number>(0)
+  const lastBackgroundedAt = useRef<number>(0)
 
   const checkUser = useCallback(async () => {
     try {
@@ -632,6 +637,7 @@ export default function PicksScreen() {
   const fetchPicks = async () => {
     if (errorTimerRef.current) { clearTimeout(errorTimerRef.current); errorTimerRef.current = null }
     needsRetryRef.current = false
+    fetchStartedAt.current = Date.now()
     Keyboard.dismiss()
     setScreenView('loading')
     setError(null)
@@ -658,19 +664,33 @@ export default function PicksScreen() {
       setTimeout(() => resultsScrollRef.current?.scrollTo({ y: 0, animated: false }), 50)
     } catch (e: any) {
       const msg: string = e.message || ''
-      const isNetworkError = e.name === 'AbortError' || msg === 'fetch failed' || msg.toLowerCase().includes('network request failed')
+      // iOS network errors arrive as "fetch failed" OR "fetch failed: The network
+      // connection was lost." (or similar longer strings). Use includes, not ===.
+      const isNetworkError =
+        e.name === 'AbortError' ||
+        msg.toLowerCase().includes('fetch failed') ||
+        msg.toLowerCase().includes('network request failed') ||
+        msg.toLowerCase().includes('network connection was lost')
 
       if (isNetworkError) {
-        // iOS can kill the socket before the AppState 'background' event reaches JS,
-        // so we can't reliably detect backgrounding at catch-time. Instead: defer the
-        // error display by 800ms. By then AppState has definitely fired. If the app
-        // backgrounded, skip the error and let the 'active' listener trigger a retry.
+        // iOS can kill the socket before the AppState 'background' event reaches JS
+        // (race 1: socket dies in same tick as home-press).  It can also kill the
+        // socket ~30s after backgrounding, exactly when the user is returning, so
+        // appStateRef is already 'active' at catch-time (race 2).
+        //
+        // Fix: defer the error 800ms so AppState has time to fire (resolves race 1),
+        // AND check lastBackgroundedAt vs fetchStartedAt (resolves race 2 — if the
+        // app was backgrounded at any point during this fetch, suppress the error
+        // and let the 'active' listener trigger a retry instead).
         needsRetryRef.current = true
         const pendingMsg = msg || 'Something went wrong — try again.'
+        const thisFetchStartedAt = fetchStartedAt.current
         errorTimerRef.current = setTimeout(() => {
           errorTimerRef.current = null
           if (!needsRetryRef.current) return  // retry already fired via AppState 'active'
-          if (appStateRef.current !== 'active') return  // still backgrounded, wait for 'active'
+          if (appStateRef.current !== 'active') return  // still backgrounded
+          // Check if the app was backgrounded at any point during this fetch.
+          if (lastBackgroundedAt.current >= thisFetchStartedAt) return
           needsRetryRef.current = false
           setError(pendingMsg)
           setScreenView('selector')
@@ -692,6 +712,11 @@ export default function PicksScreen() {
   useEffect(() => {
     const sub = AppState.addEventListener('change', next => {
       appStateRef.current = next
+      // Record the last time we went to background so the error timer can detect
+      // the 30s-background race (socket dies as user returns, appState already 'active').
+      if (next === 'background' || next === 'inactive') {
+        lastBackgroundedAt.current = Date.now()
+      }
       if (next === 'active' && needsRetryRef.current) {
         if (errorTimerRef.current) { clearTimeout(errorTimerRef.current); errorTimerRef.current = null }
         fetchPicksFnRef.current()
