@@ -1,0 +1,46 @@
+diff --git a/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenComponentView.mm b/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenComponentView.mm
+index 02c39ca..8f257a2 100644
+--- a/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenComponentView.mm
++++ b/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenComponentView.mm
+@@ -81,7 +81,7 @@ - (void)resetProps
+   _isTitleUndefined = YES;
+   _orientation = RNSOrientationInherit;
+ 
+-  _standardAppearance = [UITabBarAppearance new];
++  _standardAppearance = nil;
+   _scrollEdgeAppearance = nil;
+ 
+   _shouldUseRepeatedTabSelectionPopToRootSpecialEffect = YES;
+@@ -281,10 +281,14 @@ - (void)updateProps:(const facebook::react::Props::Shared &)props
+   }
+ 
+   if (newComponentProps.standardAppearance != oldComponentProps.standardAppearance) {
+-    _standardAppearance = [UITabBarAppearance new];
+-    [RNSTabBarAppearanceCoordinator configureTabBarAppearance:_standardAppearance
+-                                          fromAppearanceProps:rnscreens::conversion::RNSConvertFollyDynamicToId(
+-                                                                  newComponentProps.standardAppearance)];
++    if (newComponentProps.standardAppearance.type() == folly::dynamic::OBJECT) {
++      _standardAppearance = [UITabBarAppearance new];
++      [RNSTabBarAppearanceCoordinator configureTabBarAppearance:_standardAppearance
++                                            fromAppearanceProps:rnscreens::conversion::RNSConvertFollyDynamicToId(
++                                                                    newComponentProps.standardAppearance)];
++    } else {
++      _standardAppearance = nil;
++    }
+     tabItemNeedsAppearanceUpdate = YES;
+   }
+ 
+@@ -585,10 +589,12 @@ - (void)setOverrideScrollViewContentInsetAdjustmentBehavior:(BOOL)overrideScroll
+ 
+ - (void)setStandardAppearance:(NSDictionary *)standardAppearanceProps
+ {
+-  _standardAppearance = [UITabBarAppearance new];
+   if (standardAppearanceProps != nil) {
++    _standardAppearance = [UITabBarAppearance new];
+     [RNSTabBarAppearanceCoordinator configureTabBarAppearance:_standardAppearance
+                                           fromAppearanceProps:standardAppearanceProps];
++  } else {
++    _standardAppearance = nil;
+   }
+   _tabItemNeedsAppearanceUpdate = YES;
+ }
