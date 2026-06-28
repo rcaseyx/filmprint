@@ -1,3 +1,22 @@
+diff --git a/node_modules/react-native-screens/ios/tabs/RNSTabBarAppearanceCoordinator.mm b/node_modules/react-native-screens/ios/tabs/RNSTabBarAppearanceCoordinator.mm
+index ae5873c..e6b3e63 100644
+--- a/node_modules/react-native-screens/ios/tabs/RNSTabBarAppearanceCoordinator.mm
++++ b/node_modules/react-native-screens/ios/tabs/RNSTabBarAppearanceCoordinator.mm
+@@ -26,6 +26,14 @@ - (void)updateAppearanceOfTabBar:(nullable UITabBar *)tabBar
+   // https://developer.apple.com/forums/thread/761056?answerId=798245022#798245022
+   hostComponentView.controller.view.tintColor = hostComponentView.tabBarTintColor;
+ 
++  // On iOS 26, setting the bar-level appearance to nil lets UIKit apply the liquid
++  // glass treatment automatically. Any non-nil UITabBarAppearance (even a fully
++  // transparent one) suppresses glass, producing a solid black bar in dark mode.
++  if (@available(iOS 26.0, *)) {
++    tabBar.standardAppearance = nil;
++    tabBar.scrollEdgeAppearance = nil;
++  }
++
+   if (tabScreenCtrls == nil) {
+     return;
+   }
 diff --git a/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenComponentView.mm b/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenComponentView.mm
 index 02c39ca..8f257a2 100644
 --- a/node_modules/react-native-screens/ios/tabs/screen/RNSTabsScreenComponentView.mm
