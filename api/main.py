@@ -880,19 +880,19 @@ Signature keywords: {', '.join(top_keywords)}
 Avg rating: {avg_rating}★ across {ratings_count} films
 Critic alignment: {critic_line}"""
 
-        prompt = f"""You're writing a 2–3 sentence taste profile summary for a film enthusiast. Be specific and honest — avoid clichés like "passion for" or "love of cinema".
+        prompt = f"""You're writing a 2-sentence taste profile for a film enthusiast. Be specific and honest — no clichés like "passion for" or "love of cinema".
 
 Their data:
 {context}
 
-Write in second person ("You..."). Capture the texture of their taste — what they're drawn to, what patterns define them. Keep it to 2–3 sentences."""
+Write in second person ("You..."). Exactly 2 sentences. No line breaks."""
 
         response = _anthropic_client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=200,
+            max_tokens=120,
             messages=[{"role": "user", "content": prompt}],
         )
-        return response.content[0].text.strip()
+        return " ".join(response.content[0].text.strip().splitlines())
     except Exception as e:
         print(f"[generate_ai_summary] failed: {e}", flush=True)
         return None
