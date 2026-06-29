@@ -22,6 +22,7 @@ interface ProfileData {
   watchlist_count: number
   avg_rating: number
   summary: string | null
+  ai_summary: string | null
   genres: (Axis & { count: number })[]
   decades: Axis[]
   tone: Axis[]
@@ -232,6 +233,11 @@ export default function ProfileScreen() {
           ))}
         </View>
 
+        {/* AI taste summary */}
+        {!!profile.ai_summary && (
+          <Text style={s.aiSummary}>{profile.ai_summary}</Text>
+        )}
+
         {/* Radar */}
         <RadarSection
           genres={topGenres}
@@ -368,4 +374,5 @@ const s = StyleSheet.create({
   errText: { fontSize: 16, color: Colors.textMuted },
   retryBtn: { borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 20 },
   retryText: { fontSize: 14, color: Colors.textSecondary },
+  aiSummary: { fontSize: 14, fontStyle: 'italic', color: Colors.textSecondary, lineHeight: 22 },
 })

@@ -17,6 +17,11 @@ interface UserResult {
   ratings_count: number
 }
 
+interface TopUser {
+  username: string
+  ratings_count: number
+}
+
 export default function PeopleScreen() {
   const router = useRouter()
 
@@ -31,7 +36,15 @@ export default function PeopleScreen() {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<UserResult[]>([])
   const [loading, setLoading] = useState(false)
+  const [topUsers, setTopUsers] = useState<TopUser[]>([])
   const debouncedQuery = useDebounce(query, 300)
+
+  useEffect(() => {
+    apiFetch('/api/users/top?limit=20')
+      .then(r => r.json())
+      .then(data => setTopUsers(data.users ?? []))
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (!debouncedQuery.trim()) { setResults([]); return }
@@ -71,38 +84,66 @@ export default function PeopleScreen() {
         <Text style={s.empty}>No filmprint users found for "{query.trim()}"</Text>
       )}
 
-      {/* Results */}
-      <FlatList
-        data={results}
-        keyExtractor={u => String(u.id)}
-        contentContainerStyle={s.list}
-        style={{ opacity: loading ? 0.4 : 1 }}
-        keyboardShouldPersistTaps="handled"
-        renderItem={({ item: user }) => {
-          const name = user.letterboxd_username ?? user.display_name ?? 'Unknown'
-          const tappable = !!user.letterboxd_username
-          const inner = (
-            <View style={s.row}>
-              <Avatar name={name} size={38} />
-              <View style={s.rowText}>
-                <Text style={s.rowName}>{name}</Text>
-                <Text style={s.rowCount}>{user.ratings_count} ratings</Text>
-              </View>
-            </View>
-          )
-          return tappable ? (
+      {/* Top users (shown when search is empty) */}
+      {!query.trim() && topUsers.length > 0 && (
+        <FlatList
+          data={topUsers}
+          keyExtractor={u => u.username}
+          contentContainerStyle={s.list}
+          keyboardShouldPersistTaps="handled"
+          ListHeaderComponent={<Text style={s.sectionLabel}>Top users</Text>}
+          renderItem={({ item: user }) => (
             <TouchableOpacity
               style={s.item}
               activeOpacity={0.7}
-              onPress={() => router.push(`/search/${user.letterboxd_username}`)}
+              onPress={() => router.push(`/search/${user.username}`)}
             >
-              {inner}
+              <View style={s.row}>
+                <Avatar name={user.username} size={38} />
+                <View style={s.rowText}>
+                  <Text style={s.rowName}>{user.username}</Text>
+                  <Text style={s.rowCount}>{user.ratings_count} ratings</Text>
+                </View>
+              </View>
             </TouchableOpacity>
-          ) : (
-            <View style={s.item}>{inner}</View>
-          )
-        }}
-      />
+          )}
+        />
+      )}
+
+      {/* Search results */}
+      {!!query.trim() && (
+        <FlatList
+          data={results}
+          keyExtractor={u => String(u.id)}
+          contentContainerStyle={s.list}
+          style={{ opacity: loading ? 0.4 : 1 }}
+          keyboardShouldPersistTaps="handled"
+          renderItem={({ item: user }) => {
+            const name = user.letterboxd_username ?? user.display_name ?? 'Unknown'
+            const tappable = !!user.letterboxd_username
+            const inner = (
+              <View style={s.row}>
+                <Avatar name={name} size={38} />
+                <View style={s.rowText}>
+                  <Text style={s.rowName}>{name}</Text>
+                  <Text style={s.rowCount}>{user.ratings_count} ratings</Text>
+                </View>
+              </View>
+            )
+            return tappable ? (
+              <TouchableOpacity
+                style={s.item}
+                activeOpacity={0.7}
+                onPress={() => router.push(`/search/${user.letterboxd_username}`)}
+              >
+                {inner}
+              </TouchableOpacity>
+            ) : (
+              <View style={s.item}>{inner}</View>
+            )
+          }}
+        />
+      )}
     </SafeAreaView>
   )
 }
@@ -120,6 +161,7 @@ const s = StyleSheet.create({
   },
   spinner: { position: 'absolute', right: 12, top: 12 },
   empty: { fontSize: 14, color: Colors.textMuted, paddingHorizontal: Spacing.lg, marginTop: Spacing.sm },
+  sectionLabel: { fontSize: 11, fontWeight: '600', color: Colors.textFaint, textTransform: 'uppercase', letterSpacing: 0.8, paddingHorizontal: Spacing.sm, paddingBottom: Spacing.xs },
   list: { paddingHorizontal: Spacing.sm, paddingBottom: 100 },
   item: { paddingHorizontal: Spacing.sm, paddingVertical: 10, borderRadius: 12 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
