@@ -316,7 +316,7 @@ export default function ProfileScreen() {
         )}
 
         {/* Share card trigger */}
-        {!!currentUsername && (
+        {!!profile && (
           <TouchableOpacity style={s.summaryTrigger} onPress={() => setCardPreviewVisible(true)} activeOpacity={0.7}>
             <Share2 size={13} color={Colors.brand} />
             <Text style={s.summaryTriggerText}>Share your filmprint</Text>
@@ -415,14 +415,14 @@ export default function ProfileScreen() {
       </ScrollView>
 
       {/* Share card preview modal */}
-      {profile && currentUsername && (
+      {!!profile && (
         <Modal visible={cardPreviewVisible} transparent animationType="fade" onRequestClose={() => setCardPreviewVisible(false)} statusBarTranslucent>
           <View style={s.cardModalOverlay}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setCardPreviewVisible(false)} />
             <View style={s.cardModalContent}>
               <View ref={storyCardRef} collapsable={false}>
                 <StoryCard
-                  username={currentUsername}
+                  username={currentUsername ?? ''}
                   genres={profile.genres}
                   ratingsCount={profile.ratings_count}
                   avgRating={profile.avg_rating}
