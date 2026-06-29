@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
-  ScrollView, View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, Modal, Pressable, Animated, PanResponder,
+  ScrollView, View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, Modal, Pressable, Animated, PanResponder, Alert,
 } from 'react-native'
 import { captureRef } from 'react-native-view-shot'
 import * as Sharing from 'expo-sharing'
@@ -73,6 +73,7 @@ export default function ProfileScreen() {
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState('')
   const [summaryVisible, setSummaryVisible] = useState(false)
+  const [cardPreviewVisible, setCardPreviewVisible] = useState(false)
   const [sharing, setSharing] = useState(false)
   const overlayAnim = useRef(new Animated.Value(0)).current
   const sheetAnim = useRef(new Animated.Value(400)).current
@@ -99,13 +100,13 @@ export default function ProfileScreen() {
   ).current
 
   const handleShare = async () => {
-    if (!profile || !currentUsername || sharing) return
+    if (sharing) return
     setSharing(true)
     try {
       const uri = await captureRef(storyCardRef, { format: 'png', quality: 1 })
       await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: 'Share your filmprint' })
     } catch (e) {
-      console.warn('[share]', e)
+      Alert.alert('Could not share', String(e))
     } finally {
       setSharing(false)
     }
@@ -280,17 +281,12 @@ export default function ProfileScreen() {
               <Text style={s.connectHeaderText}>Connect Letterboxd</Text>
             </TouchableOpacity>
           ) : (
-            <View style={s.headerActions}>
-              <TouchableOpacity onPress={handleShare} disabled={sharing || !profile} activeOpacity={0.7} style={s.syncIcon}>
-                <Share2 size={18} color={sharing || !profile ? Colors.textFaint : Colors.brand} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={handleSync} disabled={syncing} activeOpacity={0.7} style={s.syncIcon}>
-                {syncing
-                  ? <ActivityIndicator size="small" color={Colors.brand} />
-                  : <RefreshCw size={20} color={Colors.brand} />
-                }
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity onPress={handleSync} disabled={syncing} activeOpacity={0.7} style={s.syncIcon}>
+              {syncing
+                ? <ActivityIndicator size="small" color={Colors.brand} />
+                : <RefreshCw size={20} color={Colors.brand} />
+              }
+            </TouchableOpacity>
           )}
         </View>
 
@@ -315,6 +311,15 @@ export default function ProfileScreen() {
           <TouchableOpacity style={s.summaryTrigger} onPress={openSheet} activeOpacity={0.7}>
             <Sparkles size={13} color={Colors.brand} />
             <Text style={s.summaryTriggerText}>About your taste</Text>
+            <ChevronRight size={14} color={Colors.textFaint} />
+          </TouchableOpacity>
+        )}
+
+        {/* Share card trigger */}
+        {!!currentUsername && (
+          <TouchableOpacity style={s.summaryTrigger} onPress={() => setCardPreviewVisible(true)} activeOpacity={0.7}>
+            <Share2 size={13} color={Colors.brand} />
+            <Text style={s.summaryTriggerText}>Share your filmprint</Text>
             <ChevronRight size={14} color={Colors.textFaint} />
           </TouchableOpacity>
         )}
@@ -409,22 +414,34 @@ export default function ProfileScreen() {
 
       </ScrollView>
 
-      {/* Off-screen card for share capture */}
-      <View
-        ref={storyCardRef}
-        collapsable={false}
-        style={{ position: 'absolute', left: -(CARD_W + 10), top: 0 }}
-      >
-        {profile && currentUsername && (
-          <StoryCard
-            username={currentUsername}
-            genres={profile.genres}
-            ratingsCount={profile.ratings_count}
-            avgRating={profile.avg_rating}
-            criticAlignment={profile.critic_alignment}
-          />
-        )}
-      </View>
+      {/* Share card preview modal */}
+      {profile && currentUsername && (
+        <Modal visible={cardPreviewVisible} transparent animationType="fade" onRequestClose={() => setCardPreviewVisible(false)} statusBarTranslucent>
+          <View style={s.cardModalOverlay}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setCardPreviewVisible(false)} />
+            <View style={s.cardModalContent}>
+              <View ref={storyCardRef} collapsable={false}>
+                <StoryCard
+                  username={currentUsername}
+                  genres={profile.genres}
+                  ratingsCount={profile.ratings_count}
+                  avgRating={profile.avg_rating}
+                  criticAlignment={profile.critic_alignment}
+                />
+              </View>
+              <TouchableOpacity style={s.shareConfirmBtn} onPress={handleShare} disabled={sharing} activeOpacity={0.8}>
+                {sharing
+                  ? <ActivityIndicator color={Colors.background} size="small" />
+                  : <><Share2 size={16} color={Colors.background} /><Text style={s.shareConfirmText}>Share</Text></>
+                }
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setCardPreviewVisible(false)} activeOpacity={0.7}>
+                <Text style={s.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
 
     </SafeAreaView>
   )
@@ -453,8 +470,16 @@ const s = StyleSheet.create({
   sheetHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   sheetTitle: { fontSize: 16, fontWeight: '600', color: Colors.text },
   sheetBody: { fontSize: 16, fontStyle: 'italic', color: Colors.textSecondary, lineHeight: 26 },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   syncIcon: { padding: 4 },
+  cardModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center' },
+  cardModalContent: { alignItems: 'center', gap: 16 },
+  shareConfirmBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: Colors.brand, borderRadius: 14,
+    paddingVertical: 14, paddingHorizontal: 32,
+  },
+  shareConfirmText: { fontSize: 16, fontWeight: '600', color: Colors.background },
+  cancelText: { fontSize: 15, color: Colors.textMuted, paddingVertical: 8 },
   connectHeaderBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     borderWidth: 1, borderColor: Colors.brand, borderRadius: 10,
