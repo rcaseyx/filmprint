@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
-  ScrollView, View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, Modal, Pressable, Animated,
+  ScrollView, View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, Modal, Pressable, Animated, PanResponder,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter, useFocusEffect } from 'expo-router'
@@ -72,6 +72,26 @@ export default function ProfileScreen() {
   const [summaryVisible, setSummaryVisible] = useState(false)
   const overlayAnim = useRef(new Animated.Value(0)).current
   const sheetAnim = useRef(new Animated.Value(400)).current
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, { dy }) => dy > 0,
+      onPanResponderMove: (_, { dy }) => {
+        if (dy > 0) sheetAnim.setValue(dy)
+      },
+      onPanResponderRelease: (_, { dy, vy }) => {
+        if (dy > 80 || vy > 0.5) {
+          Animated.parallel([
+            Animated.timing(overlayAnim, { toValue: 0, duration: 180, useNativeDriver: true }),
+            Animated.timing(sheetAnim, { toValue: 400, duration: 200, useNativeDriver: true }),
+          ]).start(() => setSummaryVisible(false))
+        } else {
+          Animated.spring(sheetAnim, { toValue: 0, damping: 28, stiffness: 220, useNativeDriver: true }).start()
+        }
+      },
+    })
+  ).current
 
   const openSheet = () => {
     setSummaryVisible(true)
@@ -215,7 +235,7 @@ export default function ProfileScreen() {
           <Animated.View style={[StyleSheet.absoluteFill, s.sheetOverlayBg, { opacity: overlayAnim }]} />
           <View style={s.sheetContainer}>
             <Pressable style={StyleSheet.absoluteFill} onPress={closeSheet} />
-            <Animated.View style={[s.sheet, { transform: [{ translateY: sheetAnim }] }]}>
+            <Animated.View style={[s.sheet, { transform: [{ translateY: sheetAnim }] }]} {...panResponder.panHandlers}>
               <View style={s.dragHandle} />
               <View style={s.sheetHeader}>
                 <Sparkles size={15} color={Colors.brand} />
