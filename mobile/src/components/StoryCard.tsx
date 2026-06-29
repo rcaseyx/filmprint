@@ -67,10 +67,10 @@ export function StoryCard({ username, genres, ratingsCount, avgRating, criticAli
 
   const a = criticAlignment
   const criticLine = a > 0.75
-    ? `+${(a / 2).toFixed(1)}★ vs critics`
+    ? `+${(a / 2).toFixed(1)}★`
     : a < -0.75
-    ? `${(a / 2).toFixed(1)}★ vs critics`
-    : 'in sync with critics'
+    ? `${(a / 2).toFixed(1)}★`
+    : 'In sync'
 
   return (
     <View style={s.card}>
@@ -112,7 +112,7 @@ export function StoryCard({ username, genres, ratingsCount, avgRating, criticAli
         <View style={s.statSep} />
         <View style={s.stat}>
           <Text style={s.statVal}>{criticLine}</Text>
-          <Text style={s.statLbl}>critic alignment</Text>
+          <Text style={s.statLbl}>vs. critics</Text>
         </View>
       </View>
 

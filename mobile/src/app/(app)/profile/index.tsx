@@ -315,15 +315,6 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         )}
 
-        {/* Share card trigger */}
-        {!!profile && (
-          <TouchableOpacity style={s.summaryTrigger} onPress={() => setCardPreviewVisible(true)} activeOpacity={0.7}>
-            <Share2 size={13} color={Colors.brand} />
-            <Text style={s.summaryTriggerText}>Share your filmprint</Text>
-            <ChevronRight size={14} color={Colors.textFaint} />
-          </TouchableOpacity>
-        )}
-
         {/* Radar */}
         <RadarSection
           genres={topGenres}
@@ -400,6 +391,12 @@ export default function ProfileScreen() {
           </View>
         )}
 
+        {/* Share CTA */}
+        <TouchableOpacity style={s.shareBtn} onPress={() => setCardPreviewVisible(true)} activeOpacity={0.8}>
+          <Share2 size={15} color={Colors.brand} />
+          <Text style={s.shareBtnText}>Share your filmprint</Text>
+        </TouchableOpacity>
+
         {/* Account */}
         <View style={s.account}>
           <TouchableOpacity style={s.logoutBtn} onPress={handleLogout} activeOpacity={0.7}>
@@ -471,6 +468,12 @@ const s = StyleSheet.create({
   sheetTitle: { fontSize: 16, fontWeight: '600', color: Colors.text },
   sheetBody: { fontSize: 16, fontStyle: 'italic', color: Colors.textSecondary, lineHeight: 26 },
   syncIcon: { padding: 4 },
+  shareBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    borderWidth: 1, borderColor: Colors.brand, borderRadius: 14,
+    paddingVertical: 14,
+  },
+  shareBtnText: { fontSize: 15, fontWeight: '600', color: Colors.brand },
   cardModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center' },
   cardModalContent: { alignItems: 'center', gap: 16 },
   shareConfirmBtn: {
