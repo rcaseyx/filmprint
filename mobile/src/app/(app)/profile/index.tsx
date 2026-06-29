@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
-  ScrollView, View, Text, TouchableOpacity, ActivityIndicator, StyleSheet,
+  ScrollView, View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, Modal, Pressable, Animated,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter, useFocusEffect } from 'expo-router'
-import { RefreshCw, LogOut, Link2, HelpCircle } from 'lucide-react-native'
+import { RefreshCw, LogOut, Link2, HelpCircle, Sparkles, ChevronRight } from 'lucide-react-native'
 import { Colors, Spacing } from '@/constants/theme'
 import { apiFetch } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
@@ -69,6 +69,24 @@ export default function ProfileScreen() {
   const [needsUsername, setNeedsUsername] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState('')
+  const [summaryVisible, setSummaryVisible] = useState(false)
+  const overlayAnim = useRef(new Animated.Value(0)).current
+  const sheetAnim = useRef(new Animated.Value(400)).current
+
+  const openSheet = () => {
+    setSummaryVisible(true)
+    Animated.parallel([
+      Animated.timing(overlayAnim, { toValue: 1, duration: 220, useNativeDriver: true }),
+      Animated.spring(sheetAnim, { toValue: 0, damping: 28, stiffness: 220, useNativeDriver: true }),
+    ]).start()
+  }
+
+  const closeSheet = () => {
+    Animated.parallel([
+      Animated.timing(overlayAnim, { toValue: 0, duration: 180, useNativeDriver: true }),
+      Animated.timing(sheetAnim, { toValue: 400, duration: 200, useNativeDriver: true }),
+    ]).start(() => setSummaryVisible(false))
+  }
   const syncPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const load = useCallback(async () => {
@@ -192,6 +210,22 @@ export default function ProfileScreen() {
     <SafeAreaView style={s.safe} edges={['top']}>
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
 
+        {/* AI summary sheet */}
+        <Modal visible={summaryVisible} transparent animationType="none" onRequestClose={closeSheet} statusBarTranslucent>
+          <Animated.View style={[StyleSheet.absoluteFill, s.sheetOverlayBg, { opacity: overlayAnim }]} />
+          <View style={s.sheetContainer}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={closeSheet} />
+            <Animated.View style={[s.sheet, { transform: [{ translateY: sheetAnim }] }]}>
+              <View style={s.dragHandle} />
+              <View style={s.sheetHeader}>
+                <Sparkles size={15} color={Colors.brand} />
+                <Text style={s.sheetTitle}>Your taste</Text>
+              </View>
+              <Text style={s.sheetBody}>{profile.ai_summary}</Text>
+            </Animated.View>
+          </View>
+        </Modal>
+
         {/* Header */}
         <View style={s.header}>
           <View>
@@ -233,9 +267,13 @@ export default function ProfileScreen() {
           ))}
         </View>
 
-        {/* AI taste summary */}
+        {/* Taste summary trigger */}
         {!!profile.ai_summary && (
-          <Text style={s.aiSummary}>{profile.ai_summary}</Text>
+          <TouchableOpacity style={s.summaryTrigger} onPress={openSheet} activeOpacity={0.7}>
+            <Sparkles size={13} color={Colors.brand} />
+            <Text style={s.summaryTriggerText}>About your taste</Text>
+            <ChevronRight size={14} color={Colors.textFaint} />
+          </TouchableOpacity>
         )}
 
         {/* Radar */}
@@ -337,6 +375,23 @@ const s = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
   heading: { fontSize: 24, fontWeight: '600', color: Colors.text, letterSpacing: -0.3 },
   subheading: { fontSize: 13, color: Colors.textMuted, marginTop: 3 },
+  summaryTrigger: {
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
+    borderRadius: 12, paddingVertical: 11, paddingHorizontal: 14,
+  },
+  summaryTriggerText: { flex: 1, fontSize: 13, fontWeight: '500', color: Colors.textSecondary },
+  sheetOverlayBg: { backgroundColor: 'rgba(0,0,0,0.75)' },
+  sheetContainer: { flex: 1, justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: Colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingTop: 12, paddingHorizontal: 28, paddingBottom: 48, gap: 16,
+    borderWidth: 1, borderBottomWidth: 0, borderColor: Colors.border,
+  },
+  dragHandle: { width: 36, height: 4, backgroundColor: Colors.border, borderRadius: 99, alignSelf: 'center', marginBottom: 8 },
+  sheetHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  sheetTitle: { fontSize: 16, fontWeight: '600', color: Colors.text },
+  sheetBody: { fontSize: 16, fontStyle: 'italic', color: Colors.textSecondary, lineHeight: 26 },
   syncIcon: { padding: 4 },
   connectHeaderBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
@@ -374,5 +429,4 @@ const s = StyleSheet.create({
   errText: { fontSize: 16, color: Colors.textMuted },
   retryBtn: { borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 20 },
   retryText: { fontSize: 14, color: Colors.textSecondary },
-  aiSummary: { fontSize: 14, fontStyle: 'italic', color: Colors.textSecondary, lineHeight: 22 },
 })
