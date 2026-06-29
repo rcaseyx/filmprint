@@ -34,12 +34,14 @@ const PATHS = [
 
 interface PrintLogoProps {
   size?: number
+  noAnimate?: boolean
 }
 
-export function PrintLogo({ size = 120 }: PrintLogoProps) {
-  const opacity = useRef(new Animated.Value(0)).current
+export function PrintLogo({ size = 120, noAnimate = false }: PrintLogoProps) {
+  const opacity = useRef(new Animated.Value(noAnimate ? 1 : 0)).current
 
   useEffect(() => {
+    if (noAnimate) return
     Animated.timing(opacity, {
       toValue: 1,
       duration: 600,
