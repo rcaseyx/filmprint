@@ -880,16 +880,16 @@ Signature keywords: {', '.join(top_keywords)}
 Avg rating: {avg_rating}★ across {ratings_count} films
 Critic alignment: {critic_line}"""
 
-        prompt = f"""You're writing a 2-sentence taste profile for a film enthusiast. Be specific and honest — no clichés like "passion for" or "love of cinema".
+        prompt = f"""You're writing a taste profile for a film enthusiast. Be specific and honest — no clichés like "passion for" or "love of cinema".
 
 Their data:
 {context}
 
-Write in second person ("You..."). Exactly 2 sentences. No line breaks."""
+Write in second person with correct grammar ("You gravitate", "You tend", "You prefer" — not "You gravitates"). 2–3 sentences. No line breaks."""
 
         response = _anthropic_client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=120,
+            model="claude-sonnet-4-6",
+            max_tokens=200,
             messages=[{"role": "user", "content": prompt}],
         )
         return " ".join(response.content[0].text.strip().splitlines())
