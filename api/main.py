@@ -139,6 +139,7 @@ def _save_state_to_volume(user_id: int, state: dict) -> None:
             "critic_alignment": float(state["critic_alignment"]),
             "neutral": float(state["neutral"]),
             "summary": state["summary"],
+            "ai_summary": state.get("ai_summary"),
         }
         (_STATE_DIR / f"{user_id}.json").write_text(json.dumps(payload))
     except Exception:
@@ -203,6 +204,7 @@ def _restore_state_from_volume(user_id: int, username: str) -> bool:
         "critic_alignment": payload["critic_alignment"],
         "neutral": payload["neutral"],
         "summary": payload["summary"],
+        "ai_summary": payload.get("ai_summary"),
         "user_subgenre_axes": user_subgenre_axes,
     }
     return True
@@ -328,6 +330,7 @@ def _rebuild_state(user_id: int, username: str) -> None:
         "critic_alignment": critic["alignment"],
         "neutral": critic["neutral"],
         "summary": taste_summary(profile_vec, keyword_vocab, user_subgenre_axes),
+        "ai_summary": generate_ai_summary(profile_vec, keyword_vocab, user_subgenre_axes, affinity, rated_movies, ratings, critic["alignment"], critic["neutral"]),
         "user_subgenre_axes": user_subgenre_axes,
     }
     _save_state_to_volume(user_id, _user_states[user_id])
@@ -409,6 +412,7 @@ def _rebuild_profile_only(user_id: int, username: str) -> None:
         "critic_alignment": critic["alignment"],
         "neutral": critic["neutral"],
         "summary": taste_summary(profile_vec, keyword_vocab, user_subgenre_axes),
+        "ai_summary": generate_ai_summary(profile_vec, keyword_vocab, user_subgenre_axes, affinity, rated_movies, ratings, critic["alignment"], critic["neutral"]),
         "user_subgenre_axes": user_subgenre_axes,
     }
     _profile_response_cache.pop(user_id, None)
@@ -474,6 +478,7 @@ def _prewarm_profile_cache(user_id: int, username: str) -> None:
         "critic_alignment": critic["alignment"],
         "neutral": critic["neutral"],
         "summary": taste_summary(profile_vec, keyword_vocab, user_subgenre_axes),
+        "ai_summary": vol_state.get("ai_summary"),
         "user_subgenre_axes": user_subgenre_axes,
     }
     t1 = time.time()
@@ -810,6 +815,87 @@ def _select_cluster(mood: MoodContext, state: dict) -> "np.ndarray | None":
     if not genre_indices:
         return None
     return max(clusters, key=lambda c: sum(c[i] for i in genre_indices))
+
+
+def generate_ai_summary(
+    profile_vec: np.ndarray,
+    keyword_vocab: list[str],
+    user_subgenre_axes: dict,
+    affinity: dict,
+    rated_movies: list[dict],
+    ratings: list[float],
+    critic_alignment: float,
+    neutral: float,
+) -> str | None:
+    """Generate a 2–3 sentence human-readable taste summary using Claude."""
+    try:
+        avg_rating = round(sum(ratings) / len(ratings), 1) if ratings else 0.0
+        ratings_count = len(ratings)
+
+        top_genres = sorted(
+            [(GENRES[i], float(profile_vec[i])) for i in range(len(GENRES)) if float(profile_vec[i]) > 0],
+            key=lambda x: x[1], reverse=True
+        )[:5]
+
+        top_decades = sorted(
+            [(DECADES[i], float(profile_vec[len(GENRES) + i])) for i in range(len(DECADES)) if float(profile_vec[len(GENRES) + i]) > 0],
+            key=lambda x: x[1], reverse=True
+        )[:3]
+
+        tone_scores = compute_axis_scores(rated_movies, ratings, TONE_AXES)
+        top_tone = [t["name"] for t in tone_scores if t["weight"] > 0.1][:3]
+
+        subgenre_scores = compute_axis_scores(rated_movies, ratings, user_subgenre_axes or SUBGENRE_AXES)
+        top_subgenres = [s["name"] for s in subgenre_scores if s["weight"] > 0.1][:3]
+
+        director_scores = (affinity or {}).get("directors", {})
+        director_counts: dict[str, int] = {}
+        for movie in rated_movies:
+            raw = (movie.get("raw_tmdb") or movie)
+            for p in (raw.get("credits") or {}).get("crew", []):
+                if p.get("job") == "Director":
+                    n = p["name"]
+                    director_counts[n] = director_counts.get(n, 0) + 1
+        top_directors = sorted(
+            [n for n, score in director_scores.items() if score > neutral and director_counts.get(n, 0) >= 2],
+            key=lambda n: director_scores[n], reverse=True
+        )[:5]
+
+        top_keywords = keyword_vocab[:10]
+
+        a = critic_alignment
+        if a > 0.75:
+            critic_line = f"more generous than critics by ~{abs(a/2):.1f}★"
+        elif a < -0.75:
+            critic_line = f"tougher than critics by ~{abs(a/2):.1f}★"
+        else:
+            critic_line = "roughly in sync with critics"
+
+        context = f"""Genres: {', '.join(g for g, _ in top_genres)}
+Eras: {', '.join(d for d, _ in top_decades)}
+Tone: {', '.join(top_tone) or 'mixed'}
+Subgenres: {', '.join(top_subgenres) or 'varied'}
+Favorite directors (2+ films, above avg): {', '.join(top_directors) or 'none clear yet'}
+Signature keywords: {', '.join(top_keywords)}
+Avg rating: {avg_rating}★ across {ratings_count} films
+Critic alignment: {critic_line}"""
+
+        prompt = f"""You're writing a 2–3 sentence taste profile summary for a film enthusiast. Be specific and honest — avoid clichés like "passion for" or "love of cinema".
+
+Their data:
+{context}
+
+Write in second person ("You..."). Capture the texture of their taste — what they're drawn to, what patterns define them. Keep it to 2–3 sentences."""
+
+        response = _anthropic_client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=200,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return response.content[0].text.strip()
+    except Exception as e:
+        print(f"[generate_ai_summary] failed: {e}", flush=True)
+        return None
 
 
 def _mood_to_summary(mood: MoodContext) -> str:
@@ -1155,6 +1241,7 @@ def _build_profile_response(user_id: int, state: dict) -> dict:
         "watchlist_count": len(state.get("watchlist_ids") or []),
         "avg_rating": avg_rating,
         "summary": state.get("summary"),
+        "ai_summary": state.get("ai_summary"),
         "genres": genres,
         "decades": decades,
         "directors": directors,
