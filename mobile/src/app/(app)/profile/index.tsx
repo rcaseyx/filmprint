@@ -24,6 +24,7 @@ interface ProfileData {
   ratings_count: number
   watchlist_count: number
   avg_rating: number
+  fp_score: number
   summary: string | null
   ai_summary: string | null
   genres: (Axis & { count: number })[]
@@ -430,6 +431,7 @@ export default function ProfileScreen() {
                   username={currentUsername ?? currentEmail?.split('@')[0] ?? ''}
                   genres={profile.genres}
                   decades={profile.decades}
+                  fpScore={profile.fp_score}
                   ratingsCount={profile.ratings_count}
                   avgRating={profile.avg_rating}
                   criticAlignment={profile.critic_alignment}
