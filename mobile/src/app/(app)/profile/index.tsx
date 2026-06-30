@@ -1,9 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
-  ScrollView, View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, Modal, Pressable, Animated, PanResponder, Alert, ActionSheetIOS,
+  ScrollView, View, Text, TouchableOpacity, ActivityIndicator, StyleSheet, Modal, Pressable, Animated, PanResponder, Alert,
 } from 'react-native'
 import { captureRef } from 'react-native-view-shot'
-import * as MediaLibrary from 'expo-media-library'
 import * as Sharing from 'expo-sharing'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter, useFocusEffect } from 'expo-router'
@@ -115,27 +114,6 @@ export default function ProfileScreen() {
     }
   }
 
-  const handleSaveToRoll = async () => {
-    try {
-      const { status } = await MediaLibrary.requestPermissionsAsync()
-      if (status !== 'granted') {
-        Alert.alert('Permission needed', 'Allow filmprint to access your photo library to save.')
-        return
-      }
-      const uri = await captureRef(storyCardRef, { format: 'png', quality: 1 })
-      await MediaLibrary.saveToLibraryAsync(uri)
-      Alert.alert('Saved', 'Share card saved to your camera roll.')
-    } catch (e) {
-      Alert.alert('Could not save', String(e))
-    }
-  }
-
-  const handleCardLongPress = () => {
-    ActionSheetIOS.showActionSheetWithOptions(
-      { options: ['Cancel', 'Save to Camera Roll', 'Share'], cancelButtonIndex: 0 },
-      (i) => { if (i === 1) handleSaveToRoll(); if (i === 2) handleShare() }
-    )
-  }
 
   const openSheet = () => {
     setSummaryVisible(true)
@@ -449,8 +427,7 @@ export default function ProfileScreen() {
           <View style={s.cardModalOverlay}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setCardPreviewVisible(false)} />
             <View style={s.cardModalContent}>
-              <Pressable onLongPress={handleCardLongPress} delayLongPress={400}>
-                <View ref={storyCardRef} collapsable={false}>
+              <View ref={storyCardRef} collapsable={false}>
                 <StoryCard
                   username={currentUsername ?? currentEmail?.split('@')[0] ?? ''}
                   genres={profile.genres}
@@ -460,8 +437,7 @@ export default function ProfileScreen() {
                   avgRating={profile.avg_rating}
                   criticAlignment={profile.critic_alignment}
                 />
-                </View>
-              </Pressable>
+              </View>
               <TouchableOpacity style={s.shareConfirmBtn} onPress={handleShare} disabled={sharing} activeOpacity={0.8}>
                 {sharing
                   ? <ActivityIndicator color={Colors.background} size="small" />
