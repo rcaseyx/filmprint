@@ -26,6 +26,7 @@ export interface ProfileData {
   ratings_count: number
   watchlist_count: number
   avg_rating: number
+  fp_score?: number
   summary: string
   genres: Genre[]
   decades: ToneAxis[]
@@ -158,14 +159,24 @@ export function ProfileContent({ profile, examples, history, username, isOwner, 
             <div className="text-xs text-neutral-600 mt-1">{alignmentDesc}</div>
           </div>
           <div className="bg-neutral-900 rounded-xl p-4 border border-neutral-800">
-            <div className="text-xs text-neutral-500 uppercase tracking-wider mb-1">Quality floor</div>
-            <div className="text-xl font-semibold">{profile.quality_floor.toFixed(1)}</div>
-            <div className="text-xs text-neutral-600 mt-0.5">Min IMDb for candidates</div>
-          </div>
-          <div className="bg-neutral-900 rounded-xl p-4 border border-neutral-800">
             <div className="text-xs text-neutral-500 uppercase tracking-wider mb-1">{isOwner ? "Your neutral" : "Their neutral"}</div>
             <div className="text-xl font-semibold text-brand">{profile.neutral.toFixed(1)}★</div>
-            <div className="text-xs text-neutral-600 mt-0.5">Calibrated from your ratings</div>
+            <div className="text-xs text-neutral-600 mt-0.5">Calibrated from ratings</div>
+          </div>
+          <div className="bg-neutral-900 rounded-xl p-4 border border-neutral-800">
+            <div className="flex items-center gap-1.5 mb-1">
+              <div className="text-xs text-neutral-500 uppercase tracking-wider">Filmprint Score</div>
+              <div className="group relative">
+                <span className="text-neutral-600 hover:text-neutral-400 cursor-default text-xs leading-none transition-colors">ⓘ</span>
+                <div className="absolute right-0 bottom-full mb-2 w-64 px-3 py-2.5 rounded-lg bg-neutral-800 border border-neutral-700 text-xs text-neutral-300 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-150 z-10 space-y-1.5">
+                  <div><span className="font-semibold text-neutral-200">Depth</span> <span className="text-neutral-500">(0–500 pts)</span> — More films rated = more points, on a curve.</div>
+                  <div><span className="font-semibold text-neutral-200">Genre diversity</span> <span className="text-neutral-500">(0–300 pts)</span> — How spread your taste is across genres.</div>
+                  <div><span className="font-semibold text-neutral-200">Decade diversity</span> <span className="text-neutral-500">(0–200 pts)</span> — How broadly you explore different eras.</div>
+                </div>
+              </div>
+            </div>
+            <div className="text-xl font-semibold text-brand tabular-nums">{profile.fp_score ?? '—'}</div>
+            <div className="text-xs text-neutral-600 mt-0.5">out of 1000</div>
           </div>
         </section>
 

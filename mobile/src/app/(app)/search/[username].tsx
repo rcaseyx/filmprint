@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   ScrollView, View, Text, TouchableOpacity, StyleSheet, Animated,
+  Modal, Pressable, PanResponder,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router'
@@ -20,6 +21,7 @@ interface ProfileData {
   ratings_count: number
   watchlist_count: number
   avg_rating: number
+  fp_score?: number
   genres: (Axis & { count: number })[]
   decades: Axis[]
   tone: Axis[]
@@ -56,6 +58,42 @@ export default function PublicProfileScreen() {
     genre: RadarExamples; subgenre: RadarExamples; era: RadarExamples; tone: RadarExamples
   } | null>(null)
   const [history, setHistory] = useState<HistoryEntry[]>([])
+  const [activeSheet, setActiveSheet] = useState<'score' | 'alignment' | 'neutral' | null>(null)
+  const overlayAnim = useRef(new Animated.Value(0)).current
+  const sheetAnim = useRef(new Animated.Value(400)).current
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, { dy }) => dy > 0,
+      onPanResponderMove: (_, { dy }) => { if (dy > 0) sheetAnim.setValue(dy) },
+      onPanResponderRelease: (_, { dy, vy }) => {
+        if (dy > 80 || vy > 0.5) {
+          Animated.parallel([
+            Animated.timing(overlayAnim, { toValue: 0, duration: 180, useNativeDriver: true }),
+            Animated.timing(sheetAnim, { toValue: 400, duration: 200, useNativeDriver: true }),
+          ]).start(() => setActiveSheet(null))
+        } else {
+          Animated.spring(sheetAnim, { toValue: 0, damping: 28, stiffness: 220, useNativeDriver: true }).start()
+        }
+      },
+    })
+  ).current
+
+  const openSheet = (sheet: 'score' | 'alignment' | 'neutral') => {
+    setActiveSheet(sheet)
+    Animated.parallel([
+      Animated.timing(overlayAnim, { toValue: 1, duration: 220, useNativeDriver: true }),
+      Animated.spring(sheetAnim, { toValue: 0, damping: 28, stiffness: 220, useNativeDriver: true }),
+    ]).start()
+  }
+
+  const closeSheet = () => {
+    Animated.parallel([
+      Animated.timing(overlayAnim, { toValue: 0, duration: 180, useNativeDriver: true }),
+      Animated.timing(sheetAnim, { toValue: 400, duration: 200, useNativeDriver: true }),
+    ]).start(() => setActiveSheet(null))
+  }
 
   const load = useCallback(async () => {
     if (!username) return
@@ -182,10 +220,10 @@ export default function PublicProfileScreen() {
 
             {/* Insight cards */}
             <View style={s.insightRow}>
-              <InsightCard label="Critic alignment" value={alignLabel} sub={alignDesc} />
+              <InsightCard label="Critic alignment" value={alignLabel} sub={alignDesc} onPress={() => openSheet('alignment')} />
               <View style={s.insightPair}>
-                <InsightCard label="Quality floor" value={profile.quality_floor.toFixed(1)} sub="Min IMDb for candidates" style={{ flex: 1 }} />
-                <InsightCard label="Their neutral" value={`${profile.neutral.toFixed(1)}★`} sub="Calibrated from ratings" brandValue style={{ flex: 1 }} />
+                <InsightCard label="Their neutral" value={`${profile.neutral.toFixed(1)}★`} brandValue style={{ flex: 1 }} onPress={() => openSheet('neutral')} />
+                <InsightCard label="Filmprint Score" value={String(profile.fp_score ?? '—')} brandValue style={{ flex: 1 }} onPress={() => openSheet('score')} />
               </View>
             </View>
 
@@ -235,6 +273,71 @@ export default function PublicProfileScreen() {
         </Animated.View>
       )}
 
+      {/* Insight sheet */}
+      <Modal visible={activeSheet !== null} transparent animationType="none" onRequestClose={closeSheet} statusBarTranslucent>
+        <Animated.View style={[StyleSheet.absoluteFill, s.sheetOverlayBg, { opacity: overlayAnim }]} />
+        <View style={s.sheetContainer}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeSheet} />
+          <Animated.View style={[s.sheet, { transform: [{ translateY: sheetAnim }] }]} {...panResponder.panHandlers}>
+            <View style={s.dragHandle} />
+            {activeSheet === 'alignment' && (
+              <>
+                <View style={s.sheetHeader}>
+                  <Text style={s.sheetTitle}>Critic alignment</Text>
+                </View>
+                <Text style={s.scoreSheetValue}>{alignLabel}</Text>
+                <View style={s.breakdownList}>
+                  <View style={s.breakdownItem}>
+                    <Text style={s.breakdownDesc}>Compares their star ratings to Letterboxd critic scores for the same films. A positive alignment means they tend to rate films higher than critics; negative means they're tougher.</Text>
+                  </View>
+                </View>
+              </>
+            )}
+            {activeSheet === 'neutral' && (
+              <>
+                <View style={s.sheetHeader}>
+                  <Text style={s.sheetTitle}>Their neutral</Text>
+                </View>
+                <Text style={s.scoreSheetValue}>{profile?.neutral.toFixed(1)}<Text style={s.scoreSheetDenom}>★</Text></Text>
+                <View style={s.breakdownList}>
+                  <View style={s.breakdownItem}>
+                    <Text style={s.breakdownDesc}>The rating that represents a "meh" for them — neither a recommendation nor a rejection. Filmprint calibrates this from their full ratings distribution.</Text>
+                  </View>
+                  <View style={s.breakdownItem}>
+                    <Text style={s.breakdownDesc}>Films they rate at or above this threshold are treated as positive signals when building their taste profile.</Text>
+                  </View>
+                </View>
+              </>
+            )}
+            {activeSheet === 'score' && (
+              <>
+                <View style={s.sheetHeader}>
+                  <Text style={s.sheetTitle}>Filmprint Score</Text>
+                </View>
+                <Text style={s.scoreSheetValue}>
+                  {profile?.fp_score ?? 0}<Text style={s.scoreSheetDenom}>/1000</Text>
+                </Text>
+                <View style={s.breakdownList}>
+                  {[
+                    { label: 'Depth', pts: '0–500 pts', desc: 'More films rated = more points, on a curve. Going from 100 to 500 ratings earns more than going from 1,500 to 2,000.' },
+                    { label: 'Genre diversity', pts: '0–300 pts', desc: 'Measures how spread your taste is across genres. Watching broadly across 10 genres scores higher than watching almost exclusively one or two.' },
+                    { label: 'Decade diversity', pts: '0–200 pts', desc: 'Measures how broadly you explore different eras. Watching films from across cinema history scores higher than sticking mostly to recent releases.' },
+                  ].map(({ label, pts, desc }) => (
+                    <View key={label} style={s.breakdownItem}>
+                      <View style={s.breakdownRow}>
+                        <Text style={s.breakdownLabel}>{label}</Text>
+                        <Text style={s.breakdownPts}>{pts}</Text>
+                      </View>
+                      <Text style={s.breakdownDesc}>{desc}</Text>
+                    </View>
+                  ))}
+                </View>
+              </>
+            )}
+          </Animated.View>
+        </View>
+      </Modal>
+
     </SafeAreaView>
   )
 }
@@ -265,6 +368,24 @@ const s = StyleSheet.create({
   barCount: { width: 28, fontSize: 11, color: Colors.textFaint, textAlign: 'right' },
   insightRow: { flexDirection: 'column', gap: 8 },
   insightPair: { flexDirection: 'row', gap: 8 },
+  sheetOverlayBg: { backgroundColor: 'rgba(0,0,0,0.75)' },
+  sheetContainer: { flex: 1, justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: Colors.card, borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingTop: 12, paddingHorizontal: 28, paddingBottom: 48, gap: 16,
+    borderWidth: 1, borderBottomWidth: 0, borderColor: Colors.border,
+  },
+  dragHandle: { width: 36, height: 4, backgroundColor: Colors.border, borderRadius: 99, alignSelf: 'center', marginBottom: 8 },
+  sheetHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  sheetTitle: { fontSize: 16, fontWeight: '600', color: Colors.text },
+  scoreSheetValue: { fontSize: 48, fontWeight: '700', color: Colors.text },
+  scoreSheetDenom: { fontSize: 20, fontWeight: '400', color: Colors.textMuted },
+  breakdownList: { gap: 16, marginTop: 4 },
+  breakdownItem: { gap: 4 },
+  breakdownRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  breakdownLabel: { fontSize: 14, fontWeight: '600', color: Colors.text },
+  breakdownPts: { fontSize: 12, color: Colors.textFaint },
+  breakdownDesc: { fontSize: 13, color: Colors.textSecondary, lineHeight: 19 },
   posterRow: { gap: 10 },
   badgeStars: { fontSize: 11, color: Colors.brand },
   badgeWatched: { fontSize: 10, color: '#4ade80' },

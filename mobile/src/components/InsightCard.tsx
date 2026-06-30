@@ -1,18 +1,26 @@
-import { View, Text, StyleSheet } from 'react-native'
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native'
 import { Colors } from '@/constants/theme'
 
 export function InsightCard({
-  label, value, sub, brandValue, style,
+  label, value, sub, brandValue, style, onPress,
 }: {
-  label: string; value: string; sub: string; brandValue?: boolean; style?: object
+  label: string; value: string; sub?: string; brandValue?: boolean; style?: object; onPress?: () => void
 }) {
-  return (
-    <View style={[s.card, style]}>
+  const children = (
+    <>
       <Text style={s.label}>{label}</Text>
       <Text style={[s.value, brandValue && { color: Colors.brand }]}>{value}</Text>
-      <Text style={s.sub}>{sub}</Text>
-    </View>
+      {sub && <Text style={s.sub}>{sub}</Text>}
+    </>
   )
+  if (onPress) {
+    return (
+      <View style={style}>
+        <TouchableOpacity onPress={onPress} activeOpacity={0.7} style={[s.card, { flex: 1 }]}>{children}</TouchableOpacity>
+      </View>
+    )
+  }
+  return <View style={[s.card, style]}>{children}</View>
 }
 
 const s = StyleSheet.create({

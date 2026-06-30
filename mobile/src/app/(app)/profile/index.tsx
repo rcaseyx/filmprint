@@ -74,7 +74,7 @@ export default function ProfileScreen() {
   const [needsUsername, setNeedsUsername] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState('')
-  const [summaryVisible, setSummaryVisible] = useState(false)
+  const [activeSheet, setActiveSheet] = useState<'summary' | 'score' | 'alignment' | 'neutral' | null>(null)
   const [cardPreviewVisible, setCardPreviewVisible] = useState(false)
   const [sharing, setSharing] = useState(false)
   const overlayAnim = useRef(new Animated.Value(0)).current
@@ -93,7 +93,7 @@ export default function ProfileScreen() {
           Animated.parallel([
             Animated.timing(overlayAnim, { toValue: 0, duration: 180, useNativeDriver: true }),
             Animated.timing(sheetAnim, { toValue: 400, duration: 200, useNativeDriver: true }),
-          ]).start(() => setSummaryVisible(false))
+          ]).start(() => setActiveSheet(null))
         } else {
           Animated.spring(sheetAnim, { toValue: 0, damping: 28, stiffness: 220, useNativeDriver: true }).start()
         }
@@ -115,8 +115,8 @@ export default function ProfileScreen() {
   }
 
 
-  const openSheet = () => {
-    setSummaryVisible(true)
+  const openSheet = (sheet: 'summary' | 'score' | 'alignment' | 'neutral') => {
+    setActiveSheet(sheet)
     Animated.parallel([
       Animated.timing(overlayAnim, { toValue: 1, duration: 220, useNativeDriver: true }),
       Animated.spring(sheetAnim, { toValue: 0, damping: 28, stiffness: 220, useNativeDriver: true }),
@@ -127,7 +127,7 @@ export default function ProfileScreen() {
     Animated.parallel([
       Animated.timing(overlayAnim, { toValue: 0, duration: 180, useNativeDriver: true }),
       Animated.timing(sheetAnim, { toValue: 400, duration: 200, useNativeDriver: true }),
-    ]).start(() => setSummaryVisible(false))
+    ]).start(() => setActiveSheet(null))
   }
   const syncPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -259,18 +259,76 @@ export default function ProfileScreen() {
     <SafeAreaView style={s.safe} edges={['top']}>
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
 
-        {/* AI summary sheet */}
-        <Modal visible={summaryVisible} transparent animationType="none" onRequestClose={closeSheet} statusBarTranslucent>
+        {/* Bottom sheet */}
+        <Modal visible={activeSheet !== null} transparent animationType="none" onRequestClose={closeSheet} statusBarTranslucent>
           <Animated.View style={[StyleSheet.absoluteFill, s.sheetOverlayBg, { opacity: overlayAnim }]} />
           <View style={s.sheetContainer}>
             <Pressable style={StyleSheet.absoluteFill} onPress={closeSheet} />
             <Animated.View style={[s.sheet, { transform: [{ translateY: sheetAnim }] }]} {...panResponder.panHandlers}>
               <View style={s.dragHandle} />
-              <View style={s.sheetHeader}>
-                <Sparkles size={15} color={Colors.brand} />
-                <Text style={s.sheetTitle}>Your taste</Text>
-              </View>
-              <Text style={s.sheetBody}>{profile.ai_summary}</Text>
+              {activeSheet === 'summary' && (
+                <>
+                  <View style={s.sheetHeader}>
+                    <Sparkles size={15} color={Colors.brand} />
+                    <Text style={s.sheetTitle}>Your taste</Text>
+                  </View>
+                  <Text style={s.sheetBody}>{profile.ai_summary}</Text>
+                </>
+              )}
+              {activeSheet === 'alignment' && (
+                <>
+                  <View style={s.sheetHeader}>
+                    <Text style={s.sheetTitle}>Critic alignment</Text>
+                  </View>
+                  <Text style={s.scoreSheetValue}>{alignLabel}</Text>
+                  <View style={s.breakdownList}>
+                    <View style={s.breakdownItem}>
+                      <Text style={s.breakdownDesc}>Compares your star ratings to Letterboxd critic scores for the same films. A positive alignment means you tend to rate films higher than critics; negative means you're tougher.</Text>
+                    </View>
+                  </View>
+                </>
+              )}
+              {activeSheet === 'neutral' && (
+                <>
+                  <View style={s.sheetHeader}>
+                    <Text style={s.sheetTitle}>Your neutral</Text>
+                  </View>
+                  <Text style={s.scoreSheetValue}>{profile.neutral.toFixed(1)}<Text style={s.scoreSheetDenom}>★</Text></Text>
+                  <View style={s.breakdownList}>
+                    <View style={s.breakdownItem}>
+                      <Text style={s.breakdownDesc}>The rating that represents a "meh" for you — neither a recommendation nor a rejection. Filmprint calibrates this from your full ratings distribution.</Text>
+                    </View>
+                    <View style={s.breakdownItem}>
+                      <Text style={s.breakdownDesc}>Films you rate at or above this threshold are treated as positive signals when building your taste profile.</Text>
+                    </View>
+                  </View>
+                </>
+              )}
+              {activeSheet === 'score' && (
+                <>
+                  <View style={s.sheetHeader}>
+                    <Text style={s.sheetTitle}>Filmprint Score</Text>
+                  </View>
+                  <Text style={s.scoreSheetValue}>
+                    {profile.fp_score}<Text style={s.scoreSheetDenom}>/1000</Text>
+                  </Text>
+                  <View style={s.breakdownList}>
+                    {[
+                      { label: 'Depth', pts: '0–500 pts', desc: 'More films rated = more points, on a curve. Going from 100 to 500 ratings earns more than going from 1,500 to 2,000.' },
+                      { label: 'Genre diversity', pts: '0–300 pts', desc: 'Measures how spread your taste is across genres. Watching broadly across 10 genres scores higher than watching almost exclusively one or two.' },
+                      { label: 'Decade diversity', pts: '0–200 pts', desc: 'Measures how broadly you explore different eras. Watching films from across cinema history scores higher than sticking mostly to recent releases.' },
+                    ].map(({ label, pts, desc }) => (
+                      <View key={label} style={s.breakdownItem}>
+                        <View style={s.breakdownRow}>
+                          <Text style={s.breakdownLabel}>{label}</Text>
+                          <Text style={s.breakdownPts}>{pts}</Text>
+                        </View>
+                        <Text style={s.breakdownDesc}>{desc}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </>
+              )}
             </Animated.View>
           </View>
         </Modal>
@@ -318,7 +376,7 @@ export default function ProfileScreen() {
 
         {/* Taste summary trigger */}
         {!!profile.ai_summary && (
-          <TouchableOpacity style={s.summaryTrigger} onPress={openSheet} activeOpacity={0.7}>
+          <TouchableOpacity style={s.summaryTrigger} onPress={() => openSheet('summary')} activeOpacity={0.7}>
             <Sparkles size={13} color={Colors.brand} />
             <Text style={s.summaryTriggerText}>About your taste</Text>
             <ChevronRight size={14} color={Colors.textFaint} />
@@ -352,10 +410,10 @@ export default function ProfileScreen() {
 
         {/* Insight cards */}
         <View style={s.insightRow}>
-          <InsightCard label="Critic alignment" value={alignLabel} sub={alignDesc} />
+          <InsightCard label="Critic alignment" value={alignLabel} sub={alignDesc} onPress={() => openSheet('alignment')} />
           <View style={s.insightPair}>
-            <InsightCard label="Quality floor" value={profile.quality_floor.toFixed(1)} sub="Min IMDb for candidates" style={{ flex: 1 }} />
-            <InsightCard label="Your neutral" value={`${profile.neutral.toFixed(1)}★`} sub="Calibrated from ratings" brandValue style={{ flex: 1 }} />
+            <InsightCard label="Your neutral" value={`${profile.neutral.toFixed(1)}★`} brandValue style={{ flex: 1 }} onPress={() => openSheet('neutral')} />
+            <InsightCard label="Filmprint Score" value={String(profile.fp_score ?? '—')} brandValue style={{ flex: 1 }} onPress={() => openSheet('score')} />
           </View>
         </View>
 
@@ -519,6 +577,14 @@ const s = StyleSheet.create({
   barCount: { width: 28, fontSize: 11, color: Colors.textFaint, textAlign: 'right' },
   insightRow: { flexDirection: 'column', gap: 8 },
   insightPair: { flexDirection: 'row', gap: 8 },
+  scoreSheetValue: { fontSize: 48, fontWeight: '700', color: Colors.text },
+  scoreSheetDenom: { fontSize: 20, fontWeight: '400', color: Colors.textMuted },
+  breakdownList: { gap: 16, marginTop: 4 },
+  breakdownItem: { gap: 4 },
+  breakdownRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  breakdownLabel: { fontSize: 14, fontWeight: '600', color: Colors.text },
+  breakdownPts: { fontSize: 12, color: Colors.textFaint },
+  breakdownDesc: { fontSize: 13, color: Colors.textSecondary, lineHeight: 19 },
   posterRow: { gap: 10 },
   account: { gap: 4, marginTop: 4 },
   logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14 },
