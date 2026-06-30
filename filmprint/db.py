@@ -305,11 +305,11 @@ def get_users_with_letterboxd() -> list[dict]:
 
 
 def get_top_users_by_ratings(limit: int = 3) -> list[dict]:
-    """Return top users ordered by rating count."""
+    """Return top users ordered by rating count, with email for display_name fallback."""
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute("""
-            SELECT u.id, u.letterboxd_username, u.display_name, COUNT(r.id) AS ratings_count
+            SELECT u.id, u.letterboxd_username, u.display_name, u.email, COUNT(r.id) AS ratings_count
             FROM users u
             JOIN user_ratings r ON r.user_id = u.id
             GROUP BY u.id

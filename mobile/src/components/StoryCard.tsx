@@ -103,7 +103,7 @@ export function StoryCard({ username, genres, decades, fpScore, ratingsCount, av
         </View>
         <View style={s.scoreWrap}>
           <Text style={s.scoreVal}>{fpScore}</Text>
-          <Text style={s.scoreLbl}>FP SCORE</Text>
+          <Text style={s.scoreLbl}>TASTE SCORE</Text>
         </View>
       </View>
 
