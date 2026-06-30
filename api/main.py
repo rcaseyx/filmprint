@@ -500,7 +500,7 @@ def _get_or_build_profile(user_id: int, username: str) -> dict:
     state = _user_states.get(user_id)
     if state and state.get("rated_movies"):
         return state
-    if user_id not in _user_profile_states and username and get_ratings_count(user_id) > 0:
+    if user_id not in _user_profile_states and get_ratings_count(user_id) > 0:
         with _profile_build_locks_mutex:
             if user_id not in _profile_build_locks:
                 _profile_build_locks[user_id] = _threading.Lock()
