@@ -10,6 +10,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 import json
+import math
 import os
 import shutil
 import tempfile
@@ -1162,6 +1163,23 @@ def rebuild_status(current_user: dict = Depends(get_current_user)):
     return {"status": job, "candidates_count": candidates_count}
 
 
+def _compute_fp_score(ratings_count: int, genres: list[dict], decades: list[dict]) -> int:
+    """0–1000 score: depth (log ratings) + genre diversity + decade diversity."""
+    def _entropy_component(weights: list[float], max_pts: float) -> float:
+        weights = [w for w in weights if w > 0]
+        if len(weights) < 2:
+            return 0.0
+        total = sum(weights)
+        probs = [w / total for w in weights]
+        ent = -sum(p * math.log(p) for p in probs)
+        return (ent / math.log(len(weights))) * max_pts
+
+    depth = min(math.log1p(ratings_count) / math.log1p(2000), 1.0) * 500
+    genre_score = _entropy_component([g["weight"] for g in genres], 300)
+    decade_score = _entropy_component([d["weight"] for d in decades], 200)
+    return round(depth + genre_score + decade_score)
+
+
 def _build_profile_response(user_id: int, state: dict) -> dict:
     """Compute and cache the /api/profile response from an already-built profile state."""
     profile_vec = state.get("profile_vec")
@@ -1241,6 +1259,7 @@ def _build_profile_response(user_id: int, state: dict) -> dict:
         "ratings_count": len(ratings),
         "watchlist_count": len(state.get("watchlist_ids") or []),
         "avg_rating": avg_rating,
+        "fp_score": _compute_fp_score(len(ratings), genres, decades),
         "summary": state.get("summary"),
         "ai_summary": state.get("ai_summary"),
         "genres": genres,
@@ -1806,12 +1825,14 @@ def get_top_users(limit: int = 3):
         try:
             profile = _public_profile_response(user_id, username or "")
             top_genres = [g["name"] for g in profile.get("genres", [])[:4]]
+            fp_score = profile.get("fp_score", 0)
         except Exception:
             top_genres = []
+            fp_score = 0
         result.append({
             "username": username,
             "display_name": display_name,
-            "ratings_count": row["ratings_count"],
+            "fp_score": fp_score,
             "top_genres": top_genres,
         })
     return {"users": result}
@@ -1867,6 +1888,7 @@ def _public_profile_response(user_id: int, username: str) -> dict:
         "ratings_count": len(ratings),
         "watchlist_count": len(state.get("watchlist_ids") or []),
         "avg_rating": avg_rating,
+        "fp_score": _compute_fp_score(len(ratings), genres, decades),
         "summary": state.get("summary"),
         "genres": genres,
         "decades": decades,

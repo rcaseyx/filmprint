@@ -77,12 +77,13 @@ interface StoryCardProps {
   username: string
   genres: { name: string; weight: number }[]
   decades: { name: string; weight: number }[]
+  fpScore: number
   ratingsCount: number
   avgRating: number
   criticAlignment: number
 }
 
-export function StoryCard({ username, genres, decades, ratingsCount, avgRating, criticAlignment }: StoryCardProps) {
+export function StoryCard({ username, genres, decades, fpScore, ratingsCount, avgRating, criticAlignment }: StoryCardProps) {
   const a = criticAlignment
   const criticLine = a > 0.75
     ? `+${(a / 2).toFixed(1)}★`
@@ -93,10 +94,16 @@ export function StoryCard({ username, genres, decades, ratingsCount, avgRating, 
   return (
     <View style={s.card}>
       <View style={s.header}>
-        <PrintLogo size={38} noAnimate />
-        <View style={s.headerRight}>
-          <FilmprintText width={92} />
-          <Text style={s.username}>@{username}</Text>
+        <View style={s.headerLeft}>
+          <PrintLogo size={38} noAnimate />
+          <View style={s.headerMid}>
+            <FilmprintText width={92} />
+            <Text style={s.username}>@{username}</Text>
+          </View>
+        </View>
+        <View style={s.scoreWrap}>
+          <Text style={s.scoreVal}>{fpScore}</Text>
+          <Text style={s.scoreLbl}>FP SCORE</Text>
         </View>
       </View>
 
@@ -140,9 +147,13 @@ const s = StyleSheet.create({
     paddingBottom: 36,
     gap: 22,
   },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  headerRight: { gap: 5 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  headerMid: { gap: 5 },
   username: { fontSize: 13, color: Colors.textMuted, letterSpacing: 0.2 },
+  scoreWrap: { alignItems: 'flex-end', gap: 2 },
+  scoreVal: { fontSize: 24, fontWeight: '700', color: Colors.brand, letterSpacing: -0.5 },
+  scoreLbl: { fontSize: 9, color: Colors.textFaint, textTransform: 'uppercase', letterSpacing: 0.8 },
   divider: { height: 1, backgroundColor: Colors.border },
   radarWrap: { alignItems: 'center', marginHorizontal: -14 },
   stats: {

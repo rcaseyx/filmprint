@@ -20,7 +20,7 @@ interface UserResult {
 interface TopUser {
   username: string | null
   display_name: string | null
-  ratings_count: number
+  fp_score: number
 }
 
 export default function PeopleScreen() {
@@ -100,7 +100,7 @@ export default function PeopleScreen() {
                 <Avatar name={name} size={38} />
                 <View style={s.rowText}>
                   <Text style={s.rowName}>{name}</Text>
-                  <Text style={s.rowCount}>{user.ratings_count} ratings</Text>
+                  <Text style={s.rowCount}>FP {user.fp_score}</Text>
                 </View>
               </View>
             )
