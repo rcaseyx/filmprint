@@ -149,7 +149,7 @@ const s = StyleSheet.create({
     paddingBottom: 36,
     gap: 22,
   },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  header: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerMid: { gap: 5 },
   username: { fontSize: 13, color: Colors.textMuted, letterSpacing: 0.2 },
