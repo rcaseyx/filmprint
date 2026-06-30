@@ -95,9 +95,9 @@ export function StoryCard({ username, genres, decades, fpScore, ratingsCount, av
     <View style={s.card}>
       <View style={s.header}>
         <View style={s.headerLeft}>
-          <PrintLogo size={56} noAnimate />
+          <PrintLogo size={38} noAnimate />
           <View style={s.headerMid}>
-            <FilmprintText width={130} />
+            <FilmprintText width={92} />
             <Text style={s.username}>@{username}</Text>
           </View>
         </View>
@@ -150,9 +150,9 @@ const s = StyleSheet.create({
     gap: 22,
   },
   header: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
-  headerLeft: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerMid: { gap: 5 },
-  username: { fontSize: 16, color: Colors.textMuted, letterSpacing: 0.2 },
+  username: { fontSize: 13, color: Colors.textMuted, letterSpacing: 0.2 },
   scoreWrap: { alignItems: 'center', gap: 6 },
   scoreBox: {
     borderWidth: 1.5, borderColor: Colors.brand, borderRadius: 8,
