@@ -101,7 +101,7 @@ export default function PeopleScreen() {
                 <Avatar name={name} size={38} />
                 <View style={s.rowText}>
                   <Text style={s.rowName}>{name}</Text>
-                  <Text style={s.rowCount}>Filmprint Score: {user.fp_score}</Text>
+                  <Text style={s.rowCount}>{user.fp_score}</Text>
                 </View>
               </View>
             )

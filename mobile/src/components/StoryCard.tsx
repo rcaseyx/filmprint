@@ -102,7 +102,9 @@ export function StoryCard({ username, genres, decades, fpScore, ratingsCount, av
           </View>
         </View>
         <View style={s.scoreWrap}>
-          <Text style={s.scoreVal}>{fpScore}</Text>
+          <View style={s.scoreBox}>
+            <Text style={s.scoreVal}>{fpScore}</Text>
+          </View>
           <Text style={s.scoreLbl}>FILMPRINT SCORE</Text>
         </View>
       </View>
@@ -151,7 +153,12 @@ const s = StyleSheet.create({
   headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   headerMid: { gap: 5 },
   username: { fontSize: 13, color: Colors.textMuted, letterSpacing: 0.2 },
-  scoreWrap: { alignItems: 'flex-end', gap: 2 },
+  scoreWrap: { alignItems: 'center', gap: 6 },
+  scoreBox: {
+    borderWidth: 1.5, borderColor: Colors.brand, borderRadius: 8,
+    paddingHorizontal: 14, paddingVertical: 8,
+    alignItems: 'center', justifyContent: 'center',
+  },
   scoreVal: { fontSize: 24, fontWeight: '700', color: Colors.brand, letterSpacing: -0.5 },
   scoreLbl: { fontSize: 9, color: Colors.textFaint, textTransform: 'uppercase', letterSpacing: 0.8 },
   divider: { height: 1, backgroundColor: Colors.border },
