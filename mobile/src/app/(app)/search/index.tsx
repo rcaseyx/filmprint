@@ -18,6 +18,7 @@ interface UserResult {
 }
 
 interface TopUser {
+  user_id: number
   username: string | null
   display_name: string | null
   fp_score: number
@@ -100,16 +101,17 @@ export default function PeopleScreen() {
                 <Avatar name={name} size={38} />
                 <View style={s.rowText}>
                   <Text style={s.rowName}>{name}</Text>
-                  <Text style={s.rowCount}>FP {user.fp_score}</Text>
+                  <Text style={s.rowCount}>Taste Score: {user.fp_score}</Text>
                 </View>
               </View>
             )
-            return user.username ? (
-              <TouchableOpacity style={s.item} activeOpacity={0.7} onPress={() => router.push(`/search/${user.username}`)}>
+            const handlePress = user.username
+              ? () => router.push(`/search/${user.username}`)
+              : () => router.push({ pathname: '/search/user/[id]', params: { id: user.user_id, name } })
+            return (
+              <TouchableOpacity style={s.item} activeOpacity={0.7} onPress={handlePress}>
                 {inner}
               </TouchableOpacity>
-            ) : (
-              <View style={s.item}>{inner}</View>
             )
           }}
         />

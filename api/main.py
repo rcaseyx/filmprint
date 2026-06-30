@@ -1164,7 +1164,11 @@ def rebuild_status(current_user: dict = Depends(get_current_user)):
 
 
 def _compute_fp_score(ratings_count: int, genres: list[dict], decades: list[dict]) -> int:
-    """0–1000 score: depth (log ratings) + genre diversity + decade diversity."""
+    """0–1000 taste score: depth (log ratings) + diversity (genre + decade entropy).
+
+    Entropy components are scaled by a confidence factor so thin catalogs
+    can't earn high diversity scores from noise.
+    """
     def _entropy_component(weights: list[float], max_pts: float) -> float:
         weights = [w for w in weights if w > 0]
         if len(weights) < 2:
@@ -1174,9 +1178,10 @@ def _compute_fp_score(ratings_count: int, genres: list[dict], decades: list[dict
         ent = -sum(p * math.log(p) for p in probs)
         return (ent / math.log(len(weights))) * max_pts
 
+    confidence = ratings_count / (ratings_count + 50)
     depth = min(math.log1p(ratings_count) / math.log1p(2000), 1.0) * 500
-    genre_score = _entropy_component([g["weight"] for g in genres], 300)
-    decade_score = _entropy_component([d["weight"] for d in decades], 200)
+    genre_score = _entropy_component([g["weight"] for g in genres], 300) * confidence
+    decade_score = _entropy_component([d["weight"] for d in decades], 200) * confidence
     return round(depth + genre_score + decade_score)
 
 
@@ -1815,13 +1820,15 @@ def user_search(q: str = ""):
 
 
 @app.get("/api/users/top")
-def get_top_users(limit: int = 3):
-    rows = get_top_users_by_ratings(limit)
+def get_top_users(limit: int = 20):
+    # Pull more candidates than requested so we can sort by taste score after computing
+    rows = get_top_users_by_ratings(max(limit * 3, 60))
     result = []
     for row in rows:
         user_id = row["id"]
-        username = row["letterboxd_username"]
-        display_name = row["display_name"]
+        username = row["letterboxd_username"] or None
+        email = row.get("email") or ""
+        display_name = row["display_name"] or (email.split("@")[0] if email else None)
         try:
             profile = _public_profile_response(user_id, username or "")
             top_genres = [g["name"] for g in profile.get("genres", [])[:4]]
@@ -1829,13 +1836,17 @@ def get_top_users(limit: int = 3):
         except Exception:
             top_genres = []
             fp_score = 0
+        if fp_score == 0:
+            continue
         result.append({
+            "user_id": user_id,
             "username": username,
             "display_name": display_name,
             "fp_score": fp_score,
             "top_genres": top_genres,
         })
-    return {"users": result}
+    result.sort(key=lambda x: x["fp_score"], reverse=True)
+    return {"users": result[:limit]}
 
 
 def _public_profile_response(user_id: int, username: str) -> dict:
@@ -1903,6 +1914,30 @@ def _public_profile_response(user_id: int, username: str) -> dict:
     return result
 
 
+@app.get("/api/users/id/{user_id}")
+def get_public_profile_by_id(user_id: int):
+    user = get_user_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return _public_profile_response(user["id"], user.get("letterboxd_username") or "")
+
+
+@app.get("/api/users/id/{user_id}/examples")
+def get_public_examples_by_id(user_id: int):
+    user = get_user_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return _build_public_examples(user_id, user.get("letterboxd_username") or "")
+
+
+@app.get("/api/users/id/{user_id}/history")
+def get_public_history_by_id(user_id: int):
+    user = get_user_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return _build_public_history(user_id)
+
+
 @app.get("/api/users/{username}")
 def get_public_profile(username: str):
     user = get_user_by_username(username)
@@ -1911,12 +1946,7 @@ def get_public_profile(username: str):
     return _public_profile_response(user["id"], username)
 
 
-@app.get("/api/users/{username}/examples")
-def get_public_examples(username: str):
-    user = get_user_by_username(username)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    user_id = user["id"]
+def _build_public_examples(user_id: int, username: str) -> dict:
     if user_id in _public_examples_cache:
         return _public_examples_cache[user_id]
     state = _get_or_build_profile(user_id, username)
@@ -2001,12 +2031,8 @@ def get_public_examples(username: str):
     return result
 
 
-@app.get("/api/users/{username}/history")
-def get_public_history(username: str):
-    user = get_user_by_username(username)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    rows = get_recommendation_history(user["id"], limit=20)
+def _build_public_history(user_id: int) -> dict:
+    rows = get_recommendation_history(user_id, limit=20)
     result = []
     for m in rows:
         raw = m.get("raw_tmdb") or {}
@@ -2028,6 +2054,22 @@ def get_public_history(username: str):
             "mood_tone": mood_filters.get("tone"),
         })
     return {"history": result}
+
+
+@app.get("/api/users/{username}/examples")
+def get_public_examples(username: str):
+    user = get_user_by_username(username)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return _build_public_examples(user["id"], username)
+
+
+@app.get("/api/users/{username}/history")
+def get_public_history(username: str):
+    user = get_user_by_username(username)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return _build_public_history(user["id"])
 
 
 @app.post("/api/users/{username}/recommendations")
