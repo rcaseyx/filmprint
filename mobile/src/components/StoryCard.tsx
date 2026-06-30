@@ -95,19 +95,19 @@ export function StoryCard({ username, genres, decades, fpScore, ratingsCount, av
     <View style={s.card}>
       <View style={s.header}>
         <View style={s.headerLeft}>
-          <PrintLogo size={38} noAnimate />
+          <PrintLogo size={52} noAnimate />
           <View style={s.headerMid}>
-            <FilmprintText width={92} />
+            <FilmprintText width={108} />
             <Text style={s.username}>@{username}</Text>
           </View>
         </View>
         <View style={s.scoreWrap}>
-          <Text style={s.scoreVal}>{fpScore}</Text>
-          <Text style={s.scoreLbl}>TASTE SCORE</Text>
+          <View style={s.scoreBox}>
+            <Text style={s.scoreVal}>{fpScore}</Text>
+          </View>
+          <Text style={s.scoreLbl}>FILMPRINT SCORE</Text>
         </View>
       </View>
-
-      <View style={s.divider} />
 
       <View style={s.radarWrap}>
         <StaticRadar data={genres} />
@@ -148,14 +148,19 @@ const s = StyleSheet.create({
     gap: 22,
   },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   headerMid: { gap: 5 },
-  username: { fontSize: 13, color: Colors.textMuted, letterSpacing: 0.2 },
-  scoreWrap: { alignItems: 'flex-end', gap: 2 },
-  scoreVal: { fontSize: 24, fontWeight: '700', color: Colors.brand, letterSpacing: -0.5 },
-  scoreLbl: { fontSize: 9, color: Colors.textFaint, textTransform: 'uppercase', letterSpacing: 0.8 },
+  username: { fontSize: 15, color: Colors.textMuted, letterSpacing: 0.2 },
+  scoreWrap: { alignItems: 'center', gap: 6 },
+  scoreBox: {
+    borderWidth: 1.5, borderColor: Colors.brand, borderRadius: 7,
+    paddingHorizontal: 10, paddingVertical: 5,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  scoreVal: { fontSize: 19, fontWeight: '700', color: Colors.brand, letterSpacing: -0.5 },
+  scoreLbl: { fontSize: 9, color: Colors.brand, textTransform: 'uppercase', letterSpacing: 0.8 },
   divider: { height: 1, backgroundColor: Colors.border },
-  radarWrap: { alignItems: 'center', marginHorizontal: -14 },
+  radarWrap: { alignItems: 'center', marginHorizontal: -14, marginTop: -10 },
   stats: {
     flexDirection: 'row', alignItems: 'center',
     borderWidth: 1, borderColor: Colors.border, borderRadius: 14, overflow: 'hidden',
