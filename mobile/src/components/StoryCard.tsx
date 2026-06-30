@@ -24,7 +24,7 @@ function StaticRadar({ data }: { data: { name: string; weight: number }[] }) {
   const vb = RS + RP * 2
 
   return (
-    <Svg viewBox={`${-RP} ${-RP} ${vb} ${vb}`} width={CARD_W - 56} height={CARD_W - 56}>
+    <Svg viewBox={`${-RP} ${-RP} ${vb} ${vb}`} width={CARD_W - 28} height={CARD_W - 28}>
       {[0.25, 0.5, 0.75, 1.0].map(r => (
         <Circle key={r} cx={RC} cy={RC} r={r * RR} fill="none" stroke="#262626" strokeWidth={1} />
       ))}
@@ -42,7 +42,7 @@ function StaticRadar({ data }: { data: { name: string; weight: number }[] }) {
       {top.map((d, i) => {
         const lx = RC + RL * Math.cos(angles[i])
         const ly = RC + RL * Math.sin(angles[i])
-        const label = d.name.length > 10 ? d.name.slice(0, 9) + '…' : d.name
+        const label = d.name
         return (
           <SvgText key={d.name} x={lx} y={ly} textAnchor="middle" fontSize={10} fill="#737373">
             {label}
@@ -53,18 +53,36 @@ function StaticRadar({ data }: { data: { name: string; weight: number }[] }) {
   )
 }
 
+function DecadeStrip({ data }: { data: { name: string; weight: number }[] }) {
+  const filtered = data.filter(d => d.weight > 0)
+  if (filtered.length === 0) return null
+
+  const maxW = Math.max(...filtered.map(d => d.weight))
+
+  return (
+    <View style={ds.wrap}>
+      {filtered.map(d => (
+        <View key={d.name} style={ds.col}>
+          <View style={ds.colTrack}>
+            <View style={[ds.colFill, { height: `${Math.round((d.weight / maxW) * 100)}%` as any }]} />
+          </View>
+          <Text style={ds.colLabel}>{d.name.slice(2)}</Text>
+        </View>
+      ))}
+    </View>
+  )
+}
+
 interface StoryCardProps {
   username: string
   genres: { name: string; weight: number }[]
+  decades: { name: string; weight: number }[]
   ratingsCount: number
   avgRating: number
   criticAlignment: number
 }
 
-export function StoryCard({ username, genres, ratingsCount, avgRating, criticAlignment }: StoryCardProps) {
-  const maxW = genres[0]?.weight ?? 0.01
-  const top4 = genres.slice(0, 4)
-
+export function StoryCard({ username, genres, decades, ratingsCount, avgRating, criticAlignment }: StoryCardProps) {
   const a = criticAlignment
   const criticLine = a > 0.75
     ? `+${(a / 2).toFixed(1)}★`
@@ -88,16 +106,7 @@ export function StoryCard({ username, genres, ratingsCount, avgRating, criticAli
         <StaticRadar data={genres} />
       </View>
 
-      <View style={s.bars}>
-        {top4.map(g => (
-          <View key={g.name} style={s.barRow}>
-            <Text style={s.barLabel}>{g.name}</Text>
-            <View style={s.barTrack}>
-              <View style={[s.barFill, { width: `${Math.round((g.weight / maxW) * 100)}%` as any }]} />
-            </View>
-          </View>
-        ))}
-      </View>
+      <DecadeStrip data={decades} />
 
       <View style={s.stats}>
         <View style={s.stat}>
@@ -135,12 +144,7 @@ const s = StyleSheet.create({
   headerRight: { gap: 5 },
   username: { fontSize: 13, color: Colors.textMuted, letterSpacing: 0.2 },
   divider: { height: 1, backgroundColor: Colors.border },
-  radarWrap: { alignItems: 'center' },
-  bars: { gap: 9 },
-  barRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  barLabel: { width: 104, fontSize: 12, color: Colors.textSecondary },
-  barTrack: { flex: 1, height: 5, backgroundColor: Colors.border, borderRadius: 99, overflow: 'hidden' },
-  barFill: { height: '100%', backgroundColor: Colors.brand, borderRadius: 99 },
+  radarWrap: { alignItems: 'center', marginHorizontal: -14 },
   stats: {
     flexDirection: 'row', alignItems: 'center',
     borderWidth: 1, borderColor: Colors.border, borderRadius: 14, overflow: 'hidden',
@@ -153,4 +157,17 @@ const s = StyleSheet.create({
     fontSize: 11, color: Colors.textFaint, textAlign: 'center',
     letterSpacing: 1.2, textTransform: 'uppercase',
   },
+})
+
+const ds = StyleSheet.create({
+  wrap: { flexDirection: 'row', gap: 6, alignItems: 'flex-end' },
+  col: { flex: 1, alignItems: 'center', gap: 5 },
+  colTrack: {
+    width: '100%', height: 52,
+    justifyContent: 'flex-end',
+    borderRadius: 5, overflow: 'hidden',
+    backgroundColor: Colors.border,
+  },
+  colFill: { width: '100%', backgroundColor: Colors.brand },
+  colLabel: { fontSize: 10, color: Colors.textMuted, letterSpacing: 0.3 },
 })

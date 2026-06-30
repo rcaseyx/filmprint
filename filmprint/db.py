@@ -305,14 +305,13 @@ def get_users_with_letterboxd() -> list[dict]:
 
 
 def get_top_users_by_ratings(limit: int = 3) -> list[dict]:
-    """Return top users ordered by rating count, excluding users with no letterboxd username."""
+    """Return top users ordered by rating count."""
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute("""
-            SELECT u.id, u.letterboxd_username, COUNT(r.id) AS ratings_count
+            SELECT u.id, u.letterboxd_username, u.display_name, COUNT(r.id) AS ratings_count
             FROM users u
             JOIN user_ratings r ON r.user_id = u.id
-            WHERE u.letterboxd_username IS NOT NULL
             GROUP BY u.id
             ORDER BY ratings_count DESC
             LIMIT %s
@@ -462,7 +461,11 @@ def get_or_create_user_by_email(email: str) -> tuple[int, str | None]:
         row = cur.fetchone()
         if row:
             return row["id"], row["letterboxd_username"]
-        cur.execute("INSERT INTO users (email) VALUES (%s) RETURNING id", (email,))
+        display_name = email.split("@")[0]
+        cur.execute(
+            "INSERT INTO users (email, display_name) VALUES (%s, %s) RETURNING id",
+            (email, display_name),
+        )
         return cur.fetchone()["id"], None
 
 
