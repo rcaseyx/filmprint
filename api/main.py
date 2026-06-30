@@ -1142,6 +1142,7 @@ def get_user(current_user: dict = Depends(get_current_user)):
         "has_profile": ratings_count > 0,
         "needs_username": not username,
         "username": username or None,
+        "email": current_user.get("email") or None,
         "ratings_count": ratings_count,
         "watchlist_count": get_watchlist_count(user_id),
         "rebuild_in_progress": _rebuild_jobs.get(user_id) == "running" and user_id not in _user_states,
@@ -1801,13 +1802,15 @@ def get_top_users(limit: int = 3):
     for row in rows:
         user_id = row["id"]
         username = row["letterboxd_username"]
+        display_name = row["display_name"]
         try:
-            profile = _public_profile_response(user_id, username)
+            profile = _public_profile_response(user_id, username or "")
             top_genres = [g["name"] for g in profile.get("genres", [])[:4]]
         except Exception:
             top_genres = []
         result.append({
             "username": username,
+            "display_name": display_name,
             "ratings_count": row["ratings_count"],
             "top_genres": top_genres,
         })

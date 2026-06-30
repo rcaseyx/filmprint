@@ -18,7 +18,8 @@ interface UserResult {
 }
 
 interface TopUser {
-  username: string
+  username: string | null
+  display_name: string | null
   ratings_count: number
 }
 
@@ -88,25 +89,29 @@ export default function PeopleScreen() {
       {!query.trim() && topUsers.length > 0 && (
         <FlatList
           data={topUsers}
-          keyExtractor={u => u.username}
+          keyExtractor={u => u.username ?? u.display_name ?? ''}
           contentContainerStyle={s.list}
           keyboardShouldPersistTaps="handled"
           ListHeaderComponent={<Text style={s.sectionLabel}>Top users</Text>}
-          renderItem={({ item: user }) => (
-            <TouchableOpacity
-              style={s.item}
-              activeOpacity={0.7}
-              onPress={() => router.push(`/search/${user.username}`)}
-            >
+          renderItem={({ item: user }) => {
+            const name = user.username ?? user.display_name ?? 'Unknown'
+            const inner = (
               <View style={s.row}>
-                <Avatar name={user.username} size={38} />
+                <Avatar name={name} size={38} />
                 <View style={s.rowText}>
-                  <Text style={s.rowName}>{user.username}</Text>
+                  <Text style={s.rowName}>{name}</Text>
                   <Text style={s.rowCount}>{user.ratings_count} ratings</Text>
                 </View>
               </View>
-            </TouchableOpacity>
-          )}
+            )
+            return user.username ? (
+              <TouchableOpacity style={s.item} activeOpacity={0.7} onPress={() => router.push(`/search/${user.username}`)}>
+                {inner}
+              </TouchableOpacity>
+            ) : (
+              <View style={s.item}>{inner}</View>
+            )
+          }}
         />
       )}
 

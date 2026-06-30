@@ -58,12 +58,13 @@ function relativeDate(dateStr: string | null): string {
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function ProfileScreen() {
-  const { logout } = useAuth()
+  const { logout, token } = useAuth()
   const router = useRouter()
 
   const [loading, setLoading] = useState(true)
   const [rebuildInProgress, setRebuildInProgress] = useState(false)
   const [currentUsername, setCurrentUsername] = useState<string | null>(null)
+  const [currentEmail, setCurrentEmail] = useState<string | null>(null)
   const [profile, setProfile] = useState<ProfileData | null>(null)
   const [examples, setExamples] = useState<{
     genre: RadarExamples; subgenre: RadarExamples; era: RadarExamples; tone: RadarExamples
@@ -132,6 +133,13 @@ export default function ProfileScreen() {
     try {
       const ud = await apiFetch('/api/user').then(r => r.json())
       setCurrentUsername(ud.username ?? null)
+      try {
+        const b64 = token!.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+        const padded = b64.padEnd(b64.length + (4 - b64.length % 4) % 4, '=')
+        const payload = JSON.parse(atob(padded))
+        setCurrentEmail(payload.email ?? null)
+      } catch {}
+
       if (ud.rebuild_in_progress) {
         setRebuildInProgress(true)
         setLoading(false)
@@ -419,8 +427,9 @@ export default function ProfileScreen() {
             <View style={s.cardModalContent}>
               <View ref={storyCardRef} collapsable={false}>
                 <StoryCard
-                  username={currentUsername ?? ''}
+                  username={currentUsername ?? currentEmail?.split('@')[0] ?? ''}
                   genres={profile.genres}
+                  decades={profile.decades}
                   ratingsCount={profile.ratings_count}
                   avgRating={profile.avg_rating}
                   criticAlignment={profile.critic_alignment}
