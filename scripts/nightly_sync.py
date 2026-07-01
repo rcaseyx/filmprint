@@ -51,38 +51,61 @@ def main() -> None:
     log.info("Found %d user(s) — sleeping %.1fs between each", total, sleep_secs)
 
     succeeded = 0
-    failed = 0
+    failed_users = []
 
     for i, user in enumerate(users, start=1):
         username = user["letterboxd_username"]
         user_id = user["id"]
-        log.info("[%d/%d] Syncing %s (user_id=%d)", i, total, username, user_id)
+        label = f"[{i}/{total}]"
+        log.info("%s Syncing %s (user_id=%d)", label, username, user_id)
 
-        try:
-            rss_ratings, rss_watchlist = sync_rss(user_id, username)
-            log.info("[%d/%d] RSS: %s — %d ratings, %d watchlist", i, total, username, rss_ratings, rss_watchlist)
-            sync_scrape(user_id, username)
-            log.info("[%d/%d] Done: %s", i, total, username)
+        if _sync_user(user_id, username, label):
             succeeded += 1
-        except Exception:
-            log.exception("[%d/%d] Failed to sync %s", i, total, username)
-            failed += 1
+        else:
+            failed_users.append(user)
 
         if i < total:
             time.sleep(sleep_secs)
 
+    if failed_users:
+        log.info("Retrying %d failed user(s)", len(failed_users))
+        still_failed = []
+        for i, user in enumerate(failed_users, start=1):
+            username = user["letterboxd_username"]
+            user_id = user["id"]
+            label = f"[retry {i}/{len(failed_users)}]"
+            log.info("%s Syncing %s (user_id=%d)", label, username, user_id)
+
+            if _sync_user(user_id, username, label):
+                succeeded += 1
+            else:
+                still_failed.append(user)
+        failed_users = still_failed
+
     log.info(
         "Nightly sync complete — %d succeeded, %d failed (of %d total)",
         succeeded,
-        failed,
+        len(failed_users),
         total,
     )
 
     _rebuild_all_profiles()
 
     close_db()
-    if failed:
+    if succeeded == 0:
         sys.exit(1)
+
+
+def _sync_user(user_id: int, username: str, label: str) -> bool:
+    try:
+        rss_ratings, rss_watchlist = sync_rss(user_id, username)
+        log.info("%s RSS: %s — %d ratings, %d watchlist", label, username, rss_ratings, rss_watchlist)
+        sync_scrape(user_id, username)
+        log.info("%s Done: %s", label, username)
+        return True
+    except Exception:
+        log.exception("%s Failed to sync %s", label, username)
+        return False
 
 
 def _rebuild_all_profiles() -> None:
