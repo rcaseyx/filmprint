@@ -207,6 +207,39 @@ def build_affinity_scores(rated_movies: list[dict], ratings: list[float]) -> dic
     }
 
 
+def find_unexplored_directors(
+    rated_movies: list[dict],
+    catalog_movies: list[dict],
+    min_catalog_films: int = 3,
+    max_user_films: int = 0,
+) -> dict[str, list[dict]]:
+    """Find directors with solid catalog representation the user has rated few/no films from.
+
+    Returns {director_name: [catalog movies]} for directors with at least
+    `min_catalog_films` films in the catalog, filtered to those the user has
+    rated `max_user_films` or fewer films from.
+    """
+    user_director_counts: dict[str, int] = defaultdict(int)
+    for movie in rated_movies:
+        crew = _raw(movie).get("credits", {}).get("crew", [])
+        for person in crew:
+            if person.get("job") == "Director":
+                user_director_counts[person["name"]] += 1
+
+    catalog_by_director: dict[str, list[dict]] = defaultdict(list)
+    for movie in catalog_movies:
+        crew = _raw(movie).get("credits", {}).get("crew", [])
+        for person in crew:
+            if person.get("job") == "Director":
+                catalog_by_director[person["name"]].append(movie)
+
+    return {
+        name: movies
+        for name, movies in catalog_by_director.items()
+        if len(movies) >= min_catalog_films and user_director_counts.get(name, 0) <= max_user_films
+    }
+
+
 def build_feature_vector(
     movie: dict,
     keyword_vocab: list[str] | None = None,
