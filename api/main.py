@@ -1957,6 +1957,9 @@ def get_director_suggestions(current_user: dict = Depends(get_current_user)):
 
     pick = unshown[0]
     shown.add(pick["id"])
+    # _user_states is Redis-backed (StateCache) — .get() deserializes a fresh
+    # copy each call, so the mutation above is lost unless written back explicitly.
+    _user_states[user_id] = state
     return {"suggestion": pick}
 
 
@@ -1982,6 +1985,9 @@ def get_blind_spot_suggestions(current_user: dict = Depends(get_current_user)):
 
     pick = unshown[0]
     shown.add(pick["id"])
+    # _user_states is Redis-backed (StateCache) — .get() deserializes a fresh
+    # copy each call, so the mutation above is lost unless written back explicitly.
+    _user_states[user_id] = state
     return {"suggestion": pick}
 
 
