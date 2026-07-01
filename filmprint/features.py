@@ -2,6 +2,7 @@
 
 import json
 from collections import Counter, defaultdict
+from typing import Callable
 from .themes import _NOISE_KEYWORDS
 
 import numpy as np
@@ -237,6 +238,70 @@ def find_unexplored_directors(
         name: movies
         for name, movies in catalog_by_director.items()
         if len(movies) >= min_catalog_films and user_director_counts.get(name, 0) <= max_user_films
+    }
+
+
+def build_theme_axes(keyword_themes: dict[str, str]) -> dict[str, list[str]]:
+    """Invert a {keyword: theme} mapping (from the DB-backed keyword_themes table)
+    into the {axis_name: [keywords]} shape used by compute_axis_scores/_axis_vector."""
+    axes: dict[str, list[str]] = defaultdict(list)
+    for keyword, theme in keyword_themes.items():
+        axes[theme].append(keyword)
+    return dict(axes)
+
+
+def _facet_country(movie: dict) -> str | None:
+    code = movie.get("origin_country")
+    if code:
+        return code
+    countries = _raw(movie).get("production_countries") or []
+    return countries[0]["iso_3166_1"] if countries else None
+
+
+def _facet_decade(movie: dict) -> str | None:
+    raw = _raw(movie)
+    release = raw.get("release_date", "") or ""
+    year = raw.get("year") or movie.get("year") or (int(release[:4]) if len(release) >= 4 else None)
+    return f"{(year // 10) * 10}s" if year else None
+
+
+def find_blind_spot_gaps(
+    rated_movies: list[dict],
+    catalog_movies: list[dict],
+    top_axes: list[str],
+    axes: dict[str, list[str]],
+    facet_fn: Callable[[dict], str | None],
+    min_catalog_films: int = 5,
+    max_user_films: int = 1,
+) -> dict[str, list[dict]]:
+    """Group catalog films matching `top_axes` by an arbitrary facet (country,
+    decade, ...) extracted via `facet_fn`, and return facet values with strong
+    catalog presence the user has rated `max_user_films` or fewer films from
+    (across their whole history, not just axis-matching films, to avoid a
+    circular definition of "unexplored").
+    """
+    user_facet_counts: dict[str, int] = defaultdict(int)
+    for movie in rated_movies:
+        value = facet_fn(movie)
+        if value:
+            user_facet_counts[value] += 1
+
+    axis_keywords = {kw for axis in top_axes for kw in axes.get(axis, [])}
+    if not axis_keywords:
+        return {}
+
+    catalog_by_facet: dict[str, list[dict]] = defaultdict(list)
+    for movie in catalog_movies:
+        value = facet_fn(movie)
+        if not value:
+            continue
+        if _movie_keywords(movie) & axis_keywords:
+            catalog_by_facet[value].append(movie)
+
+    return {
+        value: movies
+        for value, movies in catalog_by_facet.items()
+        if len(movies) >= min_catalog_films and user_facet_counts.get(value, 0) <= max_user_films
     }
 
 
