@@ -7,12 +7,13 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter, useFocusEffect } from 'expo-router'
 import { Colors, Spacing } from '@/constants/theme'
-import { apiFetch } from '@/lib/api'
+import { apiFetch, type Pick } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import { FilmCard } from '@/components/FilmCard'
+import { ExploreModal } from '@/components/ExploreModal'
+import { OptionCard } from '@/components/OptionCard'
 import { Image } from 'expo-image'
 import { Coffee, Moon, Sparkles, Flame, Popcorn, Drama, Zap, Film, Hourglass, Check, Gem } from 'lucide-react-native'
-import type { LucideIcon } from 'lucide-react-native'
 import { ProfileBuilding } from '@/components/ProfileBuilding'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -25,13 +26,6 @@ type ScreenView = 'selector' | 'loading' | 'results'
 
 interface Genre { name: string; count: number; weight: number }
 interface LoaderFilm { id: number; title: string; poster_path: string | null; rating: number }
-interface Pick {
-  id: number; title: string; year: number | string; source: 'watchlist' | 'discovered'
-  score: number; match_pct?: number; reason: string; poster_path: string | null
-  genres: string[]; runtime: number | null
-  streaming: { name: string; logo_path: string }[]
-  scores: { imdb: string | null; rt: string | null; metacritic: string | null }
-}
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -133,9 +127,10 @@ const gb = StyleSheet.create({
 
 // ── Step 0: Mood ──────────────────────────────────────────────────────────────
 
-function MoodStep({ tone, pacing, onToggle }: {
+function MoodStep({ tone, pacing, onToggle, onExplore }: {
   tone: Tone | null; pacing: Pacing | null
   onToggle: (t: Tone | null, p: Pacing | null) => void
+  onExplore: () => void
 }) {
   return (
     <View style={ms.wrap}>
@@ -169,6 +164,9 @@ function MoodStep({ tone, pacing, onToggle }: {
           ))}
         </View>
       </View>
+      <TouchableOpacity onPress={onExplore} hitSlop={8} style={ms.exploreBtn}>
+        <Text style={ms.exploreText}>Or see hand-picked suggestions →</Text>
+      </TouchableOpacity>
     </View>
   )
 }
@@ -180,6 +178,8 @@ const ms = StyleSheet.create({
   sub: { fontSize: 14, color: Colors.textMuted },
   grid: { flex: 1, gap: 10 },
   row: { flex: 1, flexDirection: 'row', gap: 10 },
+  exploreBtn: { alignItems: 'center', paddingVertical: 4 },
+  exploreText: { fontSize: 14, color: Colors.textMuted },
 })
 
 // ── Step 1: Genres ────────────────────────────────────────────────────────────
@@ -218,41 +218,6 @@ const gs = StyleSheet.create({
   sub: { fontSize: 14, color: Colors.textMuted },
   scroll: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.lg },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-})
-
-// ── Option card (shared by Vibe + Length) ─────────────────────────────────────
-
-function OptionCard({ Icon, label, sub, selected, onPress }: {
-  Icon: LucideIcon; label: string; sub: string; selected: boolean; onPress: () => void
-}) {
-  const scale = useRef(new Animated.Value(1)).current
-  const pressIn  = () => Animated.spring(scale, { toValue: 0.94, tension: 300, friction: 10, useNativeDriver: true }).start()
-  const pressOut = () => Animated.spring(scale, { toValue: 1,    tension: 200, friction: 12, useNativeDriver: true }).start()
-
-  return (
-    <Pressable onPress={onPress} onPressIn={pressIn} onPressOut={pressOut} style={oc.pressable}>
-      <Animated.View style={[oc.card, selected && oc.cardActive, { transform: [{ scale }] }]}>
-        <Icon size={26} color={selected ? '#0a0a0a' : Colors.textMuted} strokeWidth={1.5} />
-        <Text style={[oc.label, selected && oc.labelActive]}>{label}</Text>
-        <Text style={[oc.sub, selected && oc.subActive]}>{sub}</Text>
-      </Animated.View>
-    </Pressable>
-  )
-}
-
-const oc = StyleSheet.create({
-  pressable: { flex: 1 },
-  card: {
-    flex: 1, borderRadius: 20, borderWidth: 1.5, borderColor: Colors.border,
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingHorizontal: Spacing.sm,
-  },
-  cardActive: { backgroundColor: Colors.brand, borderColor: Colors.brand },
-  label: { fontSize: 16, fontWeight: '700', color: Colors.text },
-  labelActive: { color: '#0a0a0a' },
-  sub: { fontSize: 12, textAlign: 'center', lineHeight: 16, color: Colors.textMuted },
-  subActive: { color: '#1a1a1a' },
 })
 
 // ── Step 2: Filters ───────────────────────────────────────────────────────────
@@ -527,6 +492,7 @@ export default function PicksScreen() {
   const [step, setStep] = useState(0)
   const stepRef = useRef(0)
   const slideAnim = useRef(new Animated.Value(0)).current
+  const [exploreModalVisible, setExploreModalVisible] = useState(false)
 
   const [genres, setGenres] = useState<Genre[]>([])
   const [genreExamples, setGenreExamples] = useState<Record<string, LoaderFilm[]>>({})
@@ -836,6 +802,7 @@ export default function PicksScreen() {
             <MoodStep
               tone={tone} pacing={pacing}
               onToggle={(t, p) => { setTone(t); setPacing(p) }}
+              onExplore={() => setExploreModalVisible(true)}
             />
           </View>
           <View style={s.slide} pointerEvents={step === 1 ? 'auto' : 'none'}>
@@ -871,6 +838,8 @@ export default function PicksScreen() {
           </TouchableOpacity>
         )}
       </View>
+
+      <ExploreModal visible={exploreModalVisible} onClose={() => setExploreModalVisible(false)} />
     </SafeAreaView>
   )
 }

@@ -2,24 +2,10 @@
 
 import { useEffect, useState } from "react"
 import { useSession } from "next-auth/react"
-import { authHeader } from "@/lib/api"
+import { authHeader, type Pick } from "@/lib/api"
 import { RecommendationResults } from "@/components/RecommendationResults"
 import { RecommendationLoader } from "@/components/RecommendationLoader"
-
-interface Pick {
-  id: number
-  title: string
-  year: number | string
-  source: "watchlist" | "discovered"
-  score: number
-  match_pct?: number
-  reason: string
-  poster_path: string | null
-  genres: string[]
-  runtime: number | null
-  streaming: { name: string; logo_path: string }[]
-  scores: { imdb: string | null; rt: string | null; metacritic: string | null }
-}
+import { ExploreSomethingSpecific } from "@/components/ExploreSomethingSpecific"
 
 interface Props {
   genres: string[]
@@ -94,6 +80,7 @@ export function MoodSelector({ genres, username }: Props) {
   const [picks, setPicks] = useState<Pick[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [genreExamples, setGenreExamples] = useState<Record<string, TopFilm[]>>({})
+  const [exploring, setExploring] = useState(false)
 
   useEffect(() => {
     if (username) {
@@ -170,6 +157,10 @@ export function MoodSelector({ genres, username }: Props) {
     return <RecommendationResults picks={picks} onReset={handleReset} onRefresh={username ? undefined : handleSubmit} refreshing={loading} />
   }
 
+  if (exploring) {
+    return <ExploreSomethingSpecific onBack={() => setExploring(false)} />
+  }
+
   const chipsDuration = Math.min(genres.length * 35 + 50, 350)
 
   return (
@@ -177,6 +168,14 @@ export function MoodSelector({ genres, username }: Props) {
       <div className="animate-fade-in-up">
         <h1 className="text-2xl font-semibold tracking-tight">What are you in the mood for?</h1>
         <p className="text-neutral-400 text-sm mt-1">Pick what sounds good and we'll find your best options.</p>
+        {!username && (
+          <button
+            onClick={() => setExploring(true)}
+            className="text-sm text-neutral-500 hover:text-neutral-300 mt-2 transition-colors duration-150"
+          >
+            Or see hand-picked suggestions →
+          </button>
+        )}
       </div>
 
       {/* Genre chips */}
