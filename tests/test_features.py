@@ -7,13 +7,16 @@ from filmprint.features import (
     TONE_AXES,
     _axis_vector,
     _decade_vector,
+    _facet_country,
     _genre_vector,
     _movie_keywords,
     _runtime_vector,
     _score_vector,
     build_affinity_scores,
     build_keyword_vocab,
+    build_theme_axes,
     compute_axis_scores,
+    find_blind_spot_gaps,
     find_unexplored_directors,
 )
 from tests.conftest import make_movie
@@ -233,3 +236,56 @@ def test_find_unexplored_directors_excludes_thin_catalog():
     ]
     result = find_unexplored_directors(rated_movies=[], catalog_movies=catalog)
     assert "Obscure Director" not in result
+
+
+# --- build_theme_axes ---
+
+def test_build_theme_axes_inverts_keyword_map():
+    keyword_themes = {
+        "giallo": "Italian Horror",
+        "poliziotteschi": "Italian Horror",
+        "mumblecore": "Mumblecore",
+    }
+    axes = build_theme_axes(keyword_themes)
+    assert set(axes["Italian Horror"]) == {"giallo", "poliziotteschi"}
+    assert axes["Mumblecore"] == ["mumblecore"]
+
+
+# --- find_blind_spot_gaps ---
+
+_NEO_NOIR_AXES = {"Neo-noir": ["neo-noir", "detective"]}
+
+
+def _country_movie(tmdb_id: int, country: str, keywords: list[str]) -> dict:
+    movie = make_movie(tmdb_id=tmdb_id, keywords=keywords)
+    movie["raw_tmdb"]["production_countries"] = [{"iso_3166_1": country, "name": country}]
+    return movie
+
+
+def test_find_blind_spot_gaps_includes_underexplored_facet():
+    catalog = [_country_movie(i, "KR", ["neo-noir"]) for i in range(1, 6)]
+    result = find_blind_spot_gaps([], catalog, ["Neo-noir"], _NEO_NOIR_AXES, _facet_country)
+    assert "KR" in result
+    assert len(result["KR"]) == 5
+
+
+def test_find_blind_spot_gaps_excludes_explored_facet():
+    catalog = [_country_movie(i, "KR", ["neo-noir"]) for i in range(1, 6)]
+    rated = [
+        _country_movie(100, "KR", ["neo-noir"]),
+        _country_movie(101, "KR", ["neo-noir"]),
+    ]
+    result = find_blind_spot_gaps(rated, catalog, ["Neo-noir"], _NEO_NOIR_AXES, _facet_country)
+    assert "KR" not in result
+
+
+def test_find_blind_spot_gaps_excludes_thin_catalog():
+    catalog = [_country_movie(i, "KR", ["neo-noir"]) for i in range(1, 4)]
+    result = find_blind_spot_gaps([], catalog, ["Neo-noir"], _NEO_NOIR_AXES, _facet_country)
+    assert "KR" not in result
+
+
+def test_find_blind_spot_gaps_excludes_non_matching_keywords():
+    catalog = [_country_movie(i, "KR", ["romance"]) for i in range(1, 6)]
+    result = find_blind_spot_gaps([], catalog, ["Neo-noir"], _NEO_NOIR_AXES, _facet_country)
+    assert result == {}
