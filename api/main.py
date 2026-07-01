@@ -144,6 +144,12 @@ def _save_state_to_volume(user_id: int, state: dict) -> None:
             "neutral": float(state["neutral"]),
             "summary": state["summary"],
             "ai_summary": state.get("ai_summary"),
+            "director_suggestions": [
+                {**pick, "score": float(pick["score"])} for pick in state.get("director_suggestions") or []
+            ],
+            "blind_spot_suggestions": [
+                {**pick, "score": float(pick["score"])} for pick in state.get("blind_spot_suggestions") or []
+            ],
         }
         (_STATE_DIR / f"{user_id}.json").write_text(json.dumps(payload))
     except Exception:
@@ -210,6 +216,10 @@ def _restore_state_from_volume(user_id: int, username: str) -> bool:
         "summary": payload["summary"],
         "ai_summary": payload.get("ai_summary"),
         "user_subgenre_axes": user_subgenre_axes,
+        "director_suggestions": payload.get("director_suggestions") or [],
+        "shown_director_suggestion_ids": set(),
+        "blind_spot_suggestions": payload.get("blind_spot_suggestions") or [],
+        "shown_blind_spot_suggestion_ids": set(),
     }
     return True
 
@@ -1155,6 +1165,12 @@ def _build_director_suggestions(
     if not flattened:
         return []
 
+    # Batch-prime OMDb scores so rank_watchlist doesn't hit the DB/API per movie —
+    # this pool is much larger than the normal candidate pool (most of the catalog
+    # qualifies as "unexplored director"), so an unprimed cache here is a severe N+1.
+    imdb_ids = [(m.get("raw_tmdb") or m).get("imdb_id") for m in flattened]
+    prime_score_cache([iid for iid in imdb_ids if iid])
+
     scored = rank_watchlist(profile_vec, flattened, keyword_vocab, affinity, user_subgenre_axes, clusters=clusters, idf=_idf_weights)
     score_by_id = {m["id"]: (m, s) for m, s in scored}
 
@@ -1315,6 +1331,12 @@ def _build_blind_spot_suggestions(
 
     if not flattened:
         return []
+
+    # Batch-prime OMDb scores so rank_watchlist doesn't hit the DB/API per movie —
+    # this pool is much larger than the normal candidate pool (most axis-matching
+    # films qualify as an unexplored gap), so an unprimed cache here is a severe N+1.
+    imdb_ids = [(m.get("raw_tmdb") or m).get("imdb_id") for m in flattened]
+    prime_score_cache([iid for iid in imdb_ids if iid])
 
     scored = rank_watchlist(profile_vec, flattened, keyword_vocab, affinity, user_subgenre_axes, clusters=clusters, idf=_idf_weights)
     score_by_id = {m["id"]: (m, s) for m, s in scored}
