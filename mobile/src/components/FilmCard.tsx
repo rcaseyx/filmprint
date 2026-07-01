@@ -2,6 +2,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native'
 import { Image } from 'expo-image'
 import * as WebBrowser from 'expo-web-browser'
 import { Colors, Spacing } from '@/constants/theme'
+import type { Pick } from '@/lib/api'
 
 const TMDB_POSTER = 'https://image.tmdb.org/t/p/w500'
 const TMDB_LOGO = 'https://image.tmdb.org/t/p/original'
@@ -11,21 +12,6 @@ const STREAMING_WHITELIST = new Set([
   'Hulu', 'Apple TV+', 'Peacock', 'Paramount+', 'Starz',
   'MGM+', 'AMC+', 'Shudder', 'Criterion Channel', 'MUBI', 'Tubi',
 ])
-
-interface Pick {
-  id: number
-  title: string
-  year: number | string
-  source: 'watchlist' | 'discovered'
-  score: number
-  match_pct?: number
-  reason: string
-  poster_path: string | null
-  genres: string[]
-  runtime: number | null
-  streaming: { name: string; logo_path: string }[]
-  scores: { imdb: string | null; rt: string | null; metacritic: string | null }
-}
 
 function ScoreBadge({ label, value, bg, dark }: { label: string; value: string; bg: string; dark?: boolean }) {
   return (
@@ -45,7 +31,7 @@ const sc = StyleSheet.create({
   value: { fontSize: 14, color: Colors.textSecondary, fontWeight: '500' },
 })
 
-export function FilmCard({ pick }: { pick: Pick }) {
+export function FilmCard({ pick, badgeOverride }: { pick: Pick; badgeOverride?: string }) {
   const openLetterboxd = () => {
     WebBrowser.openBrowserAsync(`https://letterboxd.com/tmdb/${pick.id}/`)
   }
@@ -86,9 +72,9 @@ export function FilmCard({ pick }: { pick: Pick }) {
         </View>
 
         <View style={s.badgeRow}>
-          <View style={[s.badge, pick.source === 'watchlist' ? s.badgeWl : s.badgeDisc]}>
-            <Text style={[s.badgeText, pick.source === 'watchlist' ? s.badgeTextBrand : s.badgeTextMuted]}>
-              {pick.source === 'watchlist' ? 'On your watchlist' : 'New discovery'}
+          <View style={[s.badge, badgeOverride || pick.source === 'watchlist' ? s.badgeWl : s.badgeDisc]}>
+            <Text style={[s.badgeText, badgeOverride || pick.source === 'watchlist' ? s.badgeTextBrand : s.badgeTextMuted]}>
+              {badgeOverride ?? (pick.source === 'watchlist' ? 'On your watchlist' : 'New discovery')}
             </Text>
           </View>
           {pick.match_pct != null && (
