@@ -81,11 +81,12 @@ from filmprint.db import (
     get_catalog_keyword_counts,
     get_five_star_ratings,
     upsert_rating,
+    get_all_movies_with_vectors,
 )
 from filmprint.features import (
     build_feature_vector, taste_summary, build_keyword_vocab,
     build_affinity_scores, GENRES, DECADES, compute_axis_scores, TONE_AXES, SUBGENRE_AXES,
-    _movie_keywords,
+    _movie_keywords, find_unexplored_directors,
 )
 from filmprint.profile import build_taste_profile, build_taste_clusters, build_critic_profile, personal_neutral, PROFILE_VERSION
 from filmprint.recommender import rank_watchlist, diversify
@@ -211,6 +212,25 @@ def _restore_state_from_volume(user_id: int, username: str) -> bool:
     return True
 
 
+def _above_floor(movie: dict, quality_floor: float) -> bool:
+    va = movie.get("vote_average") or 0
+    return va == 0 or va >= quality_floor  # pass through if no votes yet
+
+
+def _available_at_home(movie: dict) -> bool:
+    raw = movie.get("raw_tmdb") or movie
+    release_str = (raw.get("release_date") or "")[:10]
+    if len(release_str) < 10:
+        return True
+    try:
+        days_old = (datetime.date.today() - datetime.date.fromisoformat(release_str)).days
+    except ValueError:
+        return True
+    if days_old > 90:
+        return True
+    return len(get_watch_providers(movie["id"])) > 0
+
+
 def _rebuild_state(user_id: int, username: str) -> None:
     """Rebuild profile and ranking from whatever is currently in the DB. No sync."""
     t0 = time.time()
@@ -283,27 +303,9 @@ def _rebuild_state(user_id: int, username: str) -> None:
     critic = build_critic_profile(rated_movies, ratings)
     quality_floor = critic["quality_floor"]
 
-    def _above_floor(movie: dict) -> bool:
-        va = movie.get("vote_average") or 0
-        return va == 0 or va >= quality_floor  # pass through if no votes yet
-
-    def _available_at_home(movie: dict) -> bool:
-        raw = movie.get("raw_tmdb") or movie
-        release_str = (raw.get("release_date") or "")[:10]
-        if len(release_str) < 10:
-            return True
-        try:
-            import datetime as _dt
-            days_old = (_dt.date.today() - _dt.date.fromisoformat(release_str)).days
-        except ValueError:
-            return True
-        if days_old > 90:
-            return True
-        return len(get_watch_providers(movie["id"])) > 0
-
     all_candidates = (
-        [m for m in watchlist if m["id"] not in seen_ids and _above_floor(m) and _available_at_home(m)]
-        + [d for d in discovered if d["id"] not in watchlist_ids and _above_floor(d) and _available_at_home(d)]
+        [m for m in watchlist if m["id"] not in seen_ids and _above_floor(m, quality_floor) and _available_at_home(m)]
+        + [d for d in discovered if d["id"] not in watchlist_ids and _above_floor(d, quality_floor) and _available_at_home(d)]
     )
 
     # One batch DB query for all OMDB scores so rank_watchlist doesn't hit the DB per movie.
@@ -313,6 +315,15 @@ def _rebuild_state(user_id: int, username: str) -> None:
     t1 = time.time()
     ranked = rank_watchlist(profile_vec, all_candidates, keyword_vocab, affinity, user_subgenre_axes, clusters=clusters, idf=_idf_weights)
     print(f"[rebuild_state] ranked {len(ranked)} candidates in {time.time()-t1:.1f}s", flush=True)
+
+    summary = taste_summary(profile_vec, keyword_vocab, user_subgenre_axes)
+
+    t1 = time.time()
+    director_suggestions = _build_director_suggestions(
+        rated_movies, profile_vec, keyword_vocab, affinity, user_subgenre_axes, clusters,
+        seen_ids, watchlist_ids, quality_floor, summary,
+    )
+    print(f"[rebuild_state] director suggestions built in {time.time()-t1:.1f}s ({len(director_suggestions)} found)", flush=True)
 
     _user_states[user_id] = {
         "user_id": user_id,
@@ -330,9 +341,11 @@ def _rebuild_state(user_id: int, username: str) -> None:
         "quality_floor": quality_floor,
         "critic_alignment": critic["alignment"],
         "neutral": critic["neutral"],
-        "summary": taste_summary(profile_vec, keyword_vocab, user_subgenre_axes),
+        "summary": summary,
         "ai_summary": generate_ai_summary(profile_vec, keyword_vocab, user_subgenre_axes, affinity, rated_movies, ratings, critic["alignment"], critic["neutral"]),
         "user_subgenre_axes": user_subgenre_axes,
+        "director_suggestions": director_suggestions,
+        "shown_director_suggestion_ids": set(),
     }
     _save_state_to_volume(user_id, _user_states[user_id])
     # Full state supersedes the lightweight profile-only cache
@@ -916,6 +929,22 @@ def _mood_to_summary(mood: MoodContext) -> str:
     return ". ".join(parts) if parts else "No specific mood preference."
 
 
+def _format_pick_card(movie: dict, score: float, reason: str, watchlist_ids: set) -> dict:
+    return {
+        "id": movie["id"],
+        "title": movie["title"],
+        "year": movie.get("year") or (movie.get("release_date", "") or "")[:4],
+        "source": "watchlist" if movie["id"] in watchlist_ids else "discovered",
+        "score": score,
+        "reason": reason,
+        "poster_path": (movie.get("raw_tmdb") or {}).get("poster_path"),
+        "genres": _genre_names(movie),
+        "runtime": movie.get("runtime"),
+        "streaming": get_watch_providers(movie["id"]),
+        "scores": get_scores((movie.get("raw_tmdb") or movie).get("imdb_id", "")),
+    }
+
+
 def _explain_recommendations(
     top_movies: list[tuple[dict, float]],
     mood_summary: str,
@@ -985,19 +1014,7 @@ For each reason:
 
     def _enrich(args):
         movie, score, reason = args
-        return {
-            "id": movie["id"],
-            "title": movie["title"],
-            "year": movie.get("year") or (movie.get("release_date", "") or "")[:4],
-            "source": "watchlist" if movie["id"] in watchlist_ids else "discovered",
-            "score": score,
-            "reason": reason,
-            "poster_path": (movie.get("raw_tmdb") or {}).get("poster_path"),
-            "genres": _genre_names(movie),
-            "runtime": movie.get("runtime"),
-            "streaming": get_watch_providers(movie["id"]),
-            "scores": get_scores((movie.get("raw_tmdb") or movie).get("imdb_id", "")),
-        }
+        return _format_pick_card(movie, score, reason, watchlist_ids)
 
     with ThreadPoolExecutor(max_workers=5) as pool:
         futures = {pool.submit(_enrich, args): i for i, args in enumerate(selected)}
@@ -1006,6 +1023,147 @@ For each reason:
             ordered[futures[future]] = future.result()
 
     return [p for p in ordered if p is not None]
+
+
+def _explain_director_picks(
+    director_top: list[tuple[str, dict, float, int]],
+    active_summary: str,
+    watchlist_ids: set,
+) -> list[dict]:
+    """Given (director, film, score, catalog_film_count) tuples where the film is
+    already chosen as that director's best entry point by taste score, write one
+    reason per director explaining why it's a good place to start."""
+    if not director_top:
+        return []
+
+    movie_list = "\n".join(
+        "[{idx}] {director} — {title} ({year}) — taste score: {score:.2f} | genres: {genres} | runtime: {runtime}min | TMDB rating: {rating}".format(
+            idx=i,
+            director=director,
+            title=movie["title"],
+            year=movie.get("year") or (movie.get("release_date", "") or "")[:4],
+            score=score,
+            genres=", ".join(_genre_names(movie)),
+            runtime=movie.get("runtime") or "?",
+            rating=movie.get("vote_average", "?"),
+        )
+        for i, (director, movie, score, _count) in enumerate(director_top)
+    )
+
+    prompt = f"""You are a knowledgeable film friend helping someone explore directors they haven't seen much of.
+
+The user's taste profile (used for ranking only — do not quote these labels or treat them as stated preferences):
+{active_summary}
+
+For each director below, the film listed is already chosen as the best entry point based on their taste. Write one reason per director explaining why this specific film is a strong place to start with that director's work.
+
+Directors and entry-point films (indexed for your response):
+{movie_list}
+
+Return ONLY a JSON array, no other text:
+[
+  {{"idx": 0, "reason": "one or two sentences — specific to this film and why it suits their taste as a first film by this director"}},
+  ...
+]
+
+For each reason:
+- Ground it in what you actually know about the film (genre, tone, style, themes)
+- Frame it as an entry point into the director's work, not a generic recommendation
+- Do NOT reference taste profile labels or invent preferences they didn't mention"""
+
+    response = _anthropic_client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=1024,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    reply = response.content[0].text
+
+    try:
+        raw = json.loads(reply)
+    except json.JSONDecodeError:
+        stripped = reply.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        raw = json.loads(stripped)
+
+    selected = []
+    for item in raw:
+        idx = item["idx"]
+        if idx >= len(director_top):
+            continue
+        director, movie, score, count = director_top[idx]
+        selected.append((director, movie, score, count, item["reason"]))
+
+    def _enrich(args):
+        director, movie, score, count, reason = args
+        card = _format_pick_card(movie, score, reason, watchlist_ids)
+        card["director"] = director
+        card["catalog_film_count"] = count
+        return card
+
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        futures = {pool.submit(_enrich, args): i for i, args in enumerate(selected)}
+        ordered = [None] * len(selected)
+        for future in as_completed(futures):
+            ordered[futures[future]] = future.result()
+
+    return [p for p in ordered if p is not None]
+
+
+def _build_director_suggestions(
+    rated_movies: list[dict],
+    profile_vec: np.ndarray,
+    keyword_vocab: list[str],
+    affinity: dict,
+    user_subgenre_axes: dict,
+    clusters: list,
+    seen_ids: set,
+    watchlist_ids: set,
+    quality_floor: float,
+    active_summary: str,
+    top_n: int = 5,
+) -> list[dict]:
+    """Find directors the user has barely explored (>=3 catalog films, 0 rated by
+    the user) and rank each director's best unwatched film by the user's overall
+    taste profile. Computed once at profile rebuild time, not per-request."""
+    catalog = get_all_movies_with_vectors()
+    director_map = find_unexplored_directors(rated_movies, catalog)
+    if not director_map:
+        return []
+
+    flattened = []
+    flattened_ids = set()
+    for movies in director_map.values():
+        for m in movies:
+            if m["id"] in seen_ids or m["id"] in flattened_ids:
+                continue
+            if not _above_floor(m, quality_floor) or not _available_at_home(m):
+                continue
+            flattened_ids.add(m["id"])
+            flattened.append(m)
+
+    if not flattened:
+        return []
+
+    scored = rank_watchlist(profile_vec, flattened, keyword_vocab, affinity, user_subgenre_axes, clusters=clusters, idf=_idf_weights)
+    score_by_id = {m["id"]: (m, s) for m, s in scored}
+
+    best_per_director = []
+    for director, movies in director_map.items():
+        candidates = [score_by_id[m["id"]] for m in movies if m["id"] in score_by_id]
+        if not candidates:
+            continue
+        best_movie, best_score = max(candidates, key=lambda x: x[1])
+        best_per_director.append((director, best_movie, best_score, len(movies)))
+
+    best_per_director.sort(key=lambda x: x[2], reverse=True)
+    pool_max = best_per_director[0][2]
+    pool_min = best_per_director[-1][2]
+    pool_spread = (pool_max - pool_min) or 1.0
+    top_directors = best_per_director[:top_n]
+
+    picks = _explain_director_picks(top_directors, active_summary, watchlist_ids)
+    for pick in picks:
+        pick["match_pct"] = round(65 + ((pick["score"] - pool_min) / pool_spread) * 34)
+    return picks
 
 
 # --- auth endpoints (no Bearer token required) ---
@@ -1572,6 +1730,31 @@ def get_recommendations(mood: MoodContext, current_user: dict = Depends(get_curr
 
     print(f"[rec] user {user_id}: total {time.time()-t0:.1f}s", flush=True)
     return {"picks": picks, "mood_summary": mood_summary}
+
+
+@app.get("/api/picks/director-suggestions")
+def get_director_suggestions(current_user: dict = Depends(get_current_user)):
+    user_id = current_user["user_id"]
+    username = current_user["username"]
+    state = _get_or_build_state(user_id, username)
+    if not state:
+        raise HTTPException(status_code=428, detail="Rate some films to get started")
+
+    suggestions = state.get("director_suggestions") or []
+    if not suggestions:
+        raise HTTPException(status_code=404, detail="No director suggestions available yet")
+
+    # Rotate through the precomputed list so repeat calls within a session don't
+    # always surface the same top entry. Resets once every suggestion has been shown.
+    shown = state.setdefault("shown_director_suggestion_ids", set())
+    unshown = [s for s in suggestions if s["id"] not in shown]
+    if not unshown:
+        shown.clear()
+        unshown = suggestions
+
+    pick = unshown[0]
+    shown.add(pick["id"])
+    return {"suggestion": pick}
 
 
 # ── in-app onboarding ────────────────────────────────────────────────────────

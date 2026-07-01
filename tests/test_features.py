@@ -14,6 +14,7 @@ from filmprint.features import (
     build_affinity_scores,
     build_keyword_vocab,
     compute_axis_scores,
+    find_unexplored_directors,
 )
 from tests.conftest import make_movie
 
@@ -199,3 +200,36 @@ def test_build_affinity_scores_director():
     assert "Wes Anderson" in affinity["directors"]
     assert affinity["directors"]["Wes Anderson"] == pytest.approx(4.5)
     assert affinity["directors"]["Denis Villeneuve"] == pytest.approx(3.0)
+
+
+# --- find_unexplored_directors ---
+
+def test_find_unexplored_directors_includes_underexplored():
+    catalog = [
+        make_movie(tmdb_id=1, director="Andrei Tarkovsky"),
+        make_movie(tmdb_id=2, director="Andrei Tarkovsky"),
+        make_movie(tmdb_id=3, director="Andrei Tarkovsky"),
+    ]
+    result = find_unexplored_directors(rated_movies=[], catalog_movies=catalog)
+    assert "Andrei Tarkovsky" in result
+    assert len(result["Andrei Tarkovsky"]) == 3
+
+
+def test_find_unexplored_directors_excludes_rated_director():
+    catalog = [
+        make_movie(tmdb_id=1, director="Wes Anderson"),
+        make_movie(tmdb_id=2, director="Wes Anderson"),
+        make_movie(tmdb_id=3, director="Wes Anderson"),
+    ]
+    rated = [make_movie(tmdb_id=99, director="Wes Anderson")]
+    result = find_unexplored_directors(rated_movies=rated, catalog_movies=catalog)
+    assert "Wes Anderson" not in result
+
+
+def test_find_unexplored_directors_excludes_thin_catalog():
+    catalog = [
+        make_movie(tmdb_id=1, director="Obscure Director"),
+        make_movie(tmdb_id=2, director="Obscure Director"),
+    ]
+    result = find_unexplored_directors(rated_movies=[], catalog_movies=catalog)
+    assert "Obscure Director" not in result
