@@ -29,6 +29,15 @@ const QUADRANTS = [
   { label: "Intense", sub: "gripping & high-stakes",      tone: "dark"  as Tone, pacing: "fast" as Pacing },
 ]
 
+function CompassIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
+    </svg>
+  )
+}
+
 function MoodCanvas({
   tone,
   pacing,
@@ -169,12 +178,16 @@ export function MoodSelector({ genres, username }: Props) {
         <h1 className="text-2xl font-semibold tracking-tight">What are you in the mood for?</h1>
         <p className="text-neutral-400 text-sm mt-1">Pick what sounds good and we'll find your best options.</p>
         {!username && (
-          <button
-            onClick={() => setExploring(true)}
-            className="text-sm text-neutral-500 hover:text-neutral-300 mt-2 transition-colors duration-150"
-          >
-            Or see hand-picked suggestions →
-          </button>
+          <div className="mt-3 flex flex-col items-start gap-2">
+            <span className="text-xs uppercase tracking-wider text-neutral-600">or</span>
+            <button
+              onClick={() => setExploring(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-brand/30 bg-brand/10 text-sm text-brand/90 hover:border-brand/50 hover:bg-brand/15 transition-colors duration-150 active:scale-95"
+            >
+              <CompassIcon className="w-4 h-4" />
+              Expand your taste profile
+            </button>
+          </div>
         )}
       </div>
 

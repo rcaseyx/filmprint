@@ -52,3 +52,8 @@ export function getDirectorSuggestion(session: Session | null): Promise<Pick | n
 export function getBlindSpotSuggestion(session: Session | null): Promise<Pick | null> {
   return getSuggestion("/api/picks/blind-spot-suggestions", session)
 }
+
+export function getMoreByDirector(director: string, excludeId: number, session: Session | null): Promise<Pick | null> {
+  const params = new URLSearchParams({ director, exclude_id: String(excludeId) })
+  return getSuggestion(`/api/picks/director-suggestions/more?${params.toString()}`, session)
+}

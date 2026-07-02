@@ -4,7 +4,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { ChevronLeft } from 'lucide-react-native'
 import { Colors, Spacing } from '@/constants/theme'
-import { getDirectorSuggestion, getBlindSpotSuggestion, type Pick } from '@/lib/api'
+import { getDirectorSuggestion, getBlindSpotSuggestion, getMoreByDirector, type Pick } from '@/lib/api'
 import { FilmCard } from '@/components/FilmCard'
 
 type Kind = 'director' | 'blindspot'
@@ -15,6 +15,11 @@ const EMPTY_COPY: Record<Kind, string> = {
   blindspot: 'Rate a few more films to unlock this.',
 }
 
+const LOADING_COPY: Record<Kind, string> = {
+  director: 'Finding directors you may not know...',
+  blindspot: 'Revealing your blind spots...',
+}
+
 export default function ExploreResultScreen() {
   const router = useRouter()
   const { bottom: bottomInset } = useSafeAreaInsets()
@@ -23,9 +28,12 @@ export default function ExploreResultScreen() {
 
   const [status, setStatus] = useState<Status>('loading')
   const [suggestion, setSuggestion] = useState<Pick | null>(null)
+  const [moreLoading, setMoreLoading] = useState(false)
+  const [moreExhausted, setMoreExhausted] = useState(false)
 
   const fetchSuggestion = useCallback(async () => {
     setStatus('loading')
+    setMoreExhausted(false)
     try {
       const result = kind === 'director' ? await getDirectorSuggestion() : await getBlindSpotSuggestion()
       if (!result) { setStatus('empty'); return }
@@ -37,6 +45,20 @@ export default function ExploreResultScreen() {
   }, [kind])
 
   useEffect(() => { fetchSuggestion() }, [fetchSuggestion])
+
+  const fetchMoreByDirector = async () => {
+    if (!suggestion?.director) return
+    setMoreLoading(true)
+    try {
+      const result = await getMoreByDirector(suggestion.director, suggestion.id)
+      if (!result) { setMoreExhausted(true); return }
+      setSuggestion(result)
+    } catch {
+      // leave the current suggestion in place on failure
+    } finally {
+      setMoreLoading(false)
+    }
+  }
 
   const badgeOverride = suggestion
     ? (kind === 'director' ? `Director: ${suggestion.director}` : `Blind spot: ${suggestion.gap_label}`)
@@ -56,7 +78,7 @@ export default function ExploreResultScreen() {
         {status === 'loading' && (
           <View style={s.center}>
             <ActivityIndicator color={Colors.brand} />
-            <Text style={s.centerText}>Looking for a hand-picked suggestion…</Text>
+            <Text style={s.centerText}>{LOADING_COPY[kind]}</Text>
           </View>
         )}
 
@@ -64,8 +86,24 @@ export default function ExploreResultScreen() {
           <>
             <FilmCard pick={suggestion} badgeOverride={badgeOverride} />
             <TouchableOpacity style={s.btnPrimary} activeOpacity={0.85} onPress={fetchSuggestion}>
-              <Text style={s.btnPrimaryText}>Show another</Text>
+              <Text style={s.btnPrimaryText}>{kind === 'director' ? 'Find another director' : 'Show another'}</Text>
             </TouchableOpacity>
+            {kind === 'director' && suggestion.director && (
+              <TouchableOpacity
+                style={s.btnSecondary}
+                activeOpacity={0.85}
+                disabled={moreLoading || moreExhausted}
+                onPress={fetchMoreByDirector}
+              >
+                <Text style={[s.btnSecondaryText, (moreLoading || moreExhausted) && s.btnSecondaryTextDisabled]}>
+                  {moreExhausted
+                    ? `No more films by ${suggestion.director}`
+                    : moreLoading
+                    ? 'Finding another…'
+                    : `Another film by ${suggestion.director}`}
+                </Text>
+              </TouchableOpacity>
+            )}
           </>
         )}
 
@@ -99,4 +137,5 @@ const s = StyleSheet.create({
   btnPrimaryText: { fontSize: 15, fontWeight: '700', color: '#0a0a0a' },
   btnSecondary: { borderRadius: 16, borderWidth: 1, borderColor: Colors.border, paddingVertical: 12, paddingHorizontal: 20, alignItems: 'center' },
   btnSecondaryText: { fontSize: 14, fontWeight: '600', color: Colors.textSecondary },
+  btnSecondaryTextDisabled: { color: Colors.textFaint },
 })

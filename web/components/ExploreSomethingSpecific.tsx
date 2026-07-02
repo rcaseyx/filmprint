@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useSession } from "next-auth/react"
-import { getDirectorSuggestion, getBlindSpotSuggestion, type Pick } from "@/lib/api"
+import { getDirectorSuggestion, getBlindSpotSuggestion, getMoreByDirector, type Pick } from "@/lib/api"
 import { PickCard } from "@/components/PickCard"
 
 type Kind = "director" | "blindspot"
@@ -14,9 +14,14 @@ const EMPTY_COPY: Record<Kind, string> = {
 }
 
 const CHOICES: { kind: Kind; label: string; sub: string }[] = [
-  { kind: "director", label: "Explore a director", sub: "find your next favorite filmmaker" },
-  { kind: "blindspot", label: "Find a blind spot", sub: "films that fit your taste from places you haven't explored" },
+  { kind: "director", label: "Directors", sub: "find your next favorite filmmaker" },
+  { kind: "blindspot", label: "Blind Spots", sub: "films that fit your taste from places you haven't explored" },
 ]
+
+const LOADING_COPY: Record<Kind, string> = {
+  director: "Finding directors you may not know...",
+  blindspot: "Revealing your blind spots...",
+}
 
 function Spinner() {
   return (
@@ -32,10 +37,13 @@ export function ExploreSomethingSpecific({ onBack }: { onBack: () => void }) {
   const [view, setView] = useState<View>("choice")
   const [kind, setKind] = useState<Kind | null>(null)
   const [suggestion, setSuggestion] = useState<Pick | null>(null)
+  const [moreLoading, setMoreLoading] = useState(false)
+  const [moreExhausted, setMoreExhausted] = useState(false)
 
   const fetchSuggestion = async (chosen: Kind) => {
     setKind(chosen)
     setView("loading")
+    setMoreExhausted(false)
     try {
       const result = chosen === "director"
         ? await getDirectorSuggestion(session)
@@ -51,11 +59,28 @@ export function ExploreSomethingSpecific({ onBack }: { onBack: () => void }) {
     }
   }
 
-  if (view === "loading") {
+  const fetchMoreByDirector = async () => {
+    if (!suggestion?.director) return
+    setMoreLoading(true)
+    try {
+      const result = await getMoreByDirector(suggestion.director, suggestion.id, session)
+      if (!result) {
+        setMoreExhausted(true)
+        return
+      }
+      setSuggestion(result)
+    } catch {
+      // leave the current suggestion in place on failure
+    } finally {
+      setMoreLoading(false)
+    }
+  }
+
+  if (view === "loading" && kind) {
     return (
       <div className="animate-fade-in flex flex-col items-center justify-center gap-3 py-16">
         <Spinner />
-        <p className="text-sm text-neutral-400">Looking for a hand-picked suggestion…</p>
+        <p className="text-sm text-neutral-400">{LOADING_COPY[kind]}</p>
       </div>
     )
   }
@@ -69,10 +94,23 @@ export function ExploreSomethingSpecific({ onBack }: { onBack: () => void }) {
         <PickCard pick={suggestion} badgeOverride={badgeOverride} />
         <div className="flex flex-col gap-3">
           <button onClick={() => fetchSuggestion(kind)} className="btn-primary w-full py-3 text-sm font-medium">
-            Show another
+            {kind === "director" ? "Find another director" : "Show another"}
           </button>
-          <button onClick={onBack} className="btn-secondary w-full py-3 text-sm font-medium">
-            ← Back to mood
+          {kind === "director" && suggestion.director && (
+            <button
+              onClick={fetchMoreByDirector}
+              disabled={moreLoading || moreExhausted}
+              className="w-full rounded-xl border border-neutral-800 py-3 text-center text-sm font-medium text-neutral-300 hover:bg-neutral-900 transition-colors duration-150 active:scale-95 disabled:opacity-50 disabled:hover:bg-transparent"
+            >
+              {moreExhausted
+                ? `No more films by ${suggestion.director}`
+                : moreLoading
+                ? "Finding another…"
+                : `Another film by ${suggestion.director}`}
+            </button>
+          )}
+          <button onClick={() => setView("choice")} className="btn-secondary w-full py-3 text-sm font-medium">
+            ← Back
           </button>
         </div>
       </div>
@@ -83,8 +121,8 @@ export function ExploreSomethingSpecific({ onBack }: { onBack: () => void }) {
     return (
       <div className="animate-fade-in space-y-4 text-center py-8">
         <p className="text-neutral-400 text-sm">{EMPTY_COPY[kind]}</p>
-        <button onClick={onBack} className="btn-secondary w-full py-3 text-sm font-medium">
-          ← Back to mood
+        <button onClick={() => setView("choice")} className="btn-secondary w-full py-3 text-sm font-medium">
+          ← Back
         </button>
       </div>
     )
@@ -94,8 +132,8 @@ export function ExploreSomethingSpecific({ onBack }: { onBack: () => void }) {
     return (
       <div className="animate-fade-in space-y-4 text-center py-8">
         <p className="text-red-400 text-sm">Something went wrong — is the API server running?</p>
-        <button onClick={onBack} className="btn-secondary w-full py-3 text-sm font-medium">
-          ← Back to mood
+        <button onClick={() => setView("choice")} className="btn-secondary w-full py-3 text-sm font-medium">
+          ← Back
         </button>
       </div>
     )
@@ -104,8 +142,8 @@ export function ExploreSomethingSpecific({ onBack }: { onBack: () => void }) {
   return (
     <div className="animate-fade-in-up space-y-3">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Hand-picked suggestions</h1>
-        <p className="text-neutral-400 text-sm mt-1">Skip the mood check-in — picked from your taste profile directly.</p>
+        <h1 className="text-2xl font-semibold tracking-tight">Explore ways to broaden your taste</h1>
+        <p className="text-neutral-400 text-sm mt-1">Skip the mood check-in — matched to your taste, from places you haven't looked.</p>
       </div>
       {CHOICES.map(({ kind: k, label, sub }) => (
         <button
