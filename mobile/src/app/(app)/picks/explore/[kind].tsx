@@ -28,10 +28,11 @@ export default function ExploreResultScreen() {
 
   const [status, setStatus] = useState<Status>('loading')
   const [suggestion, setSuggestion] = useState<Pick | null>(null)
-  const [moreLoading, setMoreLoading] = useState(false)
+  const [loadingLabel, setLoadingLabel] = useState(LOADING_COPY[kind])
   const [moreExhausted, setMoreExhausted] = useState(false)
 
   const fetchSuggestion = useCallback(async () => {
+    setLoadingLabel(LOADING_COPY[kind])
     setStatus('loading')
     setMoreExhausted(false)
     try {
@@ -48,15 +49,22 @@ export default function ExploreResultScreen() {
 
   const fetchMoreByDirector = async () => {
     if (!suggestion?.director) return
-    setMoreLoading(true)
+    const director = suggestion.director
+    const excludeId = suggestion.id
+    setLoadingLabel(`Finding another film by ${director}...`)
+    setStatus('loading')
     try {
-      const result = await getMoreByDirector(suggestion.director, suggestion.id)
-      if (!result) { setMoreExhausted(true); return }
+      const result = await getMoreByDirector(director, excludeId)
+      if (!result) {
+        setMoreExhausted(true)
+        setStatus('suggestion')
+        return
+      }
       setSuggestion(result)
+      setStatus('suggestion')
     } catch {
-      // leave the current suggestion in place on failure
-    } finally {
-      setMoreLoading(false)
+      // fetch failed — fall back to showing the previous suggestion rather than an error state
+      setStatus('suggestion')
     }
   }
 
@@ -78,7 +86,7 @@ export default function ExploreResultScreen() {
         {status === 'loading' && (
           <View style={s.center}>
             <ActivityIndicator color={Colors.brand} />
-            <Text style={s.centerText}>{LOADING_COPY[kind]}</Text>
+            <Text style={s.centerText}>{loadingLabel}</Text>
           </View>
         )}
 
@@ -92,15 +100,11 @@ export default function ExploreResultScreen() {
               <TouchableOpacity
                 style={s.btnSecondary}
                 activeOpacity={0.85}
-                disabled={moreLoading || moreExhausted}
+                disabled={moreExhausted}
                 onPress={fetchMoreByDirector}
               >
-                <Text style={[s.btnSecondaryText, (moreLoading || moreExhausted) && s.btnSecondaryTextDisabled]}>
-                  {moreExhausted
-                    ? `No more films by ${suggestion.director}`
-                    : moreLoading
-                    ? 'Finding another…'
-                    : `Another film by ${suggestion.director}`}
+                <Text style={[s.btnSecondaryText, moreExhausted && s.btnSecondaryTextDisabled]}>
+                  {moreExhausted ? `No more films by ${suggestion.director}` : `Another film by ${suggestion.director}`}
                 </Text>
               </TouchableOpacity>
             )}

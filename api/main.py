@@ -12,6 +12,7 @@ from typing import Any
 import json
 import math
 import os
+import random
 import shutil
 import tempfile
 import secrets
@@ -147,6 +148,8 @@ def _save_state_to_volume(user_id: int, state: dict) -> None:
             "director_suggestions": [
                 {**pick, "score": float(pick["score"])} for pick in state.get("director_suggestions") or []
             ],
+            "director_pool_min": float(state.get("director_pool_min") or 0.0),
+            "director_pool_max": float(state.get("director_pool_max") or 0.0),
             "blind_spot_suggestions": [
                 {**pick, "score": float(pick["score"])} for pick in state.get("blind_spot_suggestions") or []
             ],
@@ -217,6 +220,8 @@ def _restore_state_from_volume(user_id: int, username: str) -> bool:
         "ai_summary": payload.get("ai_summary"),
         "user_subgenre_axes": user_subgenre_axes,
         "director_suggestions": payload.get("director_suggestions") or [],
+        "director_pool_min": payload.get("director_pool_min") or 0.0,
+        "director_pool_max": payload.get("director_pool_max") or 0.0,
         "shown_director_suggestion_ids": set(),
         "shown_director_film_ids": {},
         "blind_spot_suggestions": payload.get("blind_spot_suggestions") or [],
@@ -333,7 +338,7 @@ def _rebuild_state(user_id: int, username: str) -> None:
 
     t1 = time.time()
     full_catalog = get_all_movies_with_vectors()
-    director_suggestions = _build_director_suggestions(
+    director_suggestions, director_pool_min, director_pool_max = _build_director_suggestions(
         rated_movies, full_catalog, profile_vec, keyword_vocab, affinity, user_subgenre_axes, clusters,
         seen_ids, watchlist_ids, quality_floor, summary,
     )
@@ -366,6 +371,8 @@ def _rebuild_state(user_id: int, username: str) -> None:
         "ai_summary": generate_ai_summary(profile_vec, keyword_vocab, user_subgenre_axes, affinity, rated_movies, ratings, critic["alignment"], critic["neutral"]),
         "user_subgenre_axes": user_subgenre_axes,
         "director_suggestions": director_suggestions,
+        "director_pool_min": director_pool_min,
+        "director_pool_max": director_pool_max,
         "shown_director_suggestion_ids": set(),
         "shown_director_film_ids": {},
         "blind_spot_suggestions": blind_spot_suggestions,
@@ -1145,13 +1152,18 @@ def _build_director_suggestions(
     quality_floor: float,
     active_summary: str,
     top_n: int = 5,
-) -> list[dict]:
+) -> tuple[list[dict], float, float]:
     """Find directors the user has barely explored (>=3 catalog films, 0 rated by
     the user) and rank each director's best unwatched film by the user's overall
-    taste profile. Computed once at profile rebuild time, not per-request."""
+    taste profile. Computed once at profile rebuild time, not per-request.
+
+    Returns (picks, pool_min, pool_max) — the score bounds are cached alongside
+    the picks so later "another film by this director" requests can compute a
+    match_pct against the same reference population instead of a single
+    director's own candidate pool (which would trivially always score 99%)."""
     director_map = find_unexplored_directors(rated_movies, catalog)
     if not director_map:
-        return []
+        return [], 0.0, 0.0
 
     flattened = []
     flattened_ids = set()
@@ -1165,7 +1177,7 @@ def _build_director_suggestions(
             flattened.append(m)
 
     if not flattened:
-        return []
+        return [], 0.0, 0.0
 
     # Batch-prime OMDb scores so rank_watchlist doesn't hit the DB/API per movie —
     # this pool is much larger than the normal candidate pool (most of the catalog
@@ -1193,7 +1205,7 @@ def _build_director_suggestions(
     picks = _explain_director_picks(top_directors, active_summary, watchlist_ids)
     for pick in picks:
         pick["match_pct"] = round(65 + ((pick["score"] - pool_min) / pool_spread) * 34)
-    return picks
+    return picks, pool_min, pool_max
 
 
 MIN_RATINGS_FOR_BLIND_SPOTS = 20
@@ -1965,6 +1977,15 @@ def get_director_suggestions(current_user: dict = Depends(get_current_user)):
     return {"suggestion": pick}
 
 
+_MORE_BY_DIRECTOR_REASONS = [
+    "Another film by {director}.",
+    "One more from {director}'s catalog.",
+    "A different side of {director}'s work.",
+    "Also worth a look from {director}.",
+    "Another well-regarded pick from {director}.",
+]
+
+
 @app.get("/api/picks/director-suggestions/more")
 def get_more_by_director(
     director: str,
@@ -2010,13 +2031,21 @@ def get_more_by_director(
         state["user_subgenre_axes"], clusters=state["clusters"], idf=_idf_weights,
     )
     best_movie, best_score = max(scored, key=lambda x: x[1])
-    scores_only = [s for _, s in scored]
-    pool_min, pool_max = min(scores_only), max(scores_only)
+
+    # Normalize against the cross-director score pool cached at rebuild time, not
+    # against this single director's own candidate scores — using the local pool
+    # would always put the picked (max) film at the top of its own range, i.e.
+    # a guaranteed 99% match every time.
+    pool_min = state.get("director_pool_min") or 0.0
+    pool_max = state.get("director_pool_max") or 0.0
     pool_spread = (pool_max - pool_min) or 1.0
 
-    pick = _format_pick_card(best_movie, best_score, f"Another film by {director}.", state["watchlist_ids"])
+    reason = random.choice(_MORE_BY_DIRECTOR_REASONS).format(director=director)
+    pick = _format_pick_card(best_movie, best_score, reason, state["watchlist_ids"])
     pick["director"] = director
-    pick["match_pct"] = round(65 + ((best_score - pool_min) / pool_spread) * 34)
+    if pool_max > pool_min:
+        match_pct = round(65 + ((best_score - pool_min) / pool_spread) * 34)
+        pick["match_pct"] = max(1, min(99, match_pct))
 
     shown.add(best_movie["id"])
     _user_states[user_id] = state

@@ -37,11 +37,12 @@ export function ExploreSomethingSpecific({ onBack }: { onBack: () => void }) {
   const [view, setView] = useState<View>("choice")
   const [kind, setKind] = useState<Kind | null>(null)
   const [suggestion, setSuggestion] = useState<Pick | null>(null)
-  const [moreLoading, setMoreLoading] = useState(false)
+  const [loadingLabel, setLoadingLabel] = useState("")
   const [moreExhausted, setMoreExhausted] = useState(false)
 
   const fetchSuggestion = async (chosen: Kind) => {
     setKind(chosen)
+    setLoadingLabel(LOADING_COPY[chosen])
     setView("loading")
     setMoreExhausted(false)
     try {
@@ -61,26 +62,30 @@ export function ExploreSomethingSpecific({ onBack }: { onBack: () => void }) {
 
   const fetchMoreByDirector = async () => {
     if (!suggestion?.director) return
-    setMoreLoading(true)
+    const director = suggestion.director
+    const excludeId = suggestion.id
+    setLoadingLabel(`Finding another film by ${director}...`)
+    setView("loading")
     try {
-      const result = await getMoreByDirector(suggestion.director, suggestion.id, session)
+      const result = await getMoreByDirector(director, excludeId, session)
       if (!result) {
         setMoreExhausted(true)
+        setView("suggestion")
         return
       }
       setSuggestion(result)
+      setView("suggestion")
     } catch {
-      // leave the current suggestion in place on failure
-    } finally {
-      setMoreLoading(false)
+      // fetch failed — fall back to showing the previous suggestion rather than an error state
+      setView("suggestion")
     }
   }
 
-  if (view === "loading" && kind) {
+  if (view === "loading") {
     return (
       <div className="animate-fade-in flex flex-col items-center justify-center gap-3 py-16">
         <Spinner />
-        <p className="text-sm text-neutral-400">{LOADING_COPY[kind]}</p>
+        <p className="text-sm text-neutral-400">{loadingLabel}</p>
       </div>
     )
   }
@@ -99,14 +104,10 @@ export function ExploreSomethingSpecific({ onBack }: { onBack: () => void }) {
           {kind === "director" && suggestion.director && (
             <button
               onClick={fetchMoreByDirector}
-              disabled={moreLoading || moreExhausted}
+              disabled={moreExhausted}
               className="w-full rounded-xl border border-neutral-800 py-3 text-center text-sm font-medium text-neutral-300 hover:bg-neutral-900 transition-colors duration-150 active:scale-95 disabled:opacity-50 disabled:hover:bg-transparent"
             >
-              {moreExhausted
-                ? `No more films by ${suggestion.director}`
-                : moreLoading
-                ? "Finding another…"
-                : `Another film by ${suggestion.director}`}
+              {moreExhausted ? `No more films by ${suggestion.director}` : `Another film by ${suggestion.director}`}
             </button>
           )}
           <button onClick={() => setView("choice")} className="btn-secondary w-full py-3 text-sm font-medium">
