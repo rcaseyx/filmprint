@@ -218,6 +218,7 @@ def _restore_state_from_volume(user_id: int, username: str) -> bool:
         "user_subgenre_axes": user_subgenre_axes,
         "director_suggestions": payload.get("director_suggestions") or [],
         "shown_director_suggestion_ids": set(),
+        "shown_director_film_ids": {},
         "blind_spot_suggestions": payload.get("blind_spot_suggestions") or [],
         "shown_blind_spot_suggestion_ids": set(),
     }
@@ -366,6 +367,7 @@ def _rebuild_state(user_id: int, username: str) -> None:
         "user_subgenre_axes": user_subgenre_axes,
         "director_suggestions": director_suggestions,
         "shown_director_suggestion_ids": set(),
+        "shown_director_film_ids": {},
         "blind_spot_suggestions": blind_spot_suggestions,
         "shown_blind_spot_suggestion_ids": set(),
     }
@@ -1959,6 +1961,64 @@ def get_director_suggestions(current_user: dict = Depends(get_current_user)):
     shown.add(pick["id"])
     # _user_states is Redis-backed (StateCache) — .get() deserializes a fresh
     # copy each call, so the mutation above is lost unless written back explicitly.
+    _user_states[user_id] = state
+    return {"suggestion": pick}
+
+
+@app.get("/api/picks/director-suggestions/more")
+def get_more_by_director(
+    director: str,
+    exclude_id: int | None = None,
+    current_user: dict = Depends(get_current_user),
+):
+    """Another unwatched film by the same director — a lighter-weight sibling to
+    /director-suggestions that stays within one director instead of rotating
+    directors. Scores against the already-cached profile rather than rebuilding."""
+    user_id = current_user["user_id"]
+    username = current_user["username"]
+    state = _get_or_build_state(user_id, username)
+    if not state:
+        raise HTTPException(status_code=428, detail="Rate some films to get started")
+
+    shown_by_director = state.setdefault("shown_director_film_ids", {})
+    shown = shown_by_director.setdefault(director, set())
+    if exclude_id is not None:
+        shown.add(exclude_id)
+
+    seen_ids = state["seen_ids"]
+    quality_floor = state["quality_floor"]
+    catalog = get_all_movies_with_vectors()
+    candidates = [
+        m for m in catalog
+        if m["id"] not in seen_ids
+        and m["id"] not in shown
+        and _above_floor(m, quality_floor)
+        and _available_at_home(m)
+        and director in [
+            p["name"] for p in (m.get("raw_tmdb") or {}).get("credits", {}).get("crew", [])
+            if p.get("job") == "Director"
+        ]
+    ]
+    if not candidates:
+        raise HTTPException(status_code=404, detail=f"No more unwatched films by {director}")
+
+    imdb_ids = [(m.get("raw_tmdb") or m).get("imdb_id") for m in candidates]
+    prime_score_cache([iid for iid in imdb_ids if iid])
+
+    scored = rank_watchlist(
+        state["profile_vec"], candidates, state["keyword_vocab"], state["affinity"],
+        state["user_subgenre_axes"], clusters=state["clusters"], idf=_idf_weights,
+    )
+    best_movie, best_score = max(scored, key=lambda x: x[1])
+    scores_only = [s for _, s in scored]
+    pool_min, pool_max = min(scores_only), max(scores_only)
+    pool_spread = (pool_max - pool_min) or 1.0
+
+    pick = _format_pick_card(best_movie, best_score, f"Another film by {director}.", state["watchlist_ids"])
+    pick["director"] = director
+    pick["match_pct"] = round(65 + ((best_score - pool_min) / pool_spread) * 34)
+
+    shown.add(best_movie["id"])
     _user_states[user_id] = state
     return {"suggestion": pick}
 

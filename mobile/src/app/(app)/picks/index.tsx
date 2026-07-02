@@ -13,7 +13,7 @@ import { FilmCard } from '@/components/FilmCard'
 import { ExploreModal } from '@/components/ExploreModal'
 import { OptionCard } from '@/components/OptionCard'
 import { Image } from 'expo-image'
-import { Coffee, Moon, Sparkles, Flame, Popcorn, Drama, Zap, Film, Hourglass, Check, Gem } from 'lucide-react-native'
+import { Coffee, Moon, Sparkles, Flame, Popcorn, Drama, Zap, Film, Hourglass, Check, Gem, Compass } from 'lucide-react-native'
 import { ProfileBuilding } from '@/components/ProfileBuilding'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -39,6 +39,11 @@ const QUADRANTS = [
   { label: 'Playful', sub: 'fun & lighthearted',          Icon: Sparkles, tone: 'light' as Tone, pacing: 'fast' as Pacing, color: '#34D399', bg: 'rgba(52,211,153,0.05)',  bgActive: 'rgba(52,211,153,0.16)'  },
   { label: 'Intense', sub: 'gripping & high-stakes',      Icon: Flame,    tone: 'dark'  as Tone, pacing: 'fast' as Pacing, color: '#F87171', bg: 'rgba(248,113,113,0.05)', bgActive: 'rgba(248,113,113,0.16)' },
 ]
+
+// Muted tint of Colors.brand (#fbbf24), matching the unselected quadrant card treatment.
+const BRAND_MUTED_BG = 'rgba(251,191,36,0.10)'
+const BRAND_MUTED_BORDER = 'rgba(251,191,36,0.35)'
+const BRAND_MUTED_TEXT = 'rgba(251,191,36,0.9)'
 
 const FAMILIARITY_OPTIONS = [
   { label: 'Crowd-pleaser', sub: 'mainstream & accessible', value: 'familiar'   as Familiarity },
@@ -164,8 +169,10 @@ function MoodStep({ tone, pacing, onToggle, onExplore }: {
           ))}
         </View>
       </View>
-      <TouchableOpacity onPress={onExplore} hitSlop={8} style={ms.exploreBtn}>
-        <Text style={ms.exploreText}>Or see hand-picked suggestions →</Text>
+      <Text style={ms.orLabel}>or</Text>
+      <TouchableOpacity onPress={onExplore} hitSlop={8} style={ms.exploreBtn} activeOpacity={0.7}>
+        <Compass size={16} color={BRAND_MUTED_TEXT} strokeWidth={2} />
+        <Text style={ms.exploreText}>Expand your taste profile</Text>
       </TouchableOpacity>
     </View>
   )
@@ -178,8 +185,17 @@ const ms = StyleSheet.create({
   sub: { fontSize: 14, color: Colors.textMuted },
   grid: { flex: 1, gap: 10 },
   row: { flex: 1, flexDirection: 'row', gap: 10 },
-  exploreBtn: { alignItems: 'center', paddingVertical: 4 },
-  exploreText: { fontSize: 14, color: Colors.textMuted },
+  orLabel: {
+    textAlign: 'center', fontSize: 12, fontWeight: '600', color: Colors.textFaint,
+    textTransform: 'uppercase', letterSpacing: 1.5, marginTop: 2,
+  },
+  exploreBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    alignSelf: 'center', paddingVertical: 9, paddingHorizontal: 16,
+    borderRadius: 999, borderWidth: 1, borderColor: BRAND_MUTED_BORDER,
+    backgroundColor: BRAND_MUTED_BG,
+  },
+  exploreText: { fontSize: 14, fontWeight: '500', color: BRAND_MUTED_TEXT },
 })
 
 // ── Step 1: Genres ────────────────────────────────────────────────────────────
@@ -493,6 +509,7 @@ export default function PicksScreen() {
   const stepRef = useRef(0)
   const slideAnim = useRef(new Animated.Value(0)).current
   const [exploreModalVisible, setExploreModalVisible] = useState(false)
+  const returningFromExploreRef = useRef(false)
 
   const [genres, setGenres] = useState<Genre[]>([])
   const [genreExamples, setGenreExamples] = useState<Record<string, LoaderFilm[]>>({})
@@ -709,6 +726,13 @@ export default function PicksScreen() {
     // With NativeTabs, useFocusEffect fires on app foreground (UIViewController.viewDidAppear),
     // not just on tab switch. Don't interrupt an in-flight request.
     if (screenViewRef.current === 'loading') return
+    // Returning from the explore (director/blind spot) flow via the back button —
+    // reopen the sheet instead of resetting, since that's the state the user left it in.
+    if (returningFromExploreRef.current) {
+      returningFromExploreRef.current = false
+      setExploreModalVisible(true)
+      return
+    }
     handleReset()
   }, [handleReset, userChecked, checkUser]))
 
@@ -839,7 +863,11 @@ export default function PicksScreen() {
         )}
       </View>
 
-      <ExploreModal visible={exploreModalVisible} onClose={() => setExploreModalVisible(false)} />
+      <ExploreModal
+        visible={exploreModalVisible}
+        onClose={() => setExploreModalVisible(false)}
+        onChoose={() => { returningFromExploreRef.current = true }}
+      />
     </SafeAreaView>
   )
 }

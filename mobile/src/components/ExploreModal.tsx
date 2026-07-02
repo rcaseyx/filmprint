@@ -5,7 +5,7 @@ import { Film, Compass } from 'lucide-react-native'
 import { Colors, Spacing } from '@/constants/theme'
 import { OptionCard } from '@/components/OptionCard'
 
-export function ExploreModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+export function ExploreModal({ visible, onClose, onChoose }: { visible: boolean; onClose: () => void; onChoose?: () => void }) {
   const router = useRouter()
   const overlayAnim = useRef(new Animated.Value(0)).current
   const sheetAnim = useRef(new Animated.Value(400)).current
@@ -45,6 +45,7 @@ export function ExploreModal({ visible, onClose }: { visible: boolean; onClose: 
 
   const choose = (kind: 'director' | 'blindspot') => {
     closeSheet()
+    onChoose?.()
     router.push(`/picks/explore/${kind}`)
   }
 
@@ -55,14 +56,14 @@ export function ExploreModal({ visible, onClose }: { visible: boolean; onClose: 
         <Pressable style={StyleSheet.absoluteFill} onPress={closeSheet} />
         <Animated.View style={[s.sheet, { transform: [{ translateY: sheetAnim }] }]} {...panResponder.panHandlers}>
           <View style={s.dragHandle} />
-          <Text style={s.title}>Hand-picked suggestions</Text>
+          <Text style={s.title}>Explore ways to broaden your taste</Text>
           <View style={s.choiceRow}>
             <OptionCard
-              Icon={Film} label="A director" sub="find your next favorite filmmaker"
+              Icon={Film} label="Directors" sub="find your next favorite filmmaker"
               selected={false} onPress={() => choose('director')}
             />
             <OptionCard
-              Icon={Compass} label="A blind spot" sub="taste gaps you haven't explored"
+              Icon={Compass} label="Blind Spots" sub="taste gaps you haven't explored"
               selected={false} onPress={() => choose('blindspot')}
             />
           </View>
