@@ -13,6 +13,7 @@ import {
 import { Link, useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import * as Google from 'expo-auth-session/providers/google'
+import * as AppleAuthentication from 'expo-apple-authentication'
 import { useAuth } from '@/lib/auth'
 import { apiFetch } from '@/lib/api'
 import { Colors, Spacing } from '@/constants/theme'
@@ -29,10 +30,17 @@ export default function LoginScreen() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
+  const [appleLoading, setAppleLoading] = useState(false)
+  const [appleAvailable, setAppleAvailable] = useState(false)
 
   const [request, response, promptAsync] = Google.useAuthRequest({
     iosClientId: IOS_CLIENT_ID,
   })
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return
+    AppleAuthentication.isAvailableAsync().then(setAppleAvailable)
+  }, [])
 
   useEffect(() => {
     if (response?.type !== 'success') return
@@ -57,6 +65,45 @@ export default function LoginScreen() {
       .catch(e => setError(e.message))
       .finally(() => setGoogleLoading(false))
   }, [response])
+
+  const handleAppleSignIn = async () => {
+    if (appleLoading) return
+    setError('')
+    setAppleLoading(true)
+    try {
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      })
+      if (!credential.identityToken) {
+        throw new Error('Apple sign-in failed — no token returned')
+      }
+      // Apple only ever includes fullName on the first authorization —
+      // capture it now so the backend can use it as the display name.
+      const fullName = credential.fullName
+        ? [credential.fullName.givenName, credential.fullName.familyName].filter(Boolean).join(' ')
+        : undefined
+      const res = await apiFetch('/api/auth/apple', {
+        method: 'POST',
+        body: JSON.stringify({ identity_token: credential.identityToken, full_name: fullName || undefined }),
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        throw new Error(d.detail ?? 'Apple sign-in failed')
+      }
+      const data = await res.json()
+      await login(data.token)
+      router.replace('/picks')
+    } catch (e: any) {
+      if (e?.code !== 'ERR_REQUEST_CANCELED') {
+        setError(e.message ?? 'Apple sign-in failed')
+      }
+    } finally {
+      setAppleLoading(false)
+    }
+  }
 
   const handleSubmit = async () => {
     if (!email.trim() || !password) return
@@ -141,6 +188,18 @@ export default function LoginScreen() {
             <View style={s.dividerLine} />
           </View>
 
+          {appleAvailable && (
+            <View style={appleLoading && s.buttonDisabled}>
+              <AppleAuthentication.AppleAuthenticationButton
+                buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
+                cornerRadius={10}
+                style={s.appleButton}
+                onPress={handleAppleSignIn}
+              />
+            </View>
+          )}
+
           <TouchableOpacity
             style={[s.googleButton, googleLoading && s.buttonDisabled]}
             onPress={() => { setError(''); promptAsync() }}
@@ -209,6 +268,7 @@ const s = StyleSheet.create({
   divider: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   dividerLine: { flex: 1, height: 1, backgroundColor: Colors.border },
   dividerText: { fontSize: 12, color: Colors.textMuted },
+  appleButton: { width: '100%', height: 44 },
   googleButton: {
     flexDirection: 'row',
     alignItems: 'center',

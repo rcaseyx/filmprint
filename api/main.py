@@ -42,6 +42,8 @@ _JWT_ALGORITHM = "HS256"
 _JWT_EXPIRE_DAYS = 60
 _INTERNAL_SECRET = os.environ.get("INTERNAL_SECRET", "")
 _GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
+_APPLE_BUNDLE_ID = os.environ.get("APPLE_BUNDLE_ID", "com.filmprint.app")
+_apple_jwk_client = pyjwt.PyJWKClient("https://appleid.apple.com/auth/keys")
 
 
 def _create_jwt(user_id: int, email: str, username: str | None) -> str:
@@ -62,7 +64,7 @@ def _decode_jwt(token: str) -> dict | None:
         return None
 
 from filmprint.db import (
-    init_db, get_or_create_user_by_email, update_user_username,
+    init_db, get_or_create_user_by_email, get_or_create_user_by_apple, get_user_by_apple_sub, update_user_username,
     create_user_with_password, verify_user_password,
     get_user_by_id, get_user_by_username, search_users_by_username,
     get_user_ratings, get_user_watchlist,
@@ -1545,6 +1547,45 @@ def google_auth(payload: GoogleAuthPayload):
         raise HTTPException(status_code=403, detail="You're not on the beta list")
     user_id, username = get_or_create_user_by_email(email)
     token = _create_jwt(user_id, email, username)
+    return {"token": token, "user_id": user_id}
+
+
+class AppleAuthPayload(BaseModel):
+    identity_token: str
+    full_name: str | None = None  # only ever supplied by the client on first authorization
+
+
+@app.post("/api/auth/apple")
+def apple_auth(payload: AppleAuthPayload):
+    try:
+        signing_key = _apple_jwk_client.get_signing_key_from_jwt(payload.identity_token)
+        claims = pyjwt.decode(
+            payload.identity_token,
+            signing_key.key,
+            algorithms=["RS256"],
+            audience=_APPLE_BUNDLE_ID,
+            issuer="https://appleid.apple.com",
+        )
+    except pyjwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid Apple token")
+
+    apple_sub = claims["sub"]
+    # Apple only includes email (and email_verified) on the user's first-ever
+    # authorization for this app — every sign-in after that omits both, so
+    # returning users must resolve via apple_sub alone.
+    email = claims.get("email")
+    if email and str(claims.get("email_verified", "true")).lower() != "true":
+        raise HTTPException(status_code=401, detail="Apple email not verified")
+
+    existing = get_user_by_apple_sub(apple_sub) or (get_user_by_email(email) if email else None)
+    if not existing and not (email and is_whitelisted(email)):
+        raise HTTPException(status_code=403, detail="You're not on the beta list")
+
+    try:
+        user_id, username = get_or_create_user_by_apple(apple_sub, email, payload.full_name)
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    token = _create_jwt(user_id, email or "", username)
     return {"token": token, "user_id": user_id}
 
 

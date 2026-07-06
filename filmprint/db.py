@@ -174,6 +174,10 @@ def init_db(seed_data: dict | None = None) -> None:
         "ALTER TABLE password_reset_tokens ADD CONSTRAINT password_reset_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name TEXT",
         "UPDATE users SET display_name = split_part(email, '@', 1) WHERE display_name IS NULL AND email IS NOT NULL",
+        # Apple only sends the user's email on their first-ever authorization —
+        # every sign-in after that has email=null, so returning users must be
+        # looked up by this stable per-app identifier instead.
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_sub TEXT UNIQUE",
     ]
     with get_connection() as conn:
         cur = conn.cursor()
@@ -465,6 +469,47 @@ def get_or_create_user_by_email(email: str) -> tuple[int, str | None]:
         cur.execute(
             "INSERT INTO users (email, display_name) VALUES (%s, %s) RETURNING id",
             (email, display_name),
+        )
+        return cur.fetchone()["id"], None
+
+
+def get_user_by_apple_sub(apple_sub: str) -> dict | None:
+    """Return {id, letterboxd_username} for a user by their stable Apple identifier, or None."""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, letterboxd_username FROM users WHERE apple_sub = %s", (apple_sub,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
+def get_or_create_user_by_apple(apple_sub: str, email: str | None, display_name: str | None) -> tuple[int, str | None]:
+    """Return (user_id, letterboxd_username) for a Sign in with Apple login.
+
+    Looks up by apple_sub first — Apple only includes email on a user's very
+    first authorization, so returning sign-ins must resolve via this stable
+    per-app identifier instead. Falls back to linking an existing email-based
+    account on first authorization, or creates a new user if neither matches.
+    """
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, letterboxd_username FROM users WHERE apple_sub = %s", (apple_sub,))
+        row = cur.fetchone()
+        if row:
+            return row["id"], row["letterboxd_username"]
+
+        if email:
+            cur.execute("SELECT id, letterboxd_username FROM users WHERE email = %s", (email,))
+            row = cur.fetchone()
+            if row:
+                cur.execute("UPDATE users SET apple_sub = %s WHERE id = %s", (apple_sub, row["id"]))
+                return row["id"], row["letterboxd_username"]
+
+        if not email:
+            raise ValueError("No account found for this Apple ID and no email was provided to create one")
+
+        cur.execute(
+            "INSERT INTO users (email, display_name, apple_sub) VALUES (%s, %s, %s) RETURNING id",
+            (email, display_name or email.split("@")[0], apple_sub),
         )
         return cur.fetchone()["id"], None
 
