@@ -10,8 +10,10 @@ import { setPendingProfile } from '@/lib/pendingNavigation'
 let _alertShown = false
 
 interface TopUser {
-  username: string
-  ratings_count: number
+  user_id: number
+  username: string | null
+  display_name: string | null
+  fp_score: number
 }
 
 interface Props {
@@ -91,7 +93,9 @@ export function ProfileBuilding({ onComplete, onError, currentUsername }: Props)
     apiFetch('/api/users/top?limit=6')
       .then(r => r.json())
       .then(data => {
-        const filtered = (data.users ?? []).filter((u: TopUser) => u.username !== currentUsername)
+        // Only usernamed profiles are viewable from here — pendingNavigation
+        // routes by username, so a user without one has nowhere to link to.
+        const filtered = (data.users ?? []).filter((u: TopUser) => u.username && u.username !== currentUsername)
         setTopUsers(filtered.slice(0, 3))
       })
       .catch(() => {})
@@ -121,16 +125,16 @@ export function ProfileBuilding({ onComplete, onError, currentUsername }: Props)
           [0, 1, 2].map(i => <View key={i} style={s.skeleton} />)
         ) : topUsers.map(u => (
           <TouchableOpacity
-            key={u.username}
+            key={u.username!}
             style={s.profileCard}
             activeOpacity={0.7}
             onPress={() => {
-              setPendingProfile(u.username)
+              setPendingProfile(u.username!)
               router.navigate('/(app)/search' as any)
             }}
           >
             <Text style={s.profileName}>{u.username}</Text>
-            <Text style={s.profileCount}>{u.ratings_count.toLocaleString()} ratings</Text>
+            <Text style={s.profileCount}>{u.fp_score} score</Text>
           </TouchableOpacity>
         ))}
       </View>
