@@ -1,5 +1,5 @@
 anthropic
-PyJWT
+PyJWT[crypto]
 bcrypt
 psycopg2-binary
 beautifulsoup4
