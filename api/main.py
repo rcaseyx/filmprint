@@ -77,7 +77,7 @@ from filmprint.db import (
     compute_ratings_hash, get_movies_by_ids,
     get_user_by_email,
     create_reset_token, get_reset_token, consume_reset_token,
-    is_whitelisted, get_whitelist, add_to_whitelist, remove_from_whitelist,
+    get_whitelist, add_to_whitelist, remove_from_whitelist,
     get_movie_title_year_index,
     create_beta_request, get_beta_requests, get_beta_request,
     update_beta_request_counts, delete_beta_request,
