@@ -2806,6 +2806,15 @@ def admin_rebuild_all(_auth: dict = Depends(get_admin_or_internal)):
                 elapsed = round(time.time() - t1, 1)
                 failed += 1
                 yield _json.dumps({"user_id": uid, "username": uname, "status": "error", "error": str(exc), "elapsed": elapsed}) + "\n"
+
+            # Same rationale as the /prewarm path: glibc's allocator won't return
+            # freed heap pages from this user's vectorization/ranking back to the
+            # OS on its own, so RSS ratchets up across the loop without this.
+            try:
+                import ctypes
+                ctypes.CDLL("libc.so.6").malloc_trim(0)
+            except Exception:
+                pass
         yield _json.dumps({
             "status": "complete",
             "total": total,
