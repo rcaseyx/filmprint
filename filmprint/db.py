@@ -213,16 +213,6 @@ def get_user_by_email(email: str) -> dict | None:
 
 # --- beta whitelist ---
 
-def is_whitelisted(email: str) -> bool:
-    with get_connection() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT 1 FROM beta_whitelist WHERE email = lower(%s) AND (approved_until IS NULL OR approved_until > NOW())",
-            (email,),
-        )
-        return cur.fetchone() is not None
-
-
 def get_whitelist() -> list[str]:
     with get_connection() as conn:
         cur = conn.cursor()
@@ -471,15 +461,6 @@ def get_or_create_user_by_email(email: str) -> tuple[int, str | None]:
             (email, display_name),
         )
         return cur.fetchone()["id"], None
-
-
-def get_user_by_apple_sub(apple_sub: str) -> dict | None:
-    """Return {id, letterboxd_username} for a user by their stable Apple identifier, or None."""
-    with get_connection() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT id, letterboxd_username FROM users WHERE apple_sub = %s", (apple_sub,))
-        row = cur.fetchone()
-        return dict(row) if row else None
 
 
 def get_or_create_user_by_apple(apple_sub: str, email: str | None, display_name: str | None) -> tuple[int, str | None]:

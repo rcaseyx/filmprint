@@ -64,7 +64,7 @@ def _decode_jwt(token: str) -> dict | None:
         return None
 
 from filmprint.db import (
-    init_db, get_or_create_user_by_email, get_or_create_user_by_apple, get_user_by_apple_sub, update_user_username,
+    init_db, get_or_create_user_by_email, get_or_create_user_by_apple, update_user_username,
     create_user_with_password, verify_user_password,
     get_user_by_id, get_user_by_username, search_users_by_username,
     get_user_ratings, get_user_watchlist,
@@ -1451,8 +1451,6 @@ def _validate_password(password: str) -> None:
 
 @app.post("/api/auth/register")
 def register(payload: CredentialsPayload):
-    if not is_whitelisted(payload.email):
-        raise HTTPException(status_code=403, detail="You're not on the beta list")
     _validate_password(payload.password)
     try:
         user_id = create_user_with_password(payload.email, payload.password)
@@ -1523,9 +1521,6 @@ def auth_exchange(payload: ExchangePayload, request: Request):
     """
     if not _INTERNAL_SECRET or request.headers.get("X-Internal-Secret") != _INTERNAL_SECRET:
         raise HTTPException(status_code=403, detail="Forbidden")
-    existing = get_user_by_email(payload.email)
-    if not existing and not is_whitelisted(payload.email):
-        raise HTTPException(status_code=403, detail="You're not on the beta list")
     user_id, username = get_or_create_user_by_email(payload.email)
     token = _create_jwt(user_id, payload.email, username)
     return {"token": token, "user_id": user_id}
@@ -1542,9 +1537,6 @@ def google_auth(payload: GoogleAuthPayload):
     email = claims.get("email")
     if not email or not claims.get("email_verified"):
         raise HTTPException(status_code=401, detail="Google email not verified")
-    existing = get_user_by_email(email)
-    if not existing and not is_whitelisted(email):
-        raise HTTPException(status_code=403, detail="You're not on the beta list")
     user_id, username = get_or_create_user_by_email(email)
     token = _create_jwt(user_id, email, username)
     return {"token": token, "user_id": user_id}
@@ -1576,10 +1568,6 @@ def apple_auth(payload: AppleAuthPayload):
     email = claims.get("email")
     if email and str(claims.get("email_verified", "true")).lower() != "true":
         raise HTTPException(status_code=401, detail="Apple email not verified")
-
-    existing = get_user_by_apple_sub(apple_sub) or (get_user_by_email(email) if email else None)
-    if not existing and not (email and is_whitelisted(email)):
-        raise HTTPException(status_code=403, detail="You're not on the beta list")
 
     try:
         user_id, username = get_or_create_user_by_apple(apple_sub, email, payload.full_name)
