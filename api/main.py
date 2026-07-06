@@ -230,6 +230,29 @@ def _restore_state_from_volume(user_id: int, username: str) -> bool:
     return True
 
 
+def _load_prior_ai_content(user_id: int) -> dict | None:
+    """Best-effort read of this user's last-generated AI content (taste summary,
+    director picks, blind spots) from the volume-persisted state, so a rebuild
+    with no new ratings can reuse it instead of re-calling Claude. Returns None
+    if there's nothing on record yet."""
+    state_file = _STATE_DIR / f"{user_id}.json"
+    if not state_file.exists():
+        return None
+    try:
+        payload = json.loads(state_file.read_text())
+    except Exception:
+        return None
+    if not payload.get("ai_summary") and not payload.get("director_suggestions") and not payload.get("blind_spot_suggestions"):
+        return None
+    return {
+        "ai_summary": payload.get("ai_summary"),
+        "director_suggestions": payload.get("director_suggestions") or [],
+        "director_pool_min": payload.get("director_pool_min") or 0.0,
+        "director_pool_max": payload.get("director_pool_max") or 0.0,
+        "blind_spot_suggestions": payload.get("blind_spot_suggestions") or [],
+    }
+
+
 def _above_floor(movie: dict, quality_floor: float) -> bool:
     va = movie.get("vote_average") or 0
     return va == 0 or va >= quality_floor  # pass through if no votes yet
@@ -249,8 +272,13 @@ def _available_at_home(movie: dict) -> bool:
     return len(get_watch_providers(movie["id"])) > 0
 
 
-def _rebuild_state(user_id: int, username: str) -> None:
-    """Rebuild profile and ranking from whatever is currently in the DB. No sync."""
+def _rebuild_state(user_id: int, username: str, skip_ai: bool = False) -> None:
+    """Rebuild profile and ranking from whatever is currently in the DB. No sync.
+
+    skip_ai reuses the user's last-generated taste summary/director picks/blind
+    spots instead of calling Claude again, for rebuilds triggered by a sync that
+    collected no new ratings for this user. Falls back to generating fresh
+    content if nothing was previously generated."""
     t0 = time.time()
     print(f"[rebuild_state] starting for user {user_id}", flush=True)
     resolve_recommendation_outcomes(user_id)
@@ -336,20 +364,34 @@ def _rebuild_state(user_id: int, username: str) -> None:
 
     summary = taste_summary(profile_vec, keyword_vocab, user_subgenre_axes)
 
-    t1 = time.time()
-    full_catalog = get_all_movies_with_vectors()
-    director_suggestions, director_pool_min, director_pool_max = _build_director_suggestions(
-        rated_movies, full_catalog, profile_vec, keyword_vocab, affinity, user_subgenre_axes, clusters,
-        seen_ids, watchlist_ids, quality_floor, summary,
-    )
-    print(f"[rebuild_state] director suggestions built in {time.time()-t1:.1f}s ({len(director_suggestions)} found)", flush=True)
+    prior_ai = _load_prior_ai_content(user_id) if skip_ai else None
+    if prior_ai is not None:
+        ai_summary = prior_ai["ai_summary"]
+        director_suggestions = prior_ai["director_suggestions"]
+        director_pool_min = prior_ai["director_pool_min"]
+        director_pool_max = prior_ai["director_pool_max"]
+        blind_spot_suggestions = prior_ai["blind_spot_suggestions"]
+        print(f"[rebuild_state] reused prior AI content for user {user_id} (no new ratings)", flush=True)
+    else:
+        t1 = time.time()
+        full_catalog = get_all_movies_with_vectors()
+        director_suggestions, director_pool_min, director_pool_max = _build_director_suggestions(
+            rated_movies, full_catalog, profile_vec, keyword_vocab, affinity, user_subgenre_axes, clusters,
+            seen_ids, watchlist_ids, quality_floor, summary,
+        )
+        print(f"[rebuild_state] director suggestions built in {time.time()-t1:.1f}s ({len(director_suggestions)} found)", flush=True)
 
-    t1 = time.time()
-    blind_spot_suggestions = _build_blind_spot_suggestions(
-        rated_movies, ratings, full_catalog, profile_vec, keyword_vocab, affinity, user_subgenre_axes, clusters,
-        seen_ids, watchlist_ids, quality_floor, summary,
-    )
-    print(f"[rebuild_state] blind spot suggestions built in {time.time()-t1:.1f}s ({len(blind_spot_suggestions)} found)", flush=True)
+        t1 = time.time()
+        blind_spot_suggestions = _build_blind_spot_suggestions(
+            rated_movies, ratings, full_catalog, profile_vec, keyword_vocab, affinity, user_subgenre_axes, clusters,
+            seen_ids, watchlist_ids, quality_floor, summary,
+        )
+        print(f"[rebuild_state] blind spot suggestions built in {time.time()-t1:.1f}s ({len(blind_spot_suggestions)} found)", flush=True)
+
+        ai_summary = generate_ai_summary(
+            profile_vec, keyword_vocab, user_subgenre_axes, affinity, rated_movies, ratings,
+            critic["alignment"], critic["neutral"],
+        )
 
     _user_states[user_id] = {
         "user_id": user_id,
@@ -368,7 +410,7 @@ def _rebuild_state(user_id: int, username: str) -> None:
         "critic_alignment": critic["alignment"],
         "neutral": critic["neutral"],
         "summary": summary,
-        "ai_summary": generate_ai_summary(profile_vec, keyword_vocab, user_subgenre_axes, affinity, rated_movies, ratings, critic["alignment"], critic["neutral"]),
+        "ai_summary": ai_summary,
         "user_subgenre_axes": user_subgenre_axes,
         "director_suggestions": director_suggestions,
         "director_pool_min": director_pool_min,
@@ -2781,10 +2823,23 @@ def admin_rebuild_user(user_id: int, background_tasks: BackgroundTasks, _admin: 
     return {"status": "rebuilding", "user_id": user_id}
 
 
+class RebuildAllPayload(BaseModel):
+    # user_ids that picked up new ratings during the sync that triggered this
+    # rebuild. When provided, users NOT in this list skip AI regeneration
+    # (taste summary, director picks, blind spots) and reuse their prior
+    # values — there's no new data to justify a fresh Claude call. Omitted
+    # entirely (manual admin trigger) means regenerate AI content for everyone.
+    users_with_new_ratings: list[int] | None = None
+
+
 @app.post("/api/admin/rebuild-all")
-def admin_rebuild_all(_auth: dict = Depends(get_admin_or_internal)):
+def admin_rebuild_all(payload: RebuildAllPayload | None = None, _auth: dict = Depends(get_admin_or_internal)):
     """Rebuild full state for all users sequentially, streaming NDJSON progress lines."""
     import json as _json
+
+    new_ratings_set = (
+        set(payload.users_with_new_ratings) if payload and payload.users_with_new_ratings is not None else None
+    )
 
     def _stream():
         users = get_all_users()
@@ -2795,10 +2850,11 @@ def admin_rebuild_all(_auth: dict = Depends(get_admin_or_internal)):
         for user in users:
             uid = user["id"]
             uname = user.get("letterboxd_username") or ""
+            skip_ai = new_ratings_set is not None and uid not in new_ratings_set
             t1 = time.time()
             try:
                 _user_states.pop(uid, None)
-                _rebuild_state(uid, uname)
+                _rebuild_state(uid, uname, skip_ai=skip_ai)
                 elapsed = round(time.time() - t1, 1)
                 succeeded += 1
                 yield _json.dumps({"user_id": uid, "username": uname, "status": "done", "elapsed": elapsed}) + "\n"
