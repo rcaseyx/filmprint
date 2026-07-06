@@ -767,8 +767,14 @@ async def get_current_user(request: Request) -> dict:
     payload = _decode_jwt(auth[7:])
     if not payload:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+    user_id = int(payload["sub"])
+    # A deleted account's token still decodes fine (JWTs are self-contained and
+    # long-lived — 60 days), so without this the client keeps thinking it's
+    # logged in and every write downstream fails on a missing foreign key.
+    if not get_user_by_id(user_id):
+        raise HTTPException(status_code=401, detail="Account no longer exists")
     return {
-        "user_id": int(payload["sub"]),
+        "user_id": user_id,
         "username": payload.get("username", ""),
         "email": payload.get("email", ""),
     }
