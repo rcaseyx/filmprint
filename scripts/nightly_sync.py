@@ -9,6 +9,7 @@ Sleep between users scales to spread the job across ~30 minutes (min 2s),
 keeping Letterboxd request rate reasonable regardless of user count.
 """
 
+import json
 import logging
 import os
 import sys
@@ -22,7 +23,7 @@ load_dotenv(override=True)
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from filmprint.db import init_db, close_db, get_users_with_letterboxd
+from filmprint.db import init_db, close_db, get_ratings_count, get_users_with_letterboxd
 from filmprint.sync import sync_rss, sync_scrape
 
 logging.basicConfig(
@@ -52,6 +53,7 @@ def main() -> None:
 
     succeeded = 0
     failed_users = []
+    users_with_new_ratings: set[int] = set()
 
     for i, user in enumerate(users, start=1):
         username = user["letterboxd_username"]
@@ -59,8 +61,11 @@ def main() -> None:
         label = f"[{i}/{total}]"
         log.info("%s Syncing %s (user_id=%d)", label, username, user_id)
 
-        if _sync_user(user_id, username, label):
+        ok, new_ratings = _sync_user(user_id, username, label)
+        if ok:
             succeeded += 1
+            if new_ratings > 0:
+                users_with_new_ratings.add(user_id)
         else:
             failed_users.append(user)
 
@@ -76,8 +81,11 @@ def main() -> None:
             label = f"[retry {i}/{len(failed_users)}]"
             log.info("%s Syncing %s (user_id=%d)", label, username, user_id)
 
-            if _sync_user(user_id, username, label):
+            ok, new_ratings = _sync_user(user_id, username, label)
+            if ok:
                 succeeded += 1
+                if new_ratings > 0:
+                    users_with_new_ratings.add(user_id)
             else:
                 still_failed.append(user)
         failed_users = still_failed
@@ -89,36 +97,44 @@ def main() -> None:
         total,
     )
 
-    _rebuild_all_profiles()
+    log.info("%d user(s) picked up new ratings tonight", len(users_with_new_ratings))
+    _rebuild_all_profiles(users_with_new_ratings)
 
     close_db()
     if succeeded == 0:
         sys.exit(1)
 
 
-def _sync_user(user_id: int, username: str, label: str) -> bool:
+def _sync_user(user_id: int, username: str, label: str) -> tuple[bool, int]:
+    """Returns (success, new_ratings_count). new_ratings_count is a DB row-count
+    delta, not the RSS feed's own count, since the RSS feed re-lists recent
+    ratings on every sync regardless of whether they're already known."""
+    before = get_ratings_count(user_id)
     try:
         rss_ratings, rss_watchlist = sync_rss(user_id, username)
         log.info("%s RSS: %s — %d ratings, %d watchlist", label, username, rss_ratings, rss_watchlist)
         sync_scrape(user_id, username)
         log.info("%s Done: %s", label, username)
-        return True
+        new_ratings = get_ratings_count(user_id) - before
+        return True, new_ratings
     except Exception:
         log.exception("%s Failed to sync %s", label, username)
-        return False
+        return False, 0
 
 
-def _rebuild_all_profiles() -> None:
+def _rebuild_all_profiles(users_with_new_ratings: set[int]) -> None:
     backend_url = os.getenv("BACKEND_URL", "").rstrip("/")
     internal_secret = os.getenv("INTERNAL_SECRET", "")
     if not backend_url or not internal_secret:
         log.warning("BACKEND_URL or INTERNAL_SECRET not set — skipping bulk profile rebuild")
         return
     log.info("Starting bulk profile rebuild…")
+    body = json.dumps({"users_with_new_ratings": sorted(users_with_new_ratings)}).encode()
     req = urllib.request.Request(
         f"{backend_url}/api/admin/rebuild-all",
         method="POST",
-        headers={"X-Internal-Secret": internal_secret},
+        data=body,
+        headers={"X-Internal-Secret": internal_secret, "Content-Type": "application/json"},
     )
     try:
         with urllib.request.urlopen(req, timeout=7200) as resp:
