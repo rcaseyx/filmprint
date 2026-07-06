@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { useAuth } from '@/lib/auth'
 import { apiFetch } from '@/lib/api'
 import { Colors, Spacing } from '@/constants/theme'
+import { OAuthButtons } from '@/components/OAuthButtons'
 
 const passwordValid = (p: string) => p.length >= 8 && /\d/.test(p)
 
@@ -123,6 +124,14 @@ export default function SignupScreen() {
             </TouchableOpacity>
           </View>
 
+          <View style={s.divider}>
+            <View style={s.dividerLine} />
+            <Text style={s.dividerText}>or</Text>
+            <View style={s.dividerLine} />
+          </View>
+
+          <OAuthButtons onError={setError} />
+
           <View style={s.footer}>
             <Text style={s.footerText}>Already have an account? </Text>
             <Link href="/login" asChild>
@@ -166,6 +175,9 @@ const s = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.5 },
   buttonText: { fontSize: 14, fontWeight: '600', color: Colors.background },
+  divider: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  dividerLine: { flex: 1, height: 1, backgroundColor: Colors.border },
+  dividerText: { fontSize: 12, color: Colors.textMuted },
   footer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
   footerText: { fontSize: 12, color: Colors.textMuted },
   footerLink: { fontSize: 12, color: Colors.textSecondary },

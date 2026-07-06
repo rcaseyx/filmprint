@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import {
   View,
   Text,
@@ -12,14 +12,12 @@ import {
 } from 'react-native'
 import { Link, useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import * as Google from 'expo-auth-session/providers/google'
 import { useAuth } from '@/lib/auth'
 import { apiFetch } from '@/lib/api'
 import { Colors, Spacing } from '@/constants/theme'
 import { PrintLogo } from '@/components/PrintLogo'
 import { FilmprintText } from '@/components/FilmprintText'
-
-const IOS_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID
+import { OAuthButtons } from '@/components/OAuthButtons'
 
 export default function LoginScreen() {
   const { login } = useAuth()
@@ -28,35 +26,6 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [googleLoading, setGoogleLoading] = useState(false)
-
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    iosClientId: IOS_CLIENT_ID,
-  })
-
-  useEffect(() => {
-    if (response?.type !== 'success') return
-    const idToken = response.params.id_token
-    if (!idToken) {
-      setError('Google sign-in failed — no token returned')
-      return
-    }
-    setGoogleLoading(true)
-    apiFetch('/api/auth/google', {
-      method: 'POST',
-      body: JSON.stringify({ id_token: idToken }),
-    })
-      .then(async r => {
-        if (!r.ok) {
-          const d = await r.json().catch(() => ({}))
-          throw new Error(d.detail ?? 'Google sign-in failed')
-        }
-        return r.json()
-      })
-      .then(data => login(data.token).then(() => router.replace('/picks')))
-      .catch(e => setError(e.message))
-      .finally(() => setGoogleLoading(false))
-  }, [response])
 
   const handleSubmit = async () => {
     if (!email.trim() || !password) return
@@ -141,21 +110,7 @@ export default function LoginScreen() {
             <View style={s.dividerLine} />
           </View>
 
-          <TouchableOpacity
-            style={[s.googleButton, googleLoading && s.buttonDisabled]}
-            onPress={() => { setError(''); promptAsync() }}
-            disabled={!request || googleLoading}
-            activeOpacity={0.8}
-          >
-            {googleLoading ? (
-              <ActivityIndicator size="small" color="#1a1a1a" />
-            ) : (
-              <>
-                <GoogleIcon />
-                <Text style={s.googleButtonText}>Continue with Google</Text>
-              </>
-            )}
-          </TouchableOpacity>
+          <OAuthButtons onError={setError} />
 
           <View style={s.footer}>
             <Text style={s.footerText}>Don't have an account? </Text>
@@ -168,12 +123,6 @@ export default function LoginScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
-  )
-}
-
-function GoogleIcon() {
-  return (
-    <Text style={s.googleIcon}>G</Text>
   )
 }
 
@@ -209,17 +158,6 @@ const s = StyleSheet.create({
   divider: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   dividerLine: { flex: 1, height: 1, backgroundColor: Colors.border },
   dividerText: { fontSize: 12, color: Colors.textMuted },
-  googleButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    backgroundColor: '#f5f5f5',
-    borderRadius: 10,
-    paddingVertical: 13,
-  },
-  googleButtonText: { fontSize: 14, fontWeight: '600', color: '#1a1a1a' },
-  googleIcon: { fontSize: 15, fontWeight: '700', color: '#4285F4' },
   footer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
   footerText: { fontSize: 12, color: Colors.textMuted },
   footerLink: { fontSize: 12, color: Colors.textSecondary },
