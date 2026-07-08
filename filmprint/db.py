@@ -201,6 +201,7 @@ def init_db(seed_data: dict | None = None) -> None:
         "ALTER TABLE movie_credits DROP COLUMN IF EXISTS department",
         "ALTER TABLE movie_credits DROP CONSTRAINT IF EXISTS movie_credits_movie_id_person_id_role_key",
         "ALTER TABLE movie_credits ADD CONSTRAINT movie_credits_movie_id_person_id_role_key UNIQUE (movie_id, person_id, role)",
+        "ALTER TABLE movie_credits ADD COLUMN IF NOT EXISTS profile_path TEXT",
         """CREATE TABLE IF NOT EXISTS daily_puzzles (
             id              BIGSERIAL PRIMARY KEY,
             puzzle_date     DATE UNIQUE NOT NULL,
@@ -210,6 +211,13 @@ def init_db(seed_data: dict | None = None) -> None:
             degree_count    SMALLINT NOT NULL,
             generated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )""",
+        # Pivoted from movie anchors to actor anchors -- daily_puzzles now
+        # anchors on two people instead of two movies. person_id isn't a
+        # primary key anywhere (same as movie_credits.person_id), so no FK.
+        "ALTER TABLE daily_puzzles DROP COLUMN IF EXISTS start_movie_id",
+        "ALTER TABLE daily_puzzles DROP COLUMN IF EXISTS end_movie_id",
+        "ALTER TABLE daily_puzzles ADD COLUMN IF NOT EXISTS start_person_id BIGINT",
+        "ALTER TABLE daily_puzzles ADD COLUMN IF NOT EXISTS end_person_id BIGINT",
         """CREATE TABLE IF NOT EXISTS user_puzzle_attempts (
             id              BIGSERIAL PRIMARY KEY,
             user_id         BIGINT NOT NULL REFERENCES users(id),
@@ -640,9 +648,9 @@ def get_movie(tmdb_id: int) -> dict | None:
 
 
 def _credit_rows_from_tmdb(movie_id: int, tmdb_data: dict) -> list[tuple]:
-    """Flatten a TMDB credits blob's cast into movie_credits rows (movie_id, person_id, person_name, role, billing_order)."""
+    """Flatten a TMDB credits blob's cast into movie_credits rows (movie_id, person_id, person_name, role, billing_order, profile_path)."""
     return [
-        (movie_id, p["id"], p["name"], p.get("character"), p.get("order"))
+        (movie_id, p["id"], p["name"], p.get("character"), p.get("order"), p.get("profile_path"))
         for p in tmdb_data.get("credits", {}).get("cast", [])
     ]
 
@@ -652,7 +660,7 @@ def _upsert_movie_credits(cur, movie_id: int, tmdb_data: dict) -> None:
     rows = _credit_rows_from_tmdb(movie_id, tmdb_data)
     if rows:
         psycopg2.extras.execute_values(cur, """
-            INSERT INTO movie_credits (movie_id, person_id, person_name, role, billing_order)
+            INSERT INTO movie_credits (movie_id, person_id, person_name, role, billing_order, profile_path)
             VALUES %s
             ON CONFLICT (movie_id, person_id, role) DO NOTHING
         """, rows)
@@ -959,33 +967,46 @@ def get_all_movies_with_vectors() -> list[dict]:
 
 # --- six degrees ---
 
-def get_recent_anchor_movie_ids(cooldown_days: int) -> set[int]:
-    """Movie IDs used as a start/end anchor within the last cooldown_days, to avoid repeats."""
+def get_recent_anchor_person_ids(cooldown_days: int) -> set[int]:
+    """Person IDs used as a start/end anchor within the last cooldown_days, to avoid repeats."""
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
-            """SELECT start_movie_id, end_movie_id FROM daily_puzzles
+            """SELECT start_person_id, end_person_id FROM daily_puzzles
                WHERE puzzle_date >= CURRENT_DATE - %s::int""",
             (cooldown_days,),
         )
         ids: set[int] = set()
         for row in cur.fetchall():
-            ids.add(row["start_movie_id"])
-            ids.add(row["end_movie_id"])
+            ids.add(row["start_person_id"])
+            ids.add(row["end_person_id"])
         return ids
 
 
 def insert_daily_puzzle(
-    puzzle_date, start_movie_id: int, end_movie_id: int, solution_path: list[dict], degree_count: int
+    puzzle_date, start_person_id: int, end_person_id: int, solution_path: list[dict], degree_count: int
 ) -> int:
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO daily_puzzles (puzzle_date, start_movie_id, end_movie_id, solution_path, degree_count)
+            INSERT INTO daily_puzzles (puzzle_date, start_person_id, end_person_id, solution_path, degree_count)
             VALUES (%s, %s, %s, %s, %s)
             RETURNING id
-        """, (puzzle_date, start_movie_id, end_movie_id, json.dumps(solution_path), degree_count))
+        """, (puzzle_date, start_person_id, end_person_id, json.dumps(solution_path), degree_count))
         return cur.fetchone()["id"]
+
+
+def get_person_summary(person_id: int) -> dict | None:
+    """Representative name/photo for person_id -- there's no dedicated people table,
+    so pull it from any one of their movie_credits rows (profile_path is stable per person)."""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT person_id, person_name, profile_path FROM movie_credits WHERE person_id = %s LIMIT 1",
+            (person_id,),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
 
 
 def get_daily_puzzle(puzzle_date) -> dict | None:
