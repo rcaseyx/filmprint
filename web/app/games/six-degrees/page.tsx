@@ -6,9 +6,22 @@ import Link from "next/link"
 import { useSession } from "next-auth/react"
 import { authHeader } from "@/lib/api"
 import { useDebounce } from "@/lib/useDebounce"
+import { Avatar } from "@/components/Avatar"
 
 const API = process.env.NEXT_PUBLIC_API_URL
-const TMDB_IMG = "https://image.tmdb.org/t/p/w342"
+const TMDB_IMG = "https://image.tmdb.org/t/p/w185"
+
+interface PersonSummary {
+  id: number
+  name: string
+  profile_path: string | null
+}
+
+interface PersonResult {
+  person_id: number
+  person_name: string
+  profile_path: string | null
+}
 
 interface MovieSummary {
   id: number
@@ -17,20 +30,15 @@ interface MovieSummary {
   poster_path: string | null
 }
 
-interface PersonResult {
-  person_id: number
-  person_name: string
-}
-
 interface Hop {
   movie: MovieSummary
-  person_name: string
+  person: PersonResult
 }
 
 interface TodayResponse {
   puzzle_id: number
-  start_movie: MovieSummary
-  end_movie: MovieSummary
+  start_person: PersonSummary
+  end_person: PersonSummary
   user_attempt: { is_solved: boolean; degree_count: number | null; solve_time_ms: number | null } | null
 }
 
@@ -40,26 +48,27 @@ export default function SixDegreesPage() {
   const [notFound, setNotFound] = useState(false)
   const [puzzle, setPuzzle] = useState<TodayResponse | null>(null)
 
-  const [currentMovie, setCurrentMovie] = useState<MovieSummary | null>(null)
-  const [visitedIds, setVisitedIds] = useState<number[]>([])
+  const [currentPerson, setCurrentPerson] = useState<PersonResult | null>(null)
+  const [visitedMovieIds, setVisitedMovieIds] = useState<number[]>([])
+  const [visitedPersonIds, setVisitedPersonIds] = useState<number[]>([])
   const [chain, setChain] = useState<Hop[]>([])
-  const [guessPath, setGuessPath] = useState<{ movie_id: number; person_id: number; next_movie_id: number }[]>([])
+  const [guessPath, setGuessPath] = useState<{ person_id: number; movie_id: number; next_person_id: number }[]>([])
   const startTimeRef = useRef<number>(0)
 
-  const [actorQuery, setActorQuery] = useState("")
-  const [actorResults, setActorResults] = useState<PersonResult[]>([])
-  const [selectedActor, setSelectedActor] = useState<PersonResult | null>(null)
-  const [actorError, setActorError] = useState<string | null>(null)
   const [movieQuery, setMovieQuery] = useState("")
   const [movieResults, setMovieResults] = useState<MovieSummary[]>([])
+  const [selectedMovie, setSelectedMovie] = useState<MovieSummary | null>(null)
   const [movieError, setMovieError] = useState<string | null>(null)
+  const [actorQuery, setActorQuery] = useState("")
+  const [actorResults, setActorResults] = useState<PersonResult[]>([])
+  const [actorError, setActorError] = useState<string | null>(null)
 
   const [solved, setSolved] = useState<{ degree_count: number } | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [verifying, setVerifying] = useState(false)
 
-  const debouncedActorQuery = useDebounce(actorQuery, 300)
   const debouncedMovieQuery = useDebounce(movieQuery, 300)
+  const debouncedActorQuery = useDebounce(actorQuery, 300)
 
   useEffect(() => {
     if (status !== "authenticated") return
@@ -69,8 +78,12 @@ export default function SixDegreesPage() {
         const data: TodayResponse = await r.json()
         setPuzzle(data)
         if (!data.user_attempt?.is_solved) {
-          setCurrentMovie(data.start_movie)
-          setVisitedIds([data.start_movie.id])
+          setCurrentPerson({
+            person_id: data.start_person.id,
+            person_name: data.start_person.name,
+            profile_path: data.start_person.profile_path,
+          })
+          setVisitedPersonIds([data.start_person.id])
           startTimeRef.current = Date.now()
         }
       })
@@ -79,40 +92,18 @@ export default function SixDegreesPage() {
   }, [status, session])
 
   // Clear immediately on any state that invalidates in-flight/stale results —
-  // debouncedActorQuery lags the visible input by up to 300ms, so relying on
+  // debouncedMovieQuery lags the visible input by up to 300ms, so relying on
   // it alone to gate "is there a query" briefly re-uses stale text against a
-  // newly-current movie (e.g. searching the old actor's name against the new movie's cast).
-  useEffect(() => {
-    setActorResults([])
-    setActorError(null)
-  }, [currentMovie?.id, selectedActor, actorQuery])
-
-  useEffect(() => {
-    // Guard on both the raw and debounced query: the debounced value lags
-    // the visible input by up to 300ms, so right after currentMovie changes
-    // (actorQuery already reset to '') the debounced value can still be a
-    // leftover non-empty string — without the raw check this fires a real,
-    // non-cancelled fetch that re-populates results for a query no longer shown.
-    if (selectedActor || actorQuery.trim().length < 2 || debouncedActorQuery.trim().length < 2) return
-    let cancelled = false
-    fetch(`${API}/api/games/six-degrees/search-people?q=${encodeURIComponent(debouncedActorQuery)}`, {
-      headers: authHeader(session),
-    })
-      .then((r) => r.json())
-      .then((data) => { if (!cancelled) setActorResults(data.results ?? []) })
-      .catch(() => { if (!cancelled) setActorResults([]) })
-    return () => { cancelled = true }
-  }, [debouncedActorQuery, selectedActor, actorQuery, session])
-
+  // newly-current actor (e.g. searching the old movie title against the new actor).
   useEffect(() => {
     setMovieResults([])
     setMovieError(null)
-  }, [selectedActor, movieQuery])
+  }, [currentPerson?.person_id, selectedMovie, movieQuery])
 
   useEffect(() => {
-    if (!selectedActor || movieQuery.trim().length < 2 || debouncedMovieQuery.trim().length < 2) return
+    if (!currentPerson || selectedMovie || movieQuery.trim().length < 2 || debouncedMovieQuery.trim().length < 2) return
     let cancelled = false
-    const exclude = visitedIds.join(",")
+    const exclude = visitedMovieIds.join(",")
     fetch(
       `${API}/api/games/six-degrees/search-movies?q=${encodeURIComponent(debouncedMovieQuery)}&exclude=${exclude}`,
       { headers: authHeader(session) }
@@ -121,34 +112,38 @@ export default function SixDegreesPage() {
       .then((data) => { if (!cancelled) setMovieResults(data.results ?? []) })
       .catch(() => { if (!cancelled) setMovieResults([]) })
     return () => { cancelled = true }
-  }, [debouncedMovieQuery, selectedActor, visitedIds, movieQuery, session])
+  }, [debouncedMovieQuery, currentPerson, selectedMovie, movieQuery, visitedMovieIds, session])
 
-  async function selectActor(a: PersonResult) {
-    if (!currentMovie || verifying) return
-    setVerifying(true)
-    try {
-      const res = await fetch(
-        `${API}/api/games/six-degrees/verify-actor?movie_id=${currentMovie.id}&person_id=${a.person_id}`,
-        { headers: authHeader(session) }
-      )
-      const data = await res.json()
-      if (data.valid) {
-        setSelectedActor(a)
-      } else {
-        setActorError(`${a.person_name} wasn't in this movie — try again`)
-      }
-    } finally {
-      setVerifying(false)
-    }
-  }
+  useEffect(() => {
+    setActorResults([])
+    setActorError(null)
+  }, [selectedMovie, actorQuery])
 
-  async function pickMovie(next: MovieSummary) {
-    if (!currentMovie || !selectedActor || !puzzle || verifying) return
+  useEffect(() => {
+    if (!selectedMovie || actorQuery.trim().length < 2 || debouncedActorQuery.trim().length < 2) return
+    let cancelled = false
+    const exclude = visitedPersonIds.join(",")
+    fetch(`${API}/api/games/six-degrees/search-people?q=${encodeURIComponent(debouncedActorQuery)}&exclude=${exclude}`, {
+      headers: authHeader(session),
+    })
+      .then((r) => r.json())
+      .then((data) => { if (!cancelled) setActorResults(data.results ?? []) })
+      .catch(() => { if (!cancelled) setActorResults([]) })
+    return () => { cancelled = true }
+  }, [debouncedActorQuery, selectedMovie, actorQuery, visitedPersonIds, session])
+
+  // Verifies next connects to currentPerson via movie, and if so records the hop
+  // and advances (submitting the attempt if next is the target). Returns whether
+  // it succeeded. silent suppresses the error message -- used for the "does this
+  // movie already reach the target?" speculative check in selectMovie, where a
+  // false result just means "keep going," not a real wrong guess.
+  async function tryAdvance(movie: MovieSummary, next: PersonResult, silent = false): Promise<boolean> {
+    if (!currentPerson || !puzzle || verifying) return false
     setVerifying(true)
     let valid = false
     try {
       const res = await fetch(
-        `${API}/api/games/six-degrees/verify-connection?movie_id=${currentMovie.id}&person_id=${selectedActor.person_id}&next_movie_id=${next.id}`,
+        `${API}/api/games/six-degrees/verify-shared-movie?movie_id=${movie.id}&person_id=${currentPerson.person_id}&next_person_id=${next.person_id}`,
         { headers: authHeader(session) }
       )
       valid = (await res.json()).valid
@@ -156,24 +151,25 @@ export default function SixDegreesPage() {
       setVerifying(false)
     }
     if (!valid) {
-      setMovieError(`${selectedActor.person_name} wasn't in ${next.title} — try again`)
-      return
+      if (!silent) setActorError(`${next.person_name} wasn't in ${movie.title} — try again`)
+      return false
     }
 
-    const hop = { movie_id: currentMovie.id, person_id: selectedActor.person_id, next_movie_id: next.id }
+    const hop = { person_id: currentPerson.person_id, movie_id: movie.id, next_person_id: next.person_id }
     const newGuessPath = [...guessPath, hop]
-    const newChain = [...chain, { movie: next, person_name: selectedActor.person_name }]
+    const newChain = [...chain, { movie, person: next }]
     setGuessPath(newGuessPath)
     setChain(newChain)
-    setVisitedIds((prev) => [...prev, next.id])
-    setCurrentMovie(next)
-    setSelectedActor(null)
-    setActorQuery("")
+    setVisitedMovieIds((prev) => [...prev, movie.id])
+    setVisitedPersonIds((prev) => [...prev, next.person_id])
+    setCurrentPerson(next)
+    setSelectedMovie(null)
     setMovieQuery("")
-    setActorResults([])
+    setActorQuery("")
     setMovieResults([])
+    setActorResults([])
 
-    if (next.id === puzzle.end_movie.id) {
+    if (next.person_id === puzzle.end_person.id) {
       setSubmitting(true)
       try {
         const res = await fetch(`${API}/api/games/six-degrees/attempt`, {
@@ -193,6 +189,43 @@ export default function SixDegreesPage() {
         setSubmitting(false)
       }
     }
+    return true
+  }
+
+  async function selectMovie(m: MovieSummary) {
+    if (!currentPerson || !puzzle || verifying) return
+    setVerifying(true)
+    let actorValid = false
+    try {
+      const res = await fetch(
+        `${API}/api/games/six-degrees/verify-actor?movie_id=${m.id}&person_id=${currentPerson.person_id}`,
+        { headers: authHeader(session) }
+      )
+      actorValid = (await res.json()).valid
+    } finally {
+      setVerifying(false)
+    }
+    if (!actorValid) {
+      setMovieError(`${currentPerson.person_name} wasn't in ${m.title} — try again`)
+      return
+    }
+
+    // If the target actor was also in this movie, finish immediately rather
+    // than making the player type out the name they're already trying to reach.
+    const target: PersonResult = {
+      person_id: puzzle.end_person.id,
+      person_name: puzzle.end_person.name,
+      profile_path: puzzle.end_person.profile_path,
+    }
+    const reachedTarget = await tryAdvance(m, target, true)
+    if (reachedTarget) return
+
+    setSelectedMovie(m)
+  }
+
+  async function pickActor(next: PersonResult) {
+    if (!selectedMovie) return
+    await tryAdvance(selectedMovie, next)
   }
 
   if (loading || status === "loading") {
@@ -218,7 +251,7 @@ export default function SixDegreesPage() {
         <div className="mt-8 text-center">
           <h1 className="text-xl font-semibold text-neutral-100">Solved!</h1>
           <p className="text-neutral-400 mt-2">
-            {puzzle.start_movie.title} &rarr; {puzzle.end_movie.title} in {degreeCount} degree{degreeCount === 1 ? "" : "s"}
+            {puzzle.start_person.name} &rarr; {puzzle.end_person.name} in {degreeCount} degree{degreeCount === 1 ? "" : "s"}
           </p>
         </div>
       </div>
@@ -230,59 +263,28 @@ export default function SixDegreesPage() {
       <BackLink />
 
       <div className="flex items-center justify-center gap-6 mt-6">
-        <MoviePoster movie={puzzle.start_movie} />
+        <Headshot person={puzzle.start_person} />
         <span className="text-2xl text-neutral-600">&rarr;</span>
-        <MoviePoster movie={puzzle.end_movie} />
+        <Headshot person={puzzle.end_person} />
       </div>
 
       {chain.length > 0 && (
         <div className="mt-6 rounded-xl border border-neutral-800 bg-neutral-900 p-4">
           <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Your chain</div>
           <p className="text-sm text-neutral-300 mt-2 leading-relaxed">
-            {puzzle.start_movie.title}
+            {puzzle.start_person.name}
             {chain.map((h, i) => (
-              <span key={i}>{"  →  "}{h.person_name}{"  →  "}{h.movie.title}</span>
+              <span key={i}>{"  →  "}{h.movie.title}{"  →  "}{h.person.person_name}</span>
             ))}
           </p>
         </div>
       )}
 
-      <p className="text-neutral-200 font-medium mt-6">Currently at: {currentMovie?.title}</p>
+      <p className="text-neutral-200 font-medium mt-6">Currently at: {currentPerson?.person_name}</p>
 
-      {!selectedActor ? (
+      {!selectedMovie ? (
         <div className="mt-3">
-          <label className="text-sm text-neutral-500">Name an actor in this movie</label>
-          <input
-            className="mt-1 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-neutral-600"
-            placeholder="Actor name"
-            value={actorQuery}
-            onChange={(e) => setActorQuery(e.target.value)}
-          />
-          {actorError && <p className="text-sm text-red-400 mt-1">{actorError}</p>}
-          <div className="mt-1">
-            {actorResults.map((a) => (
-              <button
-                key={a.person_id}
-                onClick={() => selectActor(a)}
-                disabled={verifying}
-                className="block w-full text-left px-3 py-2 rounded-lg text-neutral-200 hover:bg-neutral-800 transition-colors disabled:opacity-50"
-              >
-                {a.person_name}
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <div className="mt-3">
-          <div className="flex items-center justify-between">
-            <label className="text-sm text-neutral-500">{selectedActor.person_name} was also in...</label>
-            <button
-              onClick={() => { setSelectedActor(null); setMovieQuery(""); setMovieResults([]) }}
-              className="text-sm text-brand hover:underline"
-            >
-              change
-            </button>
-          </div>
+          <label className="text-sm text-neutral-500">Name a movie they were in</label>
           <input
             className="mt-1 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-neutral-600"
             placeholder="Movie title"
@@ -294,11 +296,42 @@ export default function SixDegreesPage() {
             {movieResults.map((m) => (
               <button
                 key={m.id}
-                onClick={() => pickMovie(m)}
-                disabled={submitting || verifying}
+                onClick={() => selectMovie(m)}
+                disabled={verifying}
                 className="block w-full text-left px-3 py-2 rounded-lg text-neutral-200 hover:bg-neutral-800 transition-colors disabled:opacity-50"
               >
                 {m.title}{m.year ? ` (${m.year})` : ""}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="mt-3">
+          <div className="flex items-center justify-between">
+            <label className="text-sm text-neutral-500">Name another actor in {selectedMovie.title}</label>
+            <button
+              onClick={() => { setSelectedMovie(null); setActorQuery(""); setActorResults([]) }}
+              className="text-sm text-brand hover:underline"
+            >
+              change
+            </button>
+          </div>
+          <input
+            className="mt-1 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-neutral-600"
+            placeholder="Actor name"
+            value={actorQuery}
+            onChange={(e) => setActorQuery(e.target.value)}
+          />
+          {actorError && <p className="text-sm text-red-400 mt-1">{actorError}</p>}
+          <div className="mt-1">
+            {actorResults.map((a) => (
+              <button
+                key={a.person_id}
+                onClick={() => pickActor(a)}
+                disabled={submitting || verifying}
+                className="block w-full text-left px-3 py-2 rounded-lg text-neutral-200 hover:bg-neutral-800 transition-colors disabled:opacity-50"
+              >
+                {a.person_name}
               </button>
             ))}
           </div>
@@ -316,21 +349,23 @@ function BackLink() {
   )
 }
 
-function MoviePoster({ movie }: { movie: MovieSummary }) {
+function Headshot({ person }: { person: PersonSummary }) {
   return (
     <div className="flex flex-col items-center gap-2 w-32">
-      {movie.poster_path ? (
+      {person.profile_path ? (
         <Image
-          src={`${TMDB_IMG}${movie.poster_path}`}
-          alt={movie.title}
+          src={`${TMDB_IMG}${person.profile_path}`}
+          alt={person.name}
           width={110}
           height={165}
           className="rounded-lg object-cover bg-neutral-800"
         />
       ) : (
-        <div className="w-[110px] h-[165px] rounded-lg bg-neutral-800 border border-neutral-700" />
+        <div className="w-[110px] h-[165px] rounded-lg bg-neutral-800 border border-neutral-700 flex items-center justify-center">
+          <Avatar name={person.name} size={56} />
+        </div>
       )}
-      <p className="text-xs text-neutral-400 text-center">{movie.title}</p>
+      <p className="text-xs text-neutral-400 text-center">{person.name}</p>
     </div>
   )
 }
