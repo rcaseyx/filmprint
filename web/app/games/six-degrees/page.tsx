@@ -40,6 +40,7 @@ interface TodayResponse {
   puzzle_id?: number
   start_person: PersonSummary
   end_person: PersonSummary
+  optimal_degree_count?: number
   user_attempt?: { is_solved: boolean; degree_count: number | null; solve_time_ms: number | null } | null
 }
 
@@ -112,14 +113,22 @@ export default function SixDegreesPage() {
     loadPuzzle()
   }, [status, session, isPractice])
 
-  // Clear immediately on any state that invalidates in-flight/stale results —
-  // debouncedMovieQuery lags the visible input by up to 300ms, so relying on
-  // it alone to gate "is there a query" briefly re-uses stale text against a
-  // newly-current actor (e.g. searching the old movie title against the new actor).
+  // Context changes (a new current actor, or entering/leaving the movie step)
+  // fully invalidate whatever's currently displayed.
   useEffect(() => {
     setMovieResults([])
     setMovieError(null)
-  }, [currentPerson?.person_id, selectedMovie, movieQuery])
+  }, [currentPerson?.person_id, selectedMovie])
+
+  // Dismiss a stale "wasn't in that movie" error as soon as the user starts
+  // typing again, and clear results once below the search threshold -- but
+  // don't clear results on every keystroke otherwise. The debounced search
+  // below simply replaces movieResults when it resolves, so the list narrows
+  // as you type instead of blanking out and popping back in on each character.
+  useEffect(() => {
+    setMovieError(null)
+    if (movieQuery.trim().length < 2) setMovieResults([])
+  }, [movieQuery])
 
   useEffect(() => {
     if (!currentPerson || selectedMovie || movieQuery.trim().length < 2 || debouncedMovieQuery.trim().length < 2) return
@@ -138,7 +147,12 @@ export default function SixDegreesPage() {
   useEffect(() => {
     setActorResults([])
     setActorError(null)
-  }, [selectedMovie, actorQuery])
+  }, [selectedMovie])
+
+  useEffect(() => {
+    setActorError(null)
+    if (actorQuery.trim().length < 2) setActorResults([])
+  }, [actorQuery])
 
   useEffect(() => {
     if (!selectedMovie || actorQuery.trim().length < 2 || debouncedActorQuery.trim().length < 2) return
@@ -152,6 +166,13 @@ export default function SixDegreesPage() {
       .catch(() => { if (!cancelled) setActorResults([]) })
     return () => { cancelled = true }
   }, [debouncedActorQuery, selectedMovie, actorQuery, visitedPersonIds, session])
+
+  // Make sure the "Solved!" heading is what's visible, not wherever the page
+  // happened to be scrolled to from a long chain.
+  const justSolved = solved != null || puzzle?.user_attempt?.is_solved
+  useEffect(() => {
+    if (justSolved) window.scrollTo(0, 0)
+  }, [justSolved])
 
   // Verifies next connects to currentPerson via movie, and if so records the hop
   // and advances (submitting the attempt if next is the target). Returns whether
@@ -272,7 +293,7 @@ export default function SixDegreesPage() {
   if (notFound || !puzzle) {
     return (
       <div className="max-w-2xl mx-auto px-6 py-12">
-        <BackLink practice={isPractice} />
+        <BackLink />
         <p className="text-neutral-500 mt-6">No puzzle today — check back soon.</p>
       </div>
     )
@@ -284,12 +305,17 @@ export default function SixDegreesPage() {
   if (alreadySolved || solved) {
     return (
       <div className="max-w-2xl mx-auto px-6 py-12">
-        <BackLink practice={isPractice} />
+        <BackLink />
         <div className="mt-8 text-center">
           <h1 className="text-xl font-semibold text-neutral-100">Solved!</h1>
           <p className="text-neutral-400 mt-2">
             {degreeCount} degree{degreeCount === 1 ? "" : "s"}
           </p>
+          {puzzle.optimal_degree_count != null && (
+            <p className="text-neutral-500 text-sm mt-1">
+              Shortest possible path: {puzzle.optimal_degree_count} degree{puzzle.optimal_degree_count === 1 ? "" : "s"}
+            </p>
+          )}
         </div>
         {chain.length > 0 ? (
           <ChainTimeline startPerson={puzzle.start_person} chain={chain} />
@@ -314,11 +340,22 @@ export default function SixDegreesPage() {
 
   return (
     <div className="max-w-2xl mx-auto px-6 py-12">
-      <BackLink practice={isPractice} />
+      <BackLink />
 
       <div className="flex items-center justify-center gap-6 mt-6">
         <Headshot person={puzzle.start_person} />
-        <span className="text-2xl text-neutral-600">&rarr;</span>
+        <div className="flex flex-col items-center gap-6">
+          <span className="text-2xl text-neutral-600">&rarr;</span>
+          {isPractice && (
+            <button
+              onClick={loadPuzzle}
+              className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors whitespace-nowrap"
+              title="Get a different pair of anchors"
+            >
+              &#8635; New pair
+            </button>
+          )}
+        </div>
         <Headshot person={puzzle.end_person} />
       </div>
 
@@ -326,32 +363,13 @@ export default function SixDegreesPage() {
 
       <p className="text-neutral-200 font-medium mt-6">Currently at: {currentPerson?.person_name}</p>
 
-      {!selectedMovie ? (
-        <div className="mt-3">
-          <label className="text-sm text-neutral-500">Name a movie they were in</label>
-          <input
-            className="mt-1 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-neutral-600"
-            placeholder="Movie title"
-            value={movieQuery}
-            onChange={(e) => setMovieQuery(e.target.value)}
-          />
-          {movieError && <p className="text-sm text-red-400 mt-1">{movieError}</p>}
-          <div className="mt-1">
-            {movieResults.map((m) => (
-              <button
-                key={m.id}
-                onClick={() => selectMovie(m)}
-                disabled={verifying}
-                className="block w-full text-left px-3 py-2 rounded-lg text-neutral-200 hover:bg-neutral-800 transition-colors disabled:opacity-50"
-              >
-                {m.title}{m.year ? ` (${m.year})` : ""}
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <div className="mt-3">
-          <div className="flex items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-900 p-3">
+      {/* Selected-movie card only renders when relevant; the query input
+          below is a single persistent element shared by both steps (movie
+          search and actor search), so switching steps never unmounts it and
+          focus is never lost. */}
+      <div className="mt-3">
+        {selectedMovie && (
+          <div className="flex items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-900 p-3 mb-3">
             {selectedMovie.poster_path ? (
               <Image
                 src={`${TMDB_IMG.replace("w185", "w92")}${selectedMovie.poster_path}`}
@@ -376,45 +394,54 @@ export default function SixDegreesPage() {
               change
             </button>
           </div>
+        )}
 
-          <label className="text-sm text-neutral-500 mt-3 block">Name another actor in this movie</label>
-          <input
-            className="mt-1 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-neutral-600"
-            placeholder="Actor name"
-            value={actorQuery}
-            onChange={(e) => setActorQuery(e.target.value)}
-          />
-          {actorError && <p className="text-sm text-red-400 mt-1">{actorError}</p>}
-          <div className="mt-1">
-            {actorResults.map((a) => (
-              <button
-                key={a.person_id}
-                onClick={() => pickActor(a)}
-                disabled={submitting || verifying}
-                className="block w-full text-left px-3 py-2 rounded-lg text-neutral-200 hover:bg-neutral-800 transition-colors disabled:opacity-50"
-              >
-                {a.person_name}
-              </button>
-            ))}
-          </div>
+        <label className="text-sm text-neutral-500">
+          {selectedMovie ? "Name another actor in this movie" : "Name a movie they were in"}
+        </label>
+        <input
+          className="mt-1 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-neutral-600"
+          placeholder={selectedMovie ? "Actor name" : "Movie title"}
+          value={selectedMovie ? actorQuery : movieQuery}
+          onChange={(e) => (selectedMovie ? setActorQuery : setMovieQuery)(e.target.value)}
+        />
+        {(selectedMovie ? actorError : movieError) && (
+          <p className="text-sm text-red-400 mt-1">{selectedMovie ? actorError : movieError}</p>
+        )}
+        <div className="mt-1">
+          {selectedMovie
+            ? actorResults.map((a) => (
+                <button
+                  key={a.person_id}
+                  onClick={() => pickActor(a)}
+                  disabled={submitting || verifying}
+                  className="block w-full text-left px-3 py-2 rounded-lg text-neutral-200 hover:bg-neutral-800 transition-colors disabled:opacity-50"
+                >
+                  {a.person_name}
+                </button>
+              ))
+            : movieResults.map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => selectMovie(m)}
+                  disabled={verifying}
+                  className="block w-full text-left px-3 py-2 rounded-lg text-neutral-200 hover:bg-neutral-800 transition-colors disabled:opacity-50"
+                >
+                  {m.title}{m.year ? ` (${m.year})` : ""}
+                </button>
+              ))
+          }
         </div>
-      )}
+      </div>
     </div>
   )
 }
 
-function BackLink({ practice }: { practice?: boolean }) {
+function BackLink() {
   return (
-    <div className="flex items-center justify-between">
-      <Link href="/games" className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors">
-        &larr; Games
-      </Link>
-      {practice && (
-        <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500 border border-neutral-800 rounded-full px-3 py-1">
-          Practice
-        </span>
-      )}
-    </div>
+    <Link href="/games" className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors">
+      &larr; Games
+    </Link>
   )
 }
 
