@@ -6,10 +6,15 @@ from datetime import date, timedelta
 
 from .db import get_connection, get_daily_puzzle, get_recent_anchor_movie_ids, insert_daily_puzzle
 
-# Minimum vote_count for a movie to be eligible as an anchor or bridge in the
-# daily puzzle graph -- keeps every step of a solution recognizable rather
-# than requiring knowledge of obscure films.
+# Minimum vote_count AND popularity for a movie to be eligible as an anchor or
+# bridge in the daily puzzle graph. vote_count alone lets through movies that
+# accumulated ratings over decades without ever being broadly memorable (e.g.
+# Volcano (1997): vote_count 1663, popularity 4.1) -- popularity guards against
+# that, while vote_count still guards against flash-in-the-pan trending titles
+# with little lasting familiarity. Neither alone is a reliable recognizability
+# signal; combined they are.
 CURATED_POOL_MIN_VOTES = 1000
+CURATED_POOL_MIN_POPULARITY = 8
 
 # Reject pairs whose shortest path is shorter than this -- a single shared
 # actor is trivially guessable in one look, not a puzzle.
@@ -23,7 +28,10 @@ def get_curated_pool() -> list[int]:
     """Movie IDs eligible for the daily puzzle (anchors and bridges alike)."""
     with get_connection() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id FROM movies WHERE vote_count >= %s", (CURATED_POOL_MIN_VOTES,))
+        cur.execute(
+            "SELECT id FROM movies WHERE vote_count >= %s AND popularity >= %s",
+            (CURATED_POOL_MIN_VOTES, CURATED_POOL_MIN_POPULARITY),
+        )
         return [row["id"] for row in cur.fetchall()]
 
 
