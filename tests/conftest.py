@@ -32,7 +32,7 @@ def make_movie(
         "keywords": {"keywords": [{"id": i, "name": kw} for i, kw in enumerate(keywords)]},
         "credits": {
             "crew": [{"name": director, "job": "Director"}],
-            "cast": [{"name": a} for a in cast],
+            "cast": [{"id": i, "name": a, "character": f"Character {i}", "order": i} for i, a in enumerate(cast)],
         },
         "production_countries": [{"iso_3166_1": "US"}],
         "original_language": "en",

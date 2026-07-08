@@ -52,6 +52,7 @@ export function Header() {
           {navLink("/picks", "Picks")}
           {navLink("/profile", "Profile")}
           {navLink("/search", "People")}
+          {navLink("/games", "Games")}
         </nav>
       </div>
       <div className="flex items-center gap-3 sm:gap-4 text-sm">

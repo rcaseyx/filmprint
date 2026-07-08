@@ -86,7 +86,9 @@ from filmprint.db import (
     upsert_rating,
     get_all_movies_with_vectors,
     get_all_keyword_themes,
+    get_daily_puzzle, upsert_puzzle_attempt, get_puzzle_attempt,
 )
+from filmprint.six_degrees import search_cast, search_filmography, validate_full_chain
 from filmprint.features import (
     build_feature_vector, taste_summary, build_keyword_vocab,
     build_affinity_scores, GENRES, DECADES, compute_axis_scores, TONE_AXES, SUBGENRE_AXES,
@@ -2732,6 +2734,84 @@ def get_public_recommendations(username: str, mood: MoodContext, request: Reques
         for p in picks:
             p["match_pct"] = round(65 + ((p["score"] - _pool_min) / _pool_spread) * 34)
     return {"picks": picks, "mood_summary": mood_summary}
+
+
+# --- games: six degrees ---
+
+def _six_degrees_movie_summary(movie: dict) -> dict:
+    raw = movie.get("raw_tmdb") or {}
+    return {
+        "id": movie["id"],
+        "title": movie["title"],
+        "year": movie.get("year"),
+        "poster_path": raw.get("poster_path"),
+    }
+
+
+@app.get("/api/games/six-degrees/today")
+def six_degrees_today(current_user: dict = Depends(get_current_user)):
+    puzzle = get_daily_puzzle(datetime.date.today())
+    if not puzzle:
+        raise HTTPException(status_code=404, detail="No puzzle generated for today")
+    movies = get_movies_by_ids([puzzle["start_movie_id"], puzzle["end_movie_id"]])
+    attempt = get_puzzle_attempt(current_user["user_id"], puzzle["id"])
+    return {
+        "puzzle_id": puzzle["id"],
+        "puzzle_date": str(puzzle["puzzle_date"]),
+        "start_movie": _six_degrees_movie_summary(movies[puzzle["start_movie_id"]]),
+        "end_movie": _six_degrees_movie_summary(movies[puzzle["end_movie_id"]]),
+        "user_attempt": {
+            "is_solved": attempt["is_solved"],
+            "degree_count": len(attempt["guess_path"]) if attempt.get("guess_path") else None,
+            "solve_time_ms": attempt["solve_time_ms"],
+        } if attempt else None,
+    }
+
+
+@app.get("/api/games/six-degrees/cast")
+def six_degrees_cast(movie_id: int, q: str = "", current_user: dict = Depends(get_current_user)):
+    if len(q.strip()) < 2:
+        return {"results": []}
+    return {"results": search_cast(movie_id, q)}
+
+
+@app.get("/api/games/six-degrees/filmography")
+def six_degrees_filmography(
+    person_id: int, q: str = "", exclude: str = "", current_user: dict = Depends(get_current_user)
+):
+    if len(q.strip()) < 2:
+        return {"results": []}
+    exclude_ids = {int(x) for x in exclude.split(",") if x.strip().isdigit()}
+    movie_ids = search_filmography(person_id, q, exclude_ids)
+    movies = get_movies_by_ids(movie_ids)
+    return {"results": [_six_degrees_movie_summary(movies[mid]) for mid in movie_ids if mid in movies]}
+
+
+class _SixDegreesGuessHop(BaseModel):
+    movie_id: int
+    person_id: int
+    next_movie_id: int
+
+
+class _SixDegreesAttemptPayload(BaseModel):
+    puzzle_id: int
+    guess_path: list[_SixDegreesGuessHop]
+    solve_time_ms: int | None = None
+
+
+@app.post("/api/games/six-degrees/attempt")
+def six_degrees_submit_attempt(payload: _SixDegreesAttemptPayload, current_user: dict = Depends(get_current_user)):
+    user_id = current_user["user_id"]
+    puzzle = get_daily_puzzle(datetime.date.today())
+    if not puzzle or puzzle["id"] != payload.puzzle_id:
+        raise HTTPException(status_code=400, detail="Not today's puzzle")
+
+    guess_hops = [hop.model_dump() for hop in payload.guess_path]
+    if not validate_full_chain(puzzle["start_movie_id"], puzzle["end_movie_id"], guess_hops):
+        raise HTTPException(status_code=422, detail="Chain does not connect start to end via shared cast")
+
+    upsert_puzzle_attempt(user_id, puzzle["id"], guess_hops, True, payload.solve_time_ms)
+    return {"solved": True, "degree_count": len(guess_hops)}
 
 
 # --- admin endpoints ---
