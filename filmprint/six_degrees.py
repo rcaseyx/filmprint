@@ -28,15 +28,20 @@ CURATED_POOL_MIN_VOTES = 1000
 # which would otherwise pull much less recognizable names into the anchor
 # pool too (e.g. Remo Girone, Stefan Gierasch). vote_count is monotonic and
 # doesn't decay the way popularity does, so it stays a stable anchor-quality
-# bar over time. Validated against real data (846 movies / 846 actors at this
-# threshold, comparable to the original pre-popularity-floor pool of 820).
-# Even at this bar a few actors slip through who are top-billed in several
-# famous movies without being personally famous themselves (e.g. Randall Duk
-# Kim in Kung Fu Panda/John Wick 3/The Matrix Reloaded) -- an inherent
-# limitation of inferring fame from billing order rather than a real
-# person-level signal, already present (and accepted) in the original pool.
+# bar over time. Even at this bar, "top-10 billing in 3+ movies" alone let
+# through reliable-but-not-famous character actors who rack up prominent
+# supporting roles across several blockbusters without ever headlining one
+# (e.g. Randall Duk Kim in Kung Fu Panda/John Wick 3/The Matrix Reloaded --
+# recognizable by photo, but nobody can place which movie). Also requiring
+# at least one lead-or-near-lead credit (billing <= 3) filters that out while
+# keeping prolific-but-secondary actors OUT and genuine stars IN. Validated
+# against real data (689 actors; weakest tier now names like Dan Aykroyd,
+# Tina Fey, Kate McKinnon, John Cleese, Alexander Skarsgård -- a clear step
+# up from the unfiltered top-10 tier), with healthy BFS connectivity (0/40
+# sampled pairs lacked a path).
 ANCHOR_MOVIE_MIN_VOTES = 5500
 ACTOR_POOL_MIN_BILLING = 10
+ACTOR_POOL_MIN_LEAD_BILLING = 3
 ACTOR_POOL_MIN_MOVIES = 3
 
 # Reject pairs whose shortest path is shorter than this -- a single shared
@@ -75,8 +80,8 @@ def get_curated_actor_pool(movie_pool: list[int] | None = None) -> list[int]:
                JOIN movies m ON m.id = mc.movie_id
                WHERE mc.movie_id = ANY(%s) AND mc.billing_order <= %s AND m.vote_count >= %s
                GROUP BY mc.person_id
-               HAVING count(DISTINCT mc.movie_id) >= %s""",
-            (pool, ACTOR_POOL_MIN_BILLING, ANCHOR_MOVIE_MIN_VOTES, ACTOR_POOL_MIN_MOVIES),
+               HAVING count(DISTINCT mc.movie_id) >= %s AND min(mc.billing_order) <= %s""",
+            (pool, ACTOR_POOL_MIN_BILLING, ANCHOR_MOVIE_MIN_VOTES, ACTOR_POOL_MIN_MOVIES, ACTOR_POOL_MIN_LEAD_BILLING),
         )
         return [row["person_id"] for row in cur.fetchall()]
 
