@@ -239,7 +239,7 @@ def generate_and_store_tomorrows_puzzle() -> dict | None:
     return puzzle
 
 
-def search_people(query: str, exclude_person_ids: set[int] | None = None, limit: int = 20) -> list[dict]:
+def search_people(query: str, exclude_person_ids: set[int] | None = None, limit: int = 6) -> list[dict]:
     """
     Broad, unfiltered person-name search across all credited cast -- NOT scoped
     to any particular movie. Deliberately not restricted to "correct" answers:
@@ -267,7 +267,7 @@ def search_people(query: str, exclude_person_ids: set[int] | None = None, limit:
         ]
 
 
-def search_movies(query: str, exclude_movie_ids: set[int] | None = None, limit: int = 20) -> list[int]:
+def search_movies(query: str, exclude_movie_ids: set[int] | None = None, limit: int = 6) -> list[int]:
     """
     Broad, unfiltered movie-title search across the curated pool -- NOT scoped
     to any particular actor's filmography (same reasoning as search_people).

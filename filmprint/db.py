@@ -202,6 +202,12 @@ def init_db(seed_data: dict | None = None) -> None:
         "ALTER TABLE movie_credits DROP CONSTRAINT IF EXISTS movie_credits_movie_id_person_id_role_key",
         "ALTER TABLE movie_credits ADD CONSTRAINT movie_credits_movie_id_person_id_role_key UNIQUE (movie_id, person_id, role)",
         "ALTER TABLE movie_credits ADD COLUMN IF NOT EXISTS profile_path TEXT",
+        # search_people/search_movies match mid-string (e.g. last names), which a
+        # plain btree index can't serve -- trigram GIN indexes let Postgres use a
+        # BitmapOr instead of a full scan of movie_credits (382k+ rows).
+        "CREATE EXTENSION IF NOT EXISTS pg_trgm",
+        "CREATE INDEX IF NOT EXISTS idx_movie_credits_person_name_trgm ON movie_credits USING gin (person_name gin_trgm_ops)",
+        "CREATE INDEX IF NOT EXISTS idx_movies_title_trgm ON movies USING gin (title gin_trgm_ops)",
         """CREATE TABLE IF NOT EXISTS daily_puzzles (
             id              BIGSERIAL PRIMARY KEY,
             puzzle_date     DATE UNIQUE NOT NULL,
