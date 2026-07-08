@@ -49,11 +49,14 @@ export default function SixDegreesPage() {
   const [actorQuery, setActorQuery] = useState("")
   const [actorResults, setActorResults] = useState<PersonResult[]>([])
   const [selectedActor, setSelectedActor] = useState<PersonResult | null>(null)
+  const [actorError, setActorError] = useState<string | null>(null)
   const [movieQuery, setMovieQuery] = useState("")
   const [movieResults, setMovieResults] = useState<MovieSummary[]>([])
+  const [movieError, setMovieError] = useState<string | null>(null)
 
   const [solved, setSolved] = useState<{ degree_count: number } | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [verifying, setVerifying] = useState(false)
 
   const debouncedActorQuery = useDebounce(actorQuery, 300)
   const debouncedMovieQuery = useDebounce(movieQuery, 300)
@@ -81,6 +84,7 @@ export default function SixDegreesPage() {
   // newly-current movie (e.g. searching the old actor's name against the new movie's cast).
   useEffect(() => {
     setActorResults([])
+    setActorError(null)
   }, [currentMovie?.id, selectedActor, actorQuery])
 
   useEffect(() => {
@@ -89,19 +93,20 @@ export default function SixDegreesPage() {
     // (actorQuery already reset to '') the debounced value can still be a
     // leftover non-empty string — without the raw check this fires a real,
     // non-cancelled fetch that re-populates results for a query no longer shown.
-    if (!currentMovie || selectedActor || actorQuery.trim().length < 2 || debouncedActorQuery.trim().length < 2) return
+    if (selectedActor || actorQuery.trim().length < 2 || debouncedActorQuery.trim().length < 2) return
     let cancelled = false
-    fetch(`${API}/api/games/six-degrees/cast?movie_id=${currentMovie.id}&q=${encodeURIComponent(debouncedActorQuery)}`, {
+    fetch(`${API}/api/games/six-degrees/search-people?q=${encodeURIComponent(debouncedActorQuery)}`, {
       headers: authHeader(session),
     })
       .then((r) => r.json())
       .then((data) => { if (!cancelled) setActorResults(data.results ?? []) })
       .catch(() => { if (!cancelled) setActorResults([]) })
     return () => { cancelled = true }
-  }, [debouncedActorQuery, currentMovie, selectedActor, actorQuery, session])
+  }, [debouncedActorQuery, selectedActor, actorQuery, session])
 
   useEffect(() => {
     setMovieResults([])
+    setMovieError(null)
   }, [selectedActor, movieQuery])
 
   useEffect(() => {
@@ -109,7 +114,7 @@ export default function SixDegreesPage() {
     let cancelled = false
     const exclude = visitedIds.join(",")
     fetch(
-      `${API}/api/games/six-degrees/filmography?person_id=${selectedActor.person_id}&q=${encodeURIComponent(debouncedMovieQuery)}&exclude=${exclude}`,
+      `${API}/api/games/six-degrees/search-movies?q=${encodeURIComponent(debouncedMovieQuery)}&exclude=${exclude}`,
       { headers: authHeader(session) }
     )
       .then((r) => r.json())
@@ -118,8 +123,43 @@ export default function SixDegreesPage() {
     return () => { cancelled = true }
   }, [debouncedMovieQuery, selectedActor, visitedIds, movieQuery, session])
 
+  async function selectActor(a: PersonResult) {
+    if (!currentMovie || verifying) return
+    setVerifying(true)
+    try {
+      const res = await fetch(
+        `${API}/api/games/six-degrees/verify-actor?movie_id=${currentMovie.id}&person_id=${a.person_id}`,
+        { headers: authHeader(session) }
+      )
+      const data = await res.json()
+      if (data.valid) {
+        setSelectedActor(a)
+      } else {
+        setActorError(`${a.person_name} wasn't in this movie — try again`)
+      }
+    } finally {
+      setVerifying(false)
+    }
+  }
+
   async function pickMovie(next: MovieSummary) {
-    if (!currentMovie || !selectedActor || !puzzle) return
+    if (!currentMovie || !selectedActor || !puzzle || verifying) return
+    setVerifying(true)
+    let valid = false
+    try {
+      const res = await fetch(
+        `${API}/api/games/six-degrees/verify-connection?movie_id=${currentMovie.id}&person_id=${selectedActor.person_id}&next_movie_id=${next.id}`,
+        { headers: authHeader(session) }
+      )
+      valid = (await res.json()).valid
+    } finally {
+      setVerifying(false)
+    }
+    if (!valid) {
+      setMovieError(`${selectedActor.person_name} wasn't in ${next.title} — try again`)
+      return
+    }
+
     const hop = { movie_id: currentMovie.id, person_id: selectedActor.person_id, next_movie_id: next.id }
     const newGuessPath = [...guessPath, hop]
     const newChain = [...chain, { movie: next, person_name: selectedActor.person_name }]
@@ -218,12 +258,14 @@ export default function SixDegreesPage() {
             value={actorQuery}
             onChange={(e) => setActorQuery(e.target.value)}
           />
+          {actorError && <p className="text-sm text-red-400 mt-1">{actorError}</p>}
           <div className="mt-1">
             {actorResults.map((a) => (
               <button
                 key={a.person_id}
-                onClick={() => setSelectedActor(a)}
-                className="block w-full text-left px-3 py-2 rounded-lg text-neutral-200 hover:bg-neutral-800 transition-colors"
+                onClick={() => selectActor(a)}
+                disabled={verifying}
+                className="block w-full text-left px-3 py-2 rounded-lg text-neutral-200 hover:bg-neutral-800 transition-colors disabled:opacity-50"
               >
                 {a.person_name}
               </button>
@@ -247,12 +289,13 @@ export default function SixDegreesPage() {
             value={movieQuery}
             onChange={(e) => setMovieQuery(e.target.value)}
           />
+          {movieError && <p className="text-sm text-red-400 mt-1">{movieError}</p>}
           <div className="mt-1">
             {movieResults.map((m) => (
               <button
                 key={m.id}
                 onClick={() => pickMovie(m)}
-                disabled={submitting}
+                disabled={submitting || verifying}
                 className="block w-full text-left px-3 py-2 rounded-lg text-neutral-200 hover:bg-neutral-800 transition-colors disabled:opacity-50"
               >
                 {m.title}{m.year ? ` (${m.year})` : ""}
