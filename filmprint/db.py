@@ -150,6 +150,12 @@ def init_db(seed_data: dict | None = None) -> None:
         # Backfill imdb_id for existing rows from raw_tmdb JSON
         """UPDATE movies SET imdb_id = (raw_tmdb::jsonb)->>'imdb_id'
            WHERE imdb_id IS NULL AND raw_tmdb IS NOT NULL AND length(raw_tmdb) > 2""",
+        "ALTER TABLE movies ADD COLUMN IF NOT EXISTS revenue BIGINT",
+        # Backfill revenue for existing rows from raw_tmdb JSON -- used to filter
+        # the six-degrees curated pool down to movies that got a real theatrical
+        # release, not just fandom-driven direct-to-video titles.
+        """UPDATE movies SET revenue = ((raw_tmdb::jsonb)->>'revenue')::bigint
+           WHERE revenue IS NULL AND raw_tmdb IS NOT NULL AND length(raw_tmdb) > 2""",
         """CREATE TABLE IF NOT EXISTS beta_whitelist (
             email           TEXT PRIMARY KEY,
             added_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -667,8 +673,8 @@ def upsert_movie(tmdb_data: dict, feature_vector: list[float] | None = None) -> 
             INSERT INTO movies (
                 id, title, year, runtime, genres, vote_average, vote_count,
                 popularity, origin_country, language, keywords, director, "cast",
-                raw_tmdb, feature_vector, imdb_id, last_fetched_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                raw_tmdb, feature_vector, imdb_id, revenue, last_fetched_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
             ON CONFLICT(id) DO UPDATE SET
                 title           = EXCLUDED.title,
                 year            = EXCLUDED.year,
@@ -685,6 +691,7 @@ def upsert_movie(tmdb_data: dict, feature_vector: list[float] | None = None) -> 
                 raw_tmdb        = EXCLUDED.raw_tmdb,
                 feature_vector  = COALESCE(EXCLUDED.feature_vector, movies.feature_vector),
                 imdb_id         = COALESCE(movies.imdb_id, EXCLUDED.imdb_id),
+                revenue         = EXCLUDED.revenue,
                 last_fetched_at = NOW()
         """, (
             tmdb_data["id"],
@@ -703,6 +710,7 @@ def upsert_movie(tmdb_data: dict, feature_vector: list[float] | None = None) -> 
             json.dumps(tmdb_data),
             json.dumps(feature_vector) if feature_vector is not None else None,
             tmdb_data.get("imdb_id"),
+            tmdb_data.get("revenue"),
         ))
         _upsert_movie_credits(cur, tmdb_data["id"], tmdb_data)
 
@@ -736,6 +744,7 @@ def batch_upsert_movies(movies: list[dict]) -> None:
             json.dumps(cast),
             json.dumps(tmdb_data),
             tmdb_data.get("imdb_id"),
+            tmdb_data.get("revenue"),
         ))
     with get_connection() as conn:
         cur = conn.cursor()
@@ -743,7 +752,7 @@ def batch_upsert_movies(movies: list[dict]) -> None:
             INSERT INTO movies (
                 id, title, year, runtime, genres, vote_average, vote_count,
                 popularity, origin_country, language, keywords, director, "cast",
-                raw_tmdb, imdb_id
+                raw_tmdb, imdb_id, revenue
             ) VALUES %s
             ON CONFLICT(id) DO UPDATE SET
                 title           = EXCLUDED.title,
@@ -761,6 +770,7 @@ def batch_upsert_movies(movies: list[dict]) -> None:
                 raw_tmdb        = EXCLUDED.raw_tmdb,
                 feature_vector  = COALESCE(movies.feature_vector, EXCLUDED.feature_vector),
                 imdb_id         = COALESCE(movies.imdb_id, EXCLUDED.imdb_id),
+                revenue         = EXCLUDED.revenue,
                 last_fetched_at = NOW()
         """, rows)
         for tmdb_data in movies:
