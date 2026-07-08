@@ -4,7 +4,7 @@ import {
   StyleSheet, Animated, Dimensions, KeyboardAvoidingView, Platform,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { useRouter } from 'expo-router'
+import { useRouter, useLocalSearchParams } from 'expo-router'
 import { ChevronLeft, ArrowRight, Trophy } from 'lucide-react-native'
 import { Colors, Spacing } from '@/constants/theme'
 import { Avatar } from '@/components/Avatar'
@@ -42,10 +42,10 @@ interface Hop {
 }
 
 interface TodayResponse {
-  puzzle_id: number
+  puzzle_id?: number
   start_person: PersonSummary
   end_person: PersonSummary
-  user_attempt: { is_solved: boolean; degree_count: number | null; solve_time_ms: number | null } | null
+  user_attempt?: { is_solved: boolean; degree_count: number | null; solve_time_ms: number | null } | null
 }
 
 function FadeInUp({ children, style }: { children: React.ReactNode; style?: object }) {
@@ -62,6 +62,8 @@ function FadeInUp({ children, style }: { children: React.ReactNode; style?: obje
 
 export default function SixDegreesScreen() {
   const router = useRouter()
+  const { practice } = useLocalSearchParams<{ practice?: string }>()
+  const isPractice = practice === '1'
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [puzzle, setPuzzle] = useState<TodayResponse | null>(null)
@@ -89,25 +91,38 @@ export default function SixDegreesScreen() {
   const debouncedMovieQuery = useDebounce(movieQuery, 300)
   const debouncedActorQuery = useDebounce(actorQuery, 300)
 
-  useEffect(() => {
-    apiFetch('/api/games/six-degrees/today')
-      .then(async r => {
-        if (r.status === 404) { setNotFound(true); return }
-        const data: TodayResponse = await r.json()
-        setPuzzle(data)
-        if (!data.user_attempt?.is_solved) {
-          setCurrentPerson({
-            person_id: data.start_person.id,
-            person_name: data.start_person.name,
-            profile_path: data.start_person.profile_path,
-          })
-          setVisitedPersonIds([data.start_person.id])
-          startTimeRef.current = Date.now()
-        }
-      })
-      .catch(() => setNotFound(true))
-      .finally(() => setLoading(false))
-  }, [])
+  async function loadPuzzle() {
+    setLoading(true)
+    setNotFound(false)
+    setSolved(null)
+    setChain([])
+    setGuessPath([])
+    setVisitedMovieIds([])
+    setVisitedPersonIds([])
+    setMovieQuery(''); setMovieResults([]); setSelectedMovie(null); setMovieError(null)
+    setActorQuery(''); setActorResults([]); setActorError(null)
+    try {
+      const r = await apiFetch(isPractice ? '/api/games/six-degrees/practice' : '/api/games/six-degrees/today')
+      if (r.status === 404) { setNotFound(true); return }
+      const data: TodayResponse = await r.json()
+      setPuzzle(data)
+      if (!data.user_attempt?.is_solved) {
+        setCurrentPerson({
+          person_id: data.start_person.id,
+          person_name: data.start_person.name,
+          profile_path: data.start_person.profile_path,
+        })
+        setVisitedPersonIds([data.start_person.id])
+        startTimeRef.current = Date.now()
+      }
+    } catch {
+      setNotFound(true)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { loadPuzzle() }, [isPractice])
 
   // Clear immediately on any state that invalidates in-flight/stale results —
   // debouncedMovieQuery lags the visible input by up to 300ms, so relying on
@@ -194,14 +209,23 @@ export default function SixDegreesScreen() {
       // "submitting" to the solved screen once we hear back.
       setSubmitting(true)
       try {
-        const res = await apiFetch('/api/games/six-degrees/attempt', {
-          method: 'POST',
-          body: JSON.stringify({
-            puzzle_id: puzzle.puzzle_id,
-            guess_path: newGuessPath,
-            solve_time_ms: Date.now() - startTimeRef.current,
-          }),
-        })
+        const res = isPractice
+          ? await apiFetch('/api/games/six-degrees/practice/attempt', {
+              method: 'POST',
+              body: JSON.stringify({
+                start_person_id: puzzle.start_person.id,
+                end_person_id: puzzle.end_person.id,
+                guess_path: newGuessPath,
+              }),
+            })
+          : await apiFetch('/api/games/six-degrees/attempt', {
+              method: 'POST',
+              body: JSON.stringify({
+                puzzle_id: puzzle.puzzle_id,
+                guess_path: newGuessPath,
+                solve_time_ms: Date.now() - startTimeRef.current,
+              }),
+            })
         if (res.ok) {
           const data = await res.json()
           setSolved({ degree_count: data.degree_count })
@@ -259,7 +283,7 @@ export default function SixDegreesScreen() {
   if (loading) {
     return (
       <SafeAreaView style={s.safe} edges={['top']}>
-        <BackBar router={router} />
+        <BackBar router={router} practice={isPractice} />
         <ActivityIndicator style={{ marginTop: 60 }} color={Colors.textMuted} />
       </SafeAreaView>
     )
@@ -268,7 +292,7 @@ export default function SixDegreesScreen() {
   if (notFound || !puzzle) {
     return (
       <SafeAreaView style={s.safe} edges={['top']}>
-        <BackBar router={router} />
+        <BackBar router={router} practice={isPractice} />
         <Text style={s.empty}>No puzzle today — check back soon.</Text>
       </SafeAreaView>
     )
@@ -280,7 +304,7 @@ export default function SixDegreesScreen() {
   if (alreadySolved || solved) {
     return (
       <SafeAreaView style={s.safe} edges={['top']}>
-        <BackBar router={router} />
+        <BackBar router={router} practice={isPractice} />
         <ScrollView contentContainerStyle={s.solvedScroll} keyboardShouldPersistTaps="handled">
           <FadeInUp style={s.center}>
             <View style={s.trophyBadge}>
@@ -298,6 +322,11 @@ export default function SixDegreesScreen() {
               <SmallHeadshot person={puzzle.end_person} />
             </View>
           )}
+          {isPractice && (
+            <Pressable style={s.playAgainBtn} onPress={loadPuzzle}>
+              <Text style={s.playAgainText}>Play again</Text>
+            </Pressable>
+          )}
         </ScrollView>
       </SafeAreaView>
     )
@@ -306,7 +335,7 @@ export default function SixDegreesScreen() {
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={s.kav}>
-      <BackBar router={router} />
+      <BackBar router={router} practice={isPractice} />
       <ScrollView
         ref={scrollRef}
         style={s.scrollFlex}
@@ -423,12 +452,19 @@ export default function SixDegreesScreen() {
   )
 }
 
-function BackBar({ router }: { router: ReturnType<typeof useRouter> }) {
+function BackBar({ router, practice }: { router: ReturnType<typeof useRouter>; practice?: boolean }) {
   return (
-    <Pressable style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
-      <ChevronLeft size={22} color={Colors.textSecondary} />
-      <Text style={s.backText}>Games</Text>
-    </Pressable>
+    <View style={s.backBar}>
+      <Pressable style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
+        <ChevronLeft size={22} color={Colors.textSecondary} />
+        <Text style={s.backText}>Games</Text>
+      </Pressable>
+      {practice && (
+        <View style={s.practicePill}>
+          <Text style={s.practicePillText}>Practice</Text>
+        </View>
+      )}
+    </View>
   )
 }
 
@@ -510,8 +546,13 @@ function SmallHeadshot({ person }: { person: PersonSummary }) {
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
+  backBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: Spacing.lg },
   backBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm },
   backText: { fontSize: 15, color: Colors.textSecondary },
+  practicePill: { backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 5 },
+  practicePillText: { fontSize: 12, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.6 },
+  playAgainBtn: { backgroundColor: Colors.brand, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  playAgainText: { fontSize: 15, fontWeight: '700', color: Colors.background },
   kav: { flex: 1 },
   scrollFlex: { flex: 1 },
   scroll: { paddingHorizontal: Spacing.lg, paddingBottom: 100, gap: Spacing.lg },
