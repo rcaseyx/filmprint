@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   View, Text, TextInput, Pressable, Image, ActivityIndicator, ScrollView,
-  StyleSheet, Animated, Dimensions, KeyboardAvoidingView, Platform,
+  StyleSheet, Animated, Dimensions,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter, useLocalSearchParams } from 'expo-router'
@@ -334,13 +334,13 @@ export default function SixDegreesScreen() {
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={s.kav}>
       <BackBar router={router} practice={isPractice} />
       <ScrollView
         ref={scrollRef}
         style={s.scrollFlex}
         contentContainerStyle={s.scroll}
         keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets
       >
         <View style={s.matchupRow}>
           <BigHeadshot person={puzzle.start_person} />
@@ -447,7 +447,6 @@ export default function SixDegreesScreen() {
 
         {(submitting || verifying) && <ActivityIndicator style={{ marginTop: Spacing.md }} color={Colors.textMuted} />}
       </ScrollView>
-      </KeyboardAvoidingView>
     </SafeAreaView>
   )
 }
@@ -553,7 +552,6 @@ const s = StyleSheet.create({
   practicePillText: { fontSize: 12, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.6 },
   playAgainBtn: { backgroundColor: Colors.brand, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
   playAgainText: { fontSize: 15, fontWeight: '700', color: Colors.background },
-  kav: { flex: 1 },
   scrollFlex: { flex: 1 },
   scroll: { paddingHorizontal: Spacing.lg, paddingBottom: 100, gap: Spacing.lg },
   solvedScroll: { paddingHorizontal: Spacing.lg, paddingBottom: 100, paddingTop: 40, gap: Spacing.lg },
