@@ -42,6 +42,13 @@ export default function AppLayout() {
             src={require('@/assets/images/tabIcons/explore.png')}
           />
         </NativeTabs.Trigger>
+        <NativeTabs.Trigger name="games" unstable_nativeProps={noAppearance}>
+          <NativeTabs.Trigger.Label>Games</NativeTabs.Trigger.Label>
+          <NativeTabs.Trigger.Icon
+            sf={{ default: 'gamecontroller', selected: 'gamecontroller.fill' }}
+            src={require('@/assets/images/tabIcons/explore.png')}
+          />
+        </NativeTabs.Trigger>
       </NativeTabs>
     </ThemeProvider>
   )

@@ -178,6 +178,42 @@ def init_db(seed_data: dict | None = None) -> None:
         # every sign-in after that has email=null, so returning users must be
         # looked up by this stable per-app identifier instead.
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_sub TEXT UNIQUE",
+        """CREATE TABLE IF NOT EXISTS movie_credits (
+            id            BIGSERIAL PRIMARY KEY,
+            movie_id      BIGINT NOT NULL REFERENCES movies(id),
+            person_id     BIGINT NOT NULL,
+            person_name   TEXT NOT NULL,
+            role          TEXT,
+            billing_order INTEGER,
+            UNIQUE(movie_id, person_id, role)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_movie_credits_person ON movie_credits(person_id)",
+        "CREATE INDEX IF NOT EXISTS idx_movie_credits_movie ON movie_credits(movie_id)",
+        # movie_credits originally tracked crew too; six-degrees only chains through
+        # shared cast, so crew was dropped (data still recoverable from raw_tmdb).
+        "ALTER TABLE movie_credits DROP CONSTRAINT IF EXISTS movie_credits_movie_id_person_id_department_role_key",
+        "ALTER TABLE movie_credits DROP COLUMN IF EXISTS department",
+        "ALTER TABLE movie_credits DROP CONSTRAINT IF EXISTS movie_credits_movie_id_person_id_role_key",
+        "ALTER TABLE movie_credits ADD CONSTRAINT movie_credits_movie_id_person_id_role_key UNIQUE (movie_id, person_id, role)",
+        """CREATE TABLE IF NOT EXISTS daily_puzzles (
+            id              BIGSERIAL PRIMARY KEY,
+            puzzle_date     DATE UNIQUE NOT NULL,
+            start_movie_id  BIGINT NOT NULL REFERENCES movies(id),
+            end_movie_id    BIGINT NOT NULL REFERENCES movies(id),
+            solution_path   TEXT NOT NULL,
+            degree_count    SMALLINT NOT NULL,
+            generated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )""",
+        """CREATE TABLE IF NOT EXISTS user_puzzle_attempts (
+            id              BIGSERIAL PRIMARY KEY,
+            user_id         BIGINT NOT NULL REFERENCES users(id),
+            puzzle_id       BIGINT NOT NULL REFERENCES daily_puzzles(id),
+            guess_path      TEXT,
+            is_solved       BOOLEAN NOT NULL DEFAULT false,
+            solve_time_ms   INTEGER,
+            completed_at    TIMESTAMPTZ,
+            UNIQUE(user_id, puzzle_id)
+        )""",
     ]
     with get_connection() as conn:
         cur = conn.cursor()
@@ -597,6 +633,25 @@ def get_movie(tmdb_id: int) -> dict | None:
         return movie
 
 
+def _credit_rows_from_tmdb(movie_id: int, tmdb_data: dict) -> list[tuple]:
+    """Flatten a TMDB credits blob's cast into movie_credits rows (movie_id, person_id, person_name, role, billing_order)."""
+    return [
+        (movie_id, p["id"], p["name"], p.get("character"), p.get("order"))
+        for p in tmdb_data.get("credits", {}).get("cast", [])
+    ]
+
+
+def _upsert_movie_credits(cur, movie_id: int, tmdb_data: dict) -> None:
+    cur.execute("DELETE FROM movie_credits WHERE movie_id = %s", (movie_id,))
+    rows = _credit_rows_from_tmdb(movie_id, tmdb_data)
+    if rows:
+        psycopg2.extras.execute_values(cur, """
+            INSERT INTO movie_credits (movie_id, person_id, person_name, role, billing_order)
+            VALUES %s
+            ON CONFLICT (movie_id, person_id, role) DO NOTHING
+        """, rows)
+
+
 def upsert_movie(tmdb_data: dict, feature_vector: list[float] | None = None) -> None:
     crew = tmdb_data.get("credits", {}).get("crew", [])
     directors = [p["name"] for p in crew if p.get("job") == "Director"]
@@ -649,6 +704,7 @@ def upsert_movie(tmdb_data: dict, feature_vector: list[float] | None = None) -> 
             json.dumps(feature_vector) if feature_vector is not None else None,
             tmdb_data.get("imdb_id"),
         ))
+        _upsert_movie_credits(cur, tmdb_data["id"], tmdb_data)
 
 
 def batch_upsert_movies(movies: list[dict]) -> None:
@@ -707,6 +763,8 @@ def batch_upsert_movies(movies: list[dict]) -> None:
                 imdb_id         = COALESCE(movies.imdb_id, EXCLUDED.imdb_id),
                 last_fetched_at = NOW()
         """, rows)
+        for tmdb_data in movies:
+            _upsert_movie_credits(cur, tmdb_data["id"], tmdb_data)
 
 
 def update_feature_vector(tmdb_id: int, vector: list[float]) -> None:
@@ -887,6 +945,80 @@ def get_all_movies_with_vectors() -> list[dict]:
         m["raw_tmdb"] = json.loads(m["raw_tmdb"]) if m["raw_tmdb"] else {}
         movies.append(m)
     return movies
+
+
+# --- six degrees ---
+
+def get_recent_anchor_movie_ids(cooldown_days: int) -> set[int]:
+    """Movie IDs used as a start/end anchor within the last cooldown_days, to avoid repeats."""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT start_movie_id, end_movie_id FROM daily_puzzles
+               WHERE puzzle_date >= CURRENT_DATE - %s::int""",
+            (cooldown_days,),
+        )
+        ids: set[int] = set()
+        for row in cur.fetchall():
+            ids.add(row["start_movie_id"])
+            ids.add(row["end_movie_id"])
+        return ids
+
+
+def insert_daily_puzzle(
+    puzzle_date, start_movie_id: int, end_movie_id: int, solution_path: list[dict], degree_count: int
+) -> int:
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO daily_puzzles (puzzle_date, start_movie_id, end_movie_id, solution_path, degree_count)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id
+        """, (puzzle_date, start_movie_id, end_movie_id, json.dumps(solution_path), degree_count))
+        return cur.fetchone()["id"]
+
+
+def get_daily_puzzle(puzzle_date) -> dict | None:
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM daily_puzzles WHERE puzzle_date = %s", (puzzle_date,))
+        row = cur.fetchone()
+        if not row:
+            return None
+        puzzle = dict(row)
+        puzzle["solution_path"] = json.loads(puzzle["solution_path"])
+        return puzzle
+
+
+def get_puzzle_attempt(user_id: int, puzzle_id: int) -> dict | None:
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT * FROM user_puzzle_attempts WHERE user_id = %s AND puzzle_id = %s",
+            (user_id, puzzle_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        attempt = dict(row)
+        attempt["guess_path"] = json.loads(attempt["guess_path"]) if attempt.get("guess_path") else None
+        return attempt
+
+
+def upsert_puzzle_attempt(
+    user_id: int, puzzle_id: int, guess_path: list[dict], is_solved: bool, solve_time_ms: int | None
+) -> None:
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO user_puzzle_attempts (user_id, puzzle_id, guess_path, is_solved, solve_time_ms, completed_at)
+            VALUES (%s, %s, %s, %s, %s, CASE WHEN %s THEN NOW() ELSE NULL END)
+            ON CONFLICT (user_id, puzzle_id) DO UPDATE SET
+                guess_path    = EXCLUDED.guess_path,
+                is_solved     = EXCLUDED.is_solved,
+                solve_time_ms = EXCLUDED.solve_time_ms,
+                completed_at  = EXCLUDED.completed_at
+        """, (user_id, puzzle_id, json.dumps(guess_path), is_solved, solve_time_ms, is_solved))
 
 
 # --- user_ratings ---
