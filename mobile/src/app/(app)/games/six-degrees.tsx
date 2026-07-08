@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   View, Text, TextInput, Pressable, Image, ActivityIndicator, ScrollView,
-  StyleSheet, Animated, Dimensions,
+  StyleSheet, Animated, Dimensions, Keyboard, Platform,
 } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter, useLocalSearchParams } from 'expo-router'
 import { ChevronLeft, ArrowRight, Trophy } from 'lucide-react-native'
 import { Colors, Spacing } from '@/constants/theme'
@@ -16,6 +16,33 @@ const TMDB_POSTER_THUMB = 'https://image.tmdb.org/t/p/w154'
 const SCREEN_W = Dimensions.get('window').width
 const HEADSHOT_W = Math.floor((SCREEN_W - Spacing.lg * 2 - 56) / 2)
 const HEADSHOT_H = Math.floor(HEADSHOT_W * 1.5)
+// Approximate height of the NativeTabs bottom bar -- content needs at least
+// this much bottom clearance at rest or it renders (unreachably) behind it.
+const TAB_BAR_CLEARANCE = 56
+
+// Tracks live keyboard height on an Animated.Value, synced to the keyboard's
+// own show/hide animation curve/duration (iOS only -- Android resizes the
+// window natively via adjustResize, so no manual offset is needed there).
+// This intentionally avoids both KeyboardAvoidingView and
+// automaticallyAdjustKeyboardInsets: both measure position through the view
+// hierarchy to compute their offset, and that measurement is unreliable
+// inside NativeTabs (see the picks-screen keyboard-squish fix in 9ab92a7).
+// Tracking the OS-reported keyboard height directly sidesteps that class of
+// bug entirely.
+function useKeyboardHeight() {
+  const height = useRef(new Animated.Value(0)).current
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return
+    const showSub = Keyboard.addListener('keyboardWillShow', e => {
+      Animated.timing(height, { toValue: e.endCoordinates.height, duration: e.duration || 250, useNativeDriver: false }).start()
+    })
+    const hideSub = Keyboard.addListener('keyboardWillHide', e => {
+      Animated.timing(height, { toValue: 0, duration: e.duration || 250, useNativeDriver: false }).start()
+    })
+    return () => { showSub.remove(); hideSub.remove() }
+  }, [])
+  return height
+}
 
 interface PersonSummary {
   id: number
@@ -62,6 +89,8 @@ function FadeInUp({ children, style }: { children: React.ReactNode; style?: obje
 
 export default function SixDegreesScreen() {
   const router = useRouter()
+  const insets = useSafeAreaInsets()
+  const keyboardHeight = useKeyboardHeight()
   const { practice } = useLocalSearchParams<{ practice?: string }>()
   const isPractice = practice === '1'
   const [loading, setLoading] = useState(true)
@@ -74,7 +103,6 @@ export default function SixDegreesScreen() {
   const [chain, setChain] = useState<Hop[]>([])
   const [guessPath, setGuessPath] = useState<{ person_id: number; movie_id: number; next_person_id: number }[]>([])
   const startTimeRef = useRef<number>(0)
-  const scrollRef = useRef<ScrollView>(null)
 
   const [movieQuery, setMovieQuery] = useState('')
   const [movieResults, setMovieResults] = useState<MovieSummary[]>([])
@@ -160,20 +188,6 @@ export default function SixDegreesScreen() {
     return () => { cancelled = true }
   }, [debouncedActorQuery, selectedMovie, actorQuery, visitedPersonIds])
 
-  // Results render below their input, so once they populate, push them up
-  // above the keyboard rather than leaving them hidden underneath it.
-  useEffect(() => {
-    if (movieResults.length === 0) return
-    const t = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50)
-    return () => clearTimeout(t)
-  }, [movieResults])
-
-  useEffect(() => {
-    if (actorResults.length === 0) return
-    const t = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50)
-    return () => clearTimeout(t)
-  }, [actorResults])
-
   // Verifies next connects to currentPerson via movie, and if so records the hop
   // and advances (submitting the attempt if next is the target). Returns whether
   // it succeeded. silent suppresses the error message -- used for the "does this
@@ -244,7 +258,6 @@ export default function SixDegreesScreen() {
     setActorQuery('')
     setMovieResults([])
     setActorResults([])
-    scrollRef.current?.scrollTo({ y: 0, animated: true })
     return true
   }
 
@@ -306,7 +319,10 @@ export default function SixDegreesScreen() {
     return (
       <SafeAreaView style={s.safe} edges={['top']}>
         <BackBar router={router} practice={isPractice} />
-        <ScrollView contentContainerStyle={s.solvedScroll} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={[s.solvedScroll, { paddingBottom: insets.bottom + TAB_BAR_CLEARANCE }]}
+          keyboardShouldPersistTaps="handled"
+        >
           <FadeInUp style={s.center}>
             <View style={s.trophyBadge}>
               <Trophy size={30} color={Colors.background} strokeWidth={2} />
@@ -336,13 +352,10 @@ export default function SixDegreesScreen() {
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
       <BackBar router={router} practice={isPractice} />
-      <ScrollView
-        ref={scrollRef}
-        style={s.scrollFlex}
-        contentContainerStyle={s.scroll}
-        keyboardShouldPersistTaps="handled"
-        automaticallyAdjustKeyboardInsets
-      >
+
+      {/* History: matchup + chain only. Scrolls independently above the fixed
+          input area below, so it never competes for scroll position with it. */}
+      <ScrollView style={s.historyScrollFlex} contentContainerStyle={s.historyScroll} keyboardShouldPersistTaps="handled">
         <View style={s.matchupRow}>
           <BigHeadshot person={puzzle.start_person} />
           <View style={s.connectorBadge}>
@@ -352,7 +365,12 @@ export default function SixDegreesScreen() {
         </View>
 
         {chain.length > 0 && <ChainTimeline startPerson={puzzle.start_person} chain={chain} />}
+      </ScrollView>
 
+      {/* Input area: fixed at the bottom, always reachable regardless of how
+          tall the history above it grows. Lifts with the keyboard via
+          keyboardHeight; at rest, pads enough to clear the NativeTabs bar. */}
+      <Animated.View style={[s.inputArea, { paddingBottom: Animated.add(keyboardHeight, insets.bottom + TAB_BAR_CLEARANCE) }]}>
         <View style={s.turnCard}>
           {currentPerson?.profile_path ? (
             <Image source={{ uri: `${TMDB_PROFILE}${currentPerson.profile_path}` }} style={s.turnAvatar} />
@@ -380,21 +398,23 @@ export default function SixDegreesScreen() {
               autoCorrect={false}
             />
             {movieError && <Text style={s.errorText}>{movieError}</Text>}
-            {movieResults.map(m => (
-              <Pressable
-                key={m.id}
-                onPress={() => selectMovie(m)}
-                disabled={verifying}
-                style={({ pressed }) => [s.resultRow, pressed && s.resultRowPressed]}
-              >
-                {m.poster_path ? (
-                  <Image source={{ uri: `${TMDB_POSTER_THUMB}${m.poster_path}` }} style={s.resultThumb} />
-                ) : (
-                  <View style={[s.resultThumb, s.resultThumbFallback]} />
-                )}
-                <Text style={s.resultText}>{m.title}{m.year ? ` (${m.year})` : ''}</Text>
-              </Pressable>
-            ))}
+            <ScrollView style={s.resultsScroll} keyboardShouldPersistTaps="handled">
+              {movieResults.map(m => (
+                <Pressable
+                  key={m.id}
+                  onPress={() => selectMovie(m)}
+                  disabled={verifying}
+                  style={({ pressed }) => [s.resultRow, pressed && s.resultRowPressed]}
+                >
+                  {m.poster_path ? (
+                    <Image source={{ uri: `${TMDB_POSTER_THUMB}${m.poster_path}` }} style={s.resultThumb} />
+                  ) : (
+                    <View style={[s.resultThumb, s.resultThumbFallback]} />
+                  )}
+                  <Text style={s.resultText}>{m.title}{m.year ? ` (${m.year})` : ''}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
           </View>
         ) : (
           <View style={s.inputWrap}>
@@ -426,26 +446,28 @@ export default function SixDegreesScreen() {
               autoCorrect={false}
             />
             {actorError && <Text style={s.errorText}>{actorError}</Text>}
-            {actorResults.map(a => (
-              <Pressable
-                key={a.person_id}
-                onPress={() => pickActor(a)}
-                disabled={submitting || verifying}
-                style={({ pressed }) => [s.resultRow, pressed && s.resultRowPressed]}
-              >
-                {a.profile_path ? (
-                  <Image source={{ uri: `${TMDB_PROFILE}${a.profile_path}` }} style={s.resultAvatar} />
-                ) : (
-                  <Avatar name={a.person_name} size={36} />
-                )}
-                <Text style={s.resultText}>{a.person_name}</Text>
-              </Pressable>
-            ))}
+            <ScrollView style={s.resultsScroll} keyboardShouldPersistTaps="handled">
+              {actorResults.map(a => (
+                <Pressable
+                  key={a.person_id}
+                  onPress={() => pickActor(a)}
+                  disabled={submitting || verifying}
+                  style={({ pressed }) => [s.resultRow, pressed && s.resultRowPressed]}
+                >
+                  {a.profile_path ? (
+                    <Image source={{ uri: `${TMDB_PROFILE}${a.profile_path}` }} style={s.resultAvatar} />
+                  ) : (
+                    <Avatar name={a.person_name} size={36} />
+                  )}
+                  <Text style={s.resultText}>{a.person_name}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
           </View>
         )}
 
-        {(submitting || verifying) && <ActivityIndicator style={{ marginTop: Spacing.md }} color={Colors.textMuted} />}
-      </ScrollView>
+        {(submitting || verifying) && <ActivityIndicator style={{ marginTop: Spacing.sm }} color={Colors.textMuted} />}
+      </Animated.View>
     </SafeAreaView>
   )
 }
@@ -551,9 +573,14 @@ const s = StyleSheet.create({
   practicePillText: { fontSize: 12, fontWeight: '700', color: Colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.6 },
   playAgainBtn: { backgroundColor: Colors.brand, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
   playAgainText: { fontSize: 15, fontWeight: '700', color: Colors.background },
-  scrollFlex: { flex: 1 },
-  scroll: { paddingHorizontal: Spacing.lg, paddingBottom: 32, gap: Spacing.lg },
-  solvedScroll: { paddingHorizontal: Spacing.lg, paddingBottom: 32, paddingTop: 40, gap: Spacing.lg },
+  historyScrollFlex: { flex: 1 },
+  historyScroll: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.lg, gap: Spacing.lg },
+  inputArea: {
+    paddingHorizontal: Spacing.lg, paddingTop: Spacing.md, gap: Spacing.sm,
+    backgroundColor: Colors.background, borderTopWidth: 1, borderTopColor: Colors.border,
+  },
+  resultsScroll: { maxHeight: 220 },
+  solvedScroll: { paddingHorizontal: Spacing.lg, paddingTop: 40, gap: Spacing.lg },
   center: { alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
   heading: { fontSize: 24, fontWeight: '700', color: Colors.text },
   sub: { fontSize: 15, color: Colors.textMuted, textAlign: 'center' },
