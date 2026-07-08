@@ -25,9 +25,9 @@ export default async function GamesPage() {
         href="/games/six-degrees"
         className="block mt-6 rounded-2xl border border-neutral-800 bg-neutral-900 p-5 hover:border-neutral-700 transition-colors"
       >
-        <h2 className="text-lg font-semibold text-neutral-100">Six Degrees</h2>
+        <h2 className="text-lg font-semibold text-neutral-100">Co-Star</h2>
         <p className="text-sm text-neutral-500 mt-1">
-          Connect today's two movies through shared cast, one hop at a time.
+          Connect today's two actors through shared movies, one hop at a time.
         </p>
       </Link>
     </div>

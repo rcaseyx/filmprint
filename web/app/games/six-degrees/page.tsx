@@ -160,16 +160,12 @@ export default function SixDegreesPage() {
     const newChain = [...chain, { movie, person: next }]
     setGuessPath(newGuessPath)
     setChain(newChain)
-    setVisitedMovieIds((prev) => [...prev, movie.id])
-    setVisitedPersonIds((prev) => [...prev, next.person_id])
-    setCurrentPerson(next)
-    setSelectedMovie(null)
-    setMovieQuery("")
-    setActorQuery("")
-    setMovieResults([])
-    setActorResults([])
 
     if (next.person_id === puzzle.end_person.id) {
+      // Don't advance currentPerson/reset the input UI here -- that would
+      // briefly render "Currently at: {target}" while the attempt is still
+      // submitting. Leave the in-progress view as-is and jump straight from
+      // "submitting" to the solved screen once we hear back.
       setSubmitting(true)
       try {
         const res = await fetch(`${API}/api/games/six-degrees/attempt`, {
@@ -188,7 +184,17 @@ export default function SixDegreesPage() {
       } finally {
         setSubmitting(false)
       }
+      return true
     }
+
+    setVisitedMovieIds((prev) => [...prev, movie.id])
+    setVisitedPersonIds((prev) => [...prev, next.person_id])
+    setCurrentPerson(next)
+    setSelectedMovie(null)
+    setMovieQuery("")
+    setActorQuery("")
+    setMovieResults([])
+    setActorResults([])
     return true
   }
 
@@ -251,9 +257,18 @@ export default function SixDegreesPage() {
         <div className="mt-8 text-center">
           <h1 className="text-xl font-semibold text-neutral-100">Solved!</h1>
           <p className="text-neutral-400 mt-2">
-            {puzzle.start_person.name} &rarr; {puzzle.end_person.name} in {degreeCount} degree{degreeCount === 1 ? "" : "s"}
+            {degreeCount} degree{degreeCount === 1 ? "" : "s"}
           </p>
         </div>
+        {chain.length > 0 ? (
+          <ChainTimeline startPerson={puzzle.start_person} chain={chain} />
+        ) : (
+          <div className="flex items-center justify-center gap-6 mt-6">
+            <Headshot person={puzzle.start_person} />
+            <span className="text-2xl text-neutral-600">&rarr;</span>
+            <Headshot person={puzzle.end_person} />
+          </div>
+        )}
       </div>
     )
   }
@@ -268,17 +283,7 @@ export default function SixDegreesPage() {
         <Headshot person={puzzle.end_person} />
       </div>
 
-      {chain.length > 0 && (
-        <div className="mt-6 rounded-xl border border-neutral-800 bg-neutral-900 p-4">
-          <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Your chain</div>
-          <p className="text-sm text-neutral-300 mt-2 leading-relaxed">
-            {puzzle.start_person.name}
-            {chain.map((h, i) => (
-              <span key={i}>{"  →  "}{h.movie.title}{"  →  "}{h.person.person_name}</span>
-            ))}
-          </p>
-        </div>
-      )}
+      {chain.length > 0 && <ChainTimeline startPerson={puzzle.start_person} chain={chain} />}
 
       <p className="text-neutral-200 font-medium mt-6">Currently at: {currentPerson?.person_name}</p>
 
@@ -364,6 +369,58 @@ function BackLink() {
     <Link href="/games" className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors">
       &larr; Games
     </Link>
+  )
+}
+
+function ChainTimeline({ startPerson, chain }: { startPerson: PersonSummary; chain: Hop[] }) {
+  return (
+    <div className="mt-6 rounded-xl border border-neutral-800 bg-neutral-900 p-4">
+      <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Your chain</div>
+      <div className="flex items-center gap-2 mt-3">
+        {startPerson.profile_path ? (
+          <Image
+            src={`${TMDB_IMG}${startPerson.profile_path}`}
+            alt={startPerson.name}
+            width={28}
+            height={28}
+            className="rounded-full object-cover bg-neutral-800"
+          />
+        ) : (
+          <Avatar name={startPerson.name} size={28} />
+        )}
+        <span className="text-sm font-medium text-neutral-100">{startPerson.name}</span>
+      </div>
+      {chain.map((h, i) => (
+        <div key={i} className="flex items-center gap-3 mt-3">
+          {h.movie.poster_path ? (
+            <Image
+              src={`${TMDB_IMG.replace("w185", "w92")}${h.movie.poster_path}`}
+              alt={h.movie.title}
+              width={32}
+              height={48}
+              className="rounded object-cover bg-neutral-800"
+            />
+          ) : (
+            <div className="w-8 h-12 rounded bg-neutral-800 border border-neutral-700" />
+          )}
+          {h.person.profile_path ? (
+            <Image
+              src={`${TMDB_IMG}${h.person.profile_path}`}
+              alt={h.person.person_name}
+              width={28}
+              height={28}
+              className="rounded-full object-cover bg-neutral-800"
+            />
+          ) : (
+            <Avatar name={h.person.person_name} size={28} />
+          )}
+          <div>
+            <div className="text-xs text-neutral-500">{h.movie.title}</div>
+            <div className="text-sm font-medium text-neutral-100">{h.person.person_name}</div>
+          </div>
+        </div>
+      ))}
+    </div>
   )
 }
 

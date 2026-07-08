@@ -171,16 +171,12 @@ export default function SixDegreesScreen() {
     const newChain = [...chain, { movie, person: next }]
     setGuessPath(newGuessPath)
     setChain(newChain)
-    setVisitedMovieIds(prev => [...prev, movie.id])
-    setVisitedPersonIds(prev => [...prev, next.person_id])
-    setCurrentPerson(next)
-    setSelectedMovie(null)
-    setMovieQuery('')
-    setActorQuery('')
-    setMovieResults([])
-    setActorResults([])
 
     if (next.person_id === puzzle.end_person.id) {
+      // Don't advance currentPerson/reset the input UI here -- that would
+      // briefly render "Current actor: {target}" while the attempt is still
+      // submitting. Leave the in-progress view as-is and jump straight from
+      // "submitting" to the solved screen once we hear back.
       setSubmitting(true)
       try {
         const res = await apiFetch('/api/games/six-degrees/attempt', {
@@ -198,7 +194,17 @@ export default function SixDegreesScreen() {
       } finally {
         setSubmitting(false)
       }
+      return true
     }
+
+    setVisitedMovieIds(prev => [...prev, movie.id])
+    setVisitedPersonIds(prev => [...prev, next.person_id])
+    setCurrentPerson(next)
+    setSelectedMovie(null)
+    setMovieQuery('')
+    setActorQuery('')
+    setMovieResults([])
+    setActorResults([])
     return true
   }
 
@@ -260,18 +266,24 @@ export default function SixDegreesScreen() {
     return (
       <SafeAreaView style={s.safe} edges={['top']}>
         <BackBar router={router} />
-        <FadeInUp style={s.center}>
-          <View style={s.trophyBadge}>
-            <Trophy size={30} color={Colors.background} strokeWidth={2} />
-          </View>
-          <Text style={s.heading}>Solved!</Text>
-          <View style={s.solvedRow}>
-            <SmallHeadshot person={puzzle.start_person} />
-            <ArrowRight size={18} color={Colors.textFaint} />
-            <SmallHeadshot person={puzzle.end_person} />
-          </View>
-          <Text style={s.sub}>{degreeCount} degree{degreeCount === 1 ? '' : 's'}</Text>
-        </FadeInUp>
+        <ScrollView contentContainerStyle={s.solvedScroll} keyboardShouldPersistTaps="handled">
+          <FadeInUp style={s.center}>
+            <View style={s.trophyBadge}>
+              <Trophy size={30} color={Colors.background} strokeWidth={2} />
+            </View>
+            <Text style={s.heading}>Solved!</Text>
+            <Text style={s.sub}>{degreeCount} degree{degreeCount === 1 ? '' : 's'}</Text>
+          </FadeInUp>
+          {chain.length > 0 ? (
+            <ChainTimeline startPerson={puzzle.start_person} chain={chain} />
+          ) : (
+            <View style={s.solvedRow}>
+              <SmallHeadshot person={puzzle.start_person} />
+              <ArrowRight size={18} color={Colors.textFaint} />
+              <SmallHeadshot person={puzzle.end_person} />
+            </View>
+          )}
+        </ScrollView>
       </SafeAreaView>
     )
   }
@@ -288,31 +300,7 @@ export default function SixDegreesScreen() {
           <BigHeadshot person={puzzle.end_person} />
         </View>
 
-        {chain.length > 0 && (
-          <View style={s.chainWrap}>
-            <Text style={s.sectionLabel}>Your Chain</Text>
-            <View style={s.chainStepRow}>
-              <View style={s.chainStepBadge}><Text style={s.chainStepBadgeText}>1</Text></View>
-              <Text style={s.chainStartName}>{puzzle.start_person.name}</Text>
-            </View>
-            {chain.map((h, i) => (
-              <FadeInUp key={i}>
-                <View style={s.hopRow}>
-                  <View style={s.chainStepBadge}><Text style={s.chainStepBadgeText}>{i + 2}</Text></View>
-                  {h.movie.poster_path ? (
-                    <Image source={{ uri: `${TMDB_POSTER_THUMB}${h.movie.poster_path}` }} style={s.hopPoster} />
-                  ) : (
-                    <View style={[s.hopPoster, s.hopPosterFallback]} />
-                  )}
-                  <View style={s.hopTextWrap}>
-                    <Text style={s.hopMovieTitle} numberOfLines={1}>{h.movie.title}</Text>
-                    <Text style={s.hopPersonName} numberOfLines={1}>{h.person.person_name}</Text>
-                  </View>
-                </View>
-              </FadeInUp>
-            ))}
-          </View>
-        )}
+        {chain.length > 0 && <ChainTimeline startPerson={puzzle.start_person} chain={chain} />}
 
         <View style={s.turnCard}>
           {currentPerson?.profile_path ? (
@@ -435,6 +423,44 @@ function BigHeadshot({ person }: { person: PersonSummary }) {
   )
 }
 
+function ChainTimeline({ startPerson, chain }: { startPerson: PersonSummary; chain: Hop[] }) {
+  return (
+    <View style={s.chainWrap}>
+      <Text style={s.sectionLabel}>Your Chain</Text>
+      <View style={s.chainStepRow}>
+        <View style={s.chainStepBadge}><Text style={s.chainStepBadgeText}>1</Text></View>
+        {startPerson.profile_path ? (
+          <Image source={{ uri: `${TMDB_PROFILE}${startPerson.profile_path}` }} style={s.hopAvatar} />
+        ) : (
+          <View style={s.hopAvatar}><Avatar name={startPerson.name} size={28} /></View>
+        )}
+        <Text style={s.chainStartName}>{startPerson.name}</Text>
+      </View>
+      {chain.map((h, i) => (
+        <FadeInUp key={i}>
+          <View style={s.hopRow}>
+            <View style={s.chainStepBadge}><Text style={s.chainStepBadgeText}>{i + 2}</Text></View>
+            {h.movie.poster_path ? (
+              <Image source={{ uri: `${TMDB_POSTER_THUMB}${h.movie.poster_path}` }} style={s.hopPoster} />
+            ) : (
+              <View style={[s.hopPoster, s.hopPosterFallback]} />
+            )}
+            {h.person.profile_path ? (
+              <Image source={{ uri: `${TMDB_PROFILE}${h.person.profile_path}` }} style={s.hopAvatar} />
+            ) : (
+              <View style={s.hopAvatar}><Avatar name={h.person.person_name} size={28} /></View>
+            )}
+            <View style={s.hopTextWrap}>
+              <Text style={s.hopMovieTitle} numberOfLines={1}>{h.movie.title}</Text>
+              <Text style={s.hopPersonName} numberOfLines={1}>{h.person.person_name}</Text>
+            </View>
+          </View>
+        </FadeInUp>
+      ))}
+    </View>
+  )
+}
+
 function SmallHeadshot({ person }: { person: PersonSummary }) {
   return (
     <View style={s.smallHeadshotCard}>
@@ -455,7 +481,8 @@ const s = StyleSheet.create({
   backBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm },
   backText: { fontSize: 15, color: Colors.textSecondary },
   scroll: { paddingHorizontal: Spacing.lg, paddingBottom: 100, gap: Spacing.lg },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg },
+  solvedScroll: { paddingHorizontal: Spacing.lg, paddingBottom: 100, paddingTop: 40, gap: Spacing.lg },
+  center: { alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
   heading: { fontSize: 24, fontWeight: '700', color: Colors.text },
   sub: { fontSize: 15, color: Colors.textMuted, textAlign: 'center' },
   empty: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', marginTop: 40 },
@@ -495,8 +522,9 @@ const s = StyleSheet.create({
   chainStepBadgeText: { fontSize: 12, fontWeight: '700', color: Colors.textSecondary },
   chainStartName: { fontSize: 14, fontWeight: '600', color: Colors.text },
   hopRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.sm },
-  hopPoster: { width: 36, height: 54, borderRadius: 6, backgroundColor: Colors.background },
+  hopPoster: { width: 32, height: 48, borderRadius: 6, backgroundColor: Colors.background },
   hopPosterFallback: { borderWidth: 1, borderColor: Colors.border },
+  hopAvatar: { width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.background, alignItems: 'center', justifyContent: 'center' },
   hopTextWrap: { flex: 1 },
   hopMovieTitle: { fontSize: 12, color: Colors.textMuted },
   hopPersonName: { fontSize: 14, fontWeight: '600', color: Colors.text },
