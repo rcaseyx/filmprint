@@ -88,7 +88,9 @@ from filmprint.db import (
     get_all_keyword_themes,
     get_daily_puzzle, upsert_puzzle_attempt, get_puzzle_attempt, get_person_summary,
 )
-from filmprint.six_degrees import search_people, search_movies, is_credited_in, share_movie, validate_full_chain
+from filmprint.six_degrees import (
+    search_people, search_movies, is_credited_in, share_movie, validate_full_chain, generate_daily_puzzle,
+)
 from filmprint.features import (
     build_feature_vector, taste_summary, build_keyword_vocab,
     build_affinity_scores, GENRES, DECADES, compute_axis_scores, TONE_AXES, SUBGENRE_AXES,
@@ -2777,6 +2779,22 @@ def six_degrees_today(current_user: dict = Depends(get_current_user)):
     }
 
 
+@app.get("/api/games/six-degrees/practice")
+def six_degrees_practice(current_user: dict = Depends(get_current_user)):
+    """
+    A fresh, unlimited, unscored puzzle -- entirely separate from daily_puzzles/
+    user_puzzle_attempts, so replaying never touches (or requires clearing) a
+    user's real daily score.
+    """
+    puzzle = generate_daily_puzzle()
+    start_person = get_person_summary(puzzle["start_person_id"])
+    end_person = get_person_summary(puzzle["end_person_id"])
+    return {
+        "start_person": _six_degrees_person_summary(start_person),
+        "end_person": _six_degrees_person_summary(end_person),
+    }
+
+
 @app.get("/api/games/six-degrees/search-people")
 def six_degrees_search_people(q: str = "", exclude: str = "", current_user: dict = Depends(get_current_user)):
     """Broad person-name search, not scoped to any movie -- a real guess is still required (see verify-shared-movie)."""
@@ -2833,6 +2851,23 @@ def six_degrees_submit_attempt(payload: _SixDegreesAttemptPayload, current_user:
         raise HTTPException(status_code=422, detail="Chain does not connect start to end via shared movies")
 
     upsert_puzzle_attempt(user_id, puzzle["id"], guess_hops, True, payload.solve_time_ms)
+    return {"solved": True, "degree_count": len(guess_hops)}
+
+
+class _SixDegreesPracticeAttemptPayload(BaseModel):
+    start_person_id: int
+    end_person_id: int
+    guess_path: list[_SixDegreesGuessHop]
+
+
+@app.post("/api/games/six-degrees/practice/attempt")
+def six_degrees_practice_attempt(
+    payload: _SixDegreesPracticeAttemptPayload, current_user: dict = Depends(get_current_user)
+):
+    """Validates a practice chain but never persists it -- practice has no score to track."""
+    guess_hops = [hop.model_dump() for hop in payload.guess_path]
+    if not validate_full_chain(payload.start_person_id, payload.end_person_id, guess_hops):
+        raise HTTPException(status_code=422, detail="Chain does not connect start to end via shared movies")
     return {"solved": True, "degree_count": len(guess_hops)}
 
 

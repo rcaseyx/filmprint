@@ -21,6 +21,14 @@ export default function GamesScreen() {
         <Text style={s.cardTitle}>Co-Star</Text>
         <Text style={s.cardDesc}>Connect today's two actors through shared movies, one hop at a time.</Text>
       </TouchableOpacity>
+
+      <TouchableOpacity
+        style={s.practiceLink}
+        activeOpacity={0.6}
+        onPress={() => router.push('/games/six-degrees?practice=1' as any)}
+      >
+        <Text style={s.practiceLinkText}>Just want to practice? →</Text>
+      </TouchableOpacity>
     </SafeAreaView>
   )
 }
@@ -37,4 +45,6 @@ const s = StyleSheet.create({
   },
   cardTitle: { fontSize: 17, fontWeight: '600', color: Colors.text },
   cardDesc: { fontSize: 13, color: Colors.textMuted, lineHeight: 18 },
+  practiceLink: { marginHorizontal: Spacing.lg, marginTop: Spacing.md, alignSelf: 'flex-start' },
+  practiceLinkText: { fontSize: 13, color: Colors.textMuted },
 })

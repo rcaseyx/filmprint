@@ -30,6 +30,13 @@ export default async function GamesPage() {
           Connect today's two actors through shared movies, one hop at a time.
         </p>
       </Link>
+
+      <Link
+        href="/games/six-degrees?practice=1"
+        className="inline-block mt-4 text-sm text-neutral-500 hover:text-neutral-300 transition-colors"
+      >
+        Just want to practice? &rarr;
+      </Link>
     </div>
   )
 }
