@@ -2771,6 +2771,7 @@ def six_degrees_today(current_user: dict = Depends(get_current_user)):
         "puzzle_date": str(puzzle["puzzle_date"]),
         "start_person": _six_degrees_person_summary(start_person),
         "end_person": _six_degrees_person_summary(end_person),
+        "optimal_degree_count": puzzle["degree_count"],
         "user_attempt": {
             "is_solved": attempt["is_solved"],
             "degree_count": len(attempt["guess_path"]) if attempt.get("guess_path") else None,
@@ -2792,6 +2793,7 @@ def six_degrees_practice(current_user: dict = Depends(get_current_user)):
     return {
         "start_person": _six_degrees_person_summary(start_person),
         "end_person": _six_degrees_person_summary(end_person),
+        "optimal_degree_count": puzzle["degree_count"],
     }
 
 
