@@ -423,37 +423,45 @@ function BigHeadshot({ person }: { person: PersonSummary }) {
   )
 }
 
+type ChainEntry =
+  | { kind: 'person'; name: string; profile_path: string | null }
+  | { kind: 'movie'; title: string; poster_path: string | null }
+
+function buildChainEntries(startPerson: PersonSummary, chain: Hop[]): ChainEntry[] {
+  const entries: ChainEntry[] = [{ kind: 'person', name: startPerson.name, profile_path: startPerson.profile_path }]
+  for (const h of chain) {
+    entries.push({ kind: 'movie', title: h.movie.title, poster_path: h.movie.poster_path })
+    entries.push({ kind: 'person', name: h.person.person_name, profile_path: h.person.profile_path })
+  }
+  return entries
+}
+
 function ChainTimeline({ startPerson, chain }: { startPerson: PersonSummary; chain: Hop[] }) {
+  const entries = buildChainEntries(startPerson, chain)
   return (
     <View style={s.chainWrap}>
       <Text style={s.sectionLabel}>Your Chain</Text>
-      <View style={s.chainStepRow}>
-        <View style={s.chainStepBadge}><Text style={s.chainStepBadgeText}>1</Text></View>
-        {startPerson.profile_path ? (
-          <Image source={{ uri: `${TMDB_PROFILE}${startPerson.profile_path}` }} style={s.hopAvatar} />
-        ) : (
-          <View style={s.hopAvatar}><Avatar name={startPerson.name} size={28} /></View>
-        )}
-        <Text style={s.chainStartName}>{startPerson.name}</Text>
-      </View>
-      {chain.map((h, i) => (
+      {entries.map((e, i) => (
         <FadeInUp key={i}>
-          <View style={s.hopRow}>
-            <View style={s.chainStepBadge}><Text style={s.chainStepBadgeText}>{i + 2}</Text></View>
-            {h.movie.poster_path ? (
-              <Image source={{ uri: `${TMDB_POSTER_THUMB}${h.movie.poster_path}` }} style={s.hopPoster} />
+          <View style={s.chainEntryRow}>
+            <View style={s.chainStepBadge}><Text style={s.chainStepBadgeText}>{i + 1}</Text></View>
+            {e.kind === 'person' ? (
+              e.profile_path ? (
+                <Image source={{ uri: `${TMDB_PROFILE}${e.profile_path}` }} style={s.chainEntryAvatar} />
+              ) : (
+                <View style={s.chainEntryAvatar}><Avatar name={e.name} size={28} /></View>
+              )
+            ) : e.poster_path ? (
+              <Image source={{ uri: `${TMDB_POSTER_THUMB}${e.poster_path}` }} style={s.chainEntryPoster} />
             ) : (
-              <View style={[s.hopPoster, s.hopPosterFallback]} />
+              <View style={[s.chainEntryPoster, s.chainEntryPosterFallback]} />
             )}
-            {h.person.profile_path ? (
-              <Image source={{ uri: `${TMDB_PROFILE}${h.person.profile_path}` }} style={s.hopAvatar} />
-            ) : (
-              <View style={s.hopAvatar}><Avatar name={h.person.person_name} size={28} /></View>
-            )}
-            <View style={s.hopTextWrap}>
-              <Text style={s.hopMovieTitle} numberOfLines={1}>{h.movie.title}</Text>
-              <Text style={s.hopPersonName} numberOfLines={1}>{h.person.person_name}</Text>
-            </View>
+            <Text
+              style={e.kind === 'person' ? s.chainEntryPersonText : s.chainEntryMovieText}
+              numberOfLines={1}
+            >
+              {e.kind === 'person' ? e.name : e.title}
+            </Text>
           </View>
         </FadeInUp>
       ))}
@@ -514,20 +522,17 @@ const s = StyleSheet.create({
     fontSize: 11, fontWeight: '700', color: Colors.textFaint,
     textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 2,
   },
-  chainStepRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   chainStepBadge: {
     width: 26, height: 26, borderRadius: 13, backgroundColor: Colors.border,
     alignItems: 'center', justifyContent: 'center',
   },
   chainStepBadgeText: { fontSize: 12, fontWeight: '700', color: Colors.textSecondary },
-  chainStartName: { fontSize: 14, fontWeight: '600', color: Colors.text },
-  hopRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.sm },
-  hopPoster: { width: 32, height: 48, borderRadius: 6, backgroundColor: Colors.background },
-  hopPosterFallback: { borderWidth: 1, borderColor: Colors.border },
-  hopAvatar: { width: 28, height: 28, borderRadius: 14, backgroundColor: Colors.background, alignItems: 'center', justifyContent: 'center' },
-  hopTextWrap: { flex: 1 },
-  hopMovieTitle: { fontSize: 12, color: Colors.textMuted },
-  hopPersonName: { fontSize: 14, fontWeight: '600', color: Colors.text },
+  chainEntryRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.sm },
+  chainEntryPoster: { width: 32, height: 48, borderRadius: 6, backgroundColor: Colors.background },
+  chainEntryPosterFallback: { borderWidth: 1, borderColor: Colors.border },
+  chainEntryAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: Colors.background, alignItems: 'center', justifyContent: 'center' },
+  chainEntryPersonText: { fontSize: 14, fontWeight: '600', color: Colors.text, flex: 1 },
+  chainEntryMovieText: { fontSize: 13, color: Colors.textMuted, fontStyle: 'italic', flex: 1 },
 
   turnCard: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,

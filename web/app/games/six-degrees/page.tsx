@@ -372,30 +372,45 @@ function BackLink() {
   )
 }
 
+type ChainEntry =
+  | { kind: "person"; name: string; profile_path: string | null }
+  | { kind: "movie"; title: string; poster_path: string | null }
+
+function buildChainEntries(startPerson: PersonSummary, chain: Hop[]): ChainEntry[] {
+  const entries: ChainEntry[] = [{ kind: "person", name: startPerson.name, profile_path: startPerson.profile_path }]
+  for (const h of chain) {
+    entries.push({ kind: "movie", title: h.movie.title, poster_path: h.movie.poster_path })
+    entries.push({ kind: "person", name: h.person.person_name, profile_path: h.person.profile_path })
+  }
+  return entries
+}
+
 function ChainTimeline({ startPerson, chain }: { startPerson: PersonSummary; chain: Hop[] }) {
+  const entries = buildChainEntries(startPerson, chain)
   return (
     <div className="mt-6 rounded-xl border border-neutral-800 bg-neutral-900 p-4">
       <div className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Your chain</div>
-      <div className="flex items-center gap-2 mt-3">
-        {startPerson.profile_path ? (
-          <Image
-            src={`${TMDB_IMG}${startPerson.profile_path}`}
-            alt={startPerson.name}
-            width={28}
-            height={28}
-            className="rounded-full object-cover bg-neutral-800"
-          />
-        ) : (
-          <Avatar name={startPerson.name} size={28} />
-        )}
-        <span className="text-sm font-medium text-neutral-100">{startPerson.name}</span>
-      </div>
-      {chain.map((h, i) => (
+      {entries.map((e, i) => (
         <div key={i} className="flex items-center gap-3 mt-3">
-          {h.movie.poster_path ? (
+          <span className="w-6 h-6 shrink-0 rounded-full bg-neutral-800 text-neutral-400 text-xs font-semibold flex items-center justify-center">
+            {i + 1}
+          </span>
+          {e.kind === "person" ? (
+            e.profile_path ? (
+              <Image
+                src={`${TMDB_IMG}${e.profile_path}`}
+                alt={e.name}
+                width={28}
+                height={28}
+                className="rounded-full object-cover bg-neutral-800"
+              />
+            ) : (
+              <Avatar name={e.name} size={28} />
+            )
+          ) : e.poster_path ? (
             <Image
-              src={`${TMDB_IMG.replace("w185", "w92")}${h.movie.poster_path}`}
-              alt={h.movie.title}
+              src={`${TMDB_IMG.replace("w185", "w92")}${e.poster_path}`}
+              alt={e.title}
               width={32}
               height={48}
               className="rounded object-cover bg-neutral-800"
@@ -403,21 +418,9 @@ function ChainTimeline({ startPerson, chain }: { startPerson: PersonSummary; cha
           ) : (
             <div className="w-8 h-12 rounded bg-neutral-800 border border-neutral-700" />
           )}
-          {h.person.profile_path ? (
-            <Image
-              src={`${TMDB_IMG}${h.person.profile_path}`}
-              alt={h.person.person_name}
-              width={28}
-              height={28}
-              className="rounded-full object-cover bg-neutral-800"
-            />
-          ) : (
-            <Avatar name={h.person.person_name} size={28} />
-          )}
-          <div>
-            <div className="text-xs text-neutral-500">{h.movie.title}</div>
-            <div className="text-sm font-medium text-neutral-100">{h.person.person_name}</div>
-          </div>
+          <span className={e.kind === "person" ? "text-sm font-medium text-neutral-100" : "text-sm text-neutral-500 italic"}>
+            {e.kind === "person" ? e.name : e.title}
+          </span>
         </div>
       ))}
     </div>
