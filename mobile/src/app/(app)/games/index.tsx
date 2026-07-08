@@ -18,8 +18,8 @@ export default function GamesScreen() {
         activeOpacity={0.7}
         onPress={() => router.push('/games/six-degrees' as any)}
       >
-        <Text style={s.cardTitle}>Six Degrees</Text>
-        <Text style={s.cardDesc}>Connect today's two movies through shared cast, one hop at a time.</Text>
+        <Text style={s.cardTitle}>Co-Star</Text>
+        <Text style={s.cardDesc}>Connect today's two actors through shared movies, one hop at a time.</Text>
       </TouchableOpacity>
     </SafeAreaView>
   )
