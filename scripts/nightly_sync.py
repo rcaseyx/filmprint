@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from filmprint.db import init_db, close_db, get_ratings_count, get_users_with_letterboxd
 from filmprint.sync import sync_rss, sync_scrape
+from filmprint.six_degrees import generate_and_store_tomorrows_puzzle
 
 logging.basicConfig(
     level=logging.INFO,
@@ -100,6 +101,8 @@ def main() -> None:
     log.info("%d user(s) picked up new ratings tonight", len(users_with_new_ratings))
     _rebuild_all_profiles(users_with_new_ratings)
 
+    _generate_six_degrees_puzzle()
+
     close_db()
     if succeeded == 0:
         sys.exit(1)
@@ -144,6 +147,20 @@ def _rebuild_all_profiles(users_with_new_ratings: set[int]) -> None:
                     log.info("[rebuild-all] %s", line)
     except Exception:
         log.exception("Bulk profile rebuild failed")
+
+
+def _generate_six_degrees_puzzle() -> None:
+    try:
+        puzzle = generate_and_store_tomorrows_puzzle()
+        if puzzle is None:
+            log.info("Six-degrees puzzle for tomorrow already exists — skipped")
+        else:
+            log.info(
+                "Generated six-degrees puzzle #%s for %s (%d degrees)",
+                puzzle["id"], puzzle["puzzle_date"], puzzle["degree_count"],
+            )
+    except Exception:
+        log.exception("Six-degrees puzzle generation failed")
 
 
 if __name__ == "__main__":

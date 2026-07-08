@@ -2,8 +2,9 @@
 
 import random
 from collections import deque
+from datetime import date, timedelta
 
-from .db import get_connection
+from .db import get_connection, get_daily_puzzle, get_recent_anchor_movie_ids, insert_daily_puzzle
 
 # Minimum vote_count for a movie to be eligible as an anchor or bridge in the
 # daily puzzle graph -- keeps every step of a solution recognizable rather
@@ -121,6 +122,29 @@ def generate_daily_puzzle(exclude_movie_ids: set[int] | None = None, max_attempt
             }
 
     raise RuntimeError(f"Could not find a valid puzzle pair after {max_attempts} attempts")
+
+
+def generate_and_store_tomorrows_puzzle() -> dict | None:
+    """
+    Generate and store tomorrow's daily puzzle, unless one already exists for
+    that date (idempotent — safe to call from a job that might run more than
+    once). Returns the inserted puzzle dict (with "id"), or None if skipped.
+    """
+    puzzle_date = date.today() + timedelta(days=1)
+    if get_daily_puzzle(puzzle_date):
+        return None
+
+    exclude = get_recent_anchor_movie_ids(ANCHOR_COOLDOWN_DAYS)
+    puzzle = generate_daily_puzzle(exclude_movie_ids=exclude)
+    puzzle["id"] = insert_daily_puzzle(
+        puzzle_date,
+        puzzle["start_movie_id"],
+        puzzle["end_movie_id"],
+        puzzle["solution_path"],
+        puzzle["degree_count"],
+    )
+    puzzle["puzzle_date"] = puzzle_date
+    return puzzle
 
 
 def validate_step(movie_id: int, person_id: int, next_movie_id: int) -> bool:
