@@ -6,25 +6,36 @@ from datetime import date, timedelta
 
 from .db import get_connection, get_daily_puzzle, get_recent_anchor_person_ids, insert_daily_puzzle
 
-# Minimum vote_count, popularity, AND revenue for a movie to be eligible as a
-# bridge in the daily puzzle graph. Each guards against a different failure
-# mode seen in live puzzles: vote_count alone let through movies that
-# accumulated ratings over decades without staying memorable (Volcano (1997):
-# vote_count 1663, popularity 4.1); popularity alone let through fandom-driven
-# direct-to-video titles with no real theatrical release (Mortal Kombat
-# Legends: Scorpion's Revenge: vote_count 1477, popularity 21.7, revenue $0).
-# Requiring positive revenue filters out the latter -- a real release with
-# marketing behind it, not just enthusiast-community engagement on TMDB.
+# Minimum vote_count and revenue for a movie to be eligible as a bridge in the
+# daily puzzle graph. A popularity floor was tried here too, but TMDB's
+# "popularity" is a live trending metric that decays for essentially every
+# catalog title over time, not a fixed measure of fame -- it ended up
+# excluding ~2400 movies with solid vote counts and real revenue (Guardians of
+# the Galaxy, Jurassic Park, Moana, X-Men: First Class...) as their scores
+# drifted below the threshold long after it was tuned. Requiring positive
+# revenue still filters the failure mode popularity was meant to catch
+# (fandom-driven direct-to-video titles with no real theatrical release, e.g.
+# Mortal Kombat Legends: Scorpion's Revenge: vote_count 1477, revenue $0).
 CURATED_POOL_MIN_VOTES = 1000
-CURATED_POOL_MIN_POPULARITY = 8
 
 # Anchors are two ACTORS, not two movies (pivoted after movie-level popularity
 # signals kept letting through unrecognizable anchors -- see above). Actor fame
 # is derived from the movie pool itself rather than TMDB's person-popularity
 # metric (same fandom-inflation problem as movie popularity): an actor with
-# top-10 billing in several already-curated-pool movies is reliably a known
-# face, validated against real data (820 actors, weakest being names like
-# Richard Gere / Tina Fey -- still solid, unlike the movie pool's weakest entries).
+# top-10 billing in several movies is reliably a known face. Anchors use a
+# stricter, higher-vote-count movie subset than bridges/search do -- dropping
+# the popularity floor above grew the general movie pool ~3.7x (892 -> 3304),
+# which would otherwise pull much less recognizable names into the anchor
+# pool too (e.g. Remo Girone, Stefan Gierasch). vote_count is monotonic and
+# doesn't decay the way popularity does, so it stays a stable anchor-quality
+# bar over time. Validated against real data (846 movies / 846 actors at this
+# threshold, comparable to the original pre-popularity-floor pool of 820).
+# Even at this bar a few actors slip through who are top-billed in several
+# famous movies without being personally famous themselves (e.g. Randall Duk
+# Kim in Kung Fu Panda/John Wick 3/The Matrix Reloaded) -- an inherent
+# limitation of inferring fame from billing order rather than a real
+# person-level signal, already present (and accepted) in the original pool.
+ANCHOR_MOVIE_MIN_VOTES = 5500
 ACTOR_POOL_MIN_BILLING = 10
 ACTOR_POOL_MIN_MOVIES = 3
 
@@ -41,8 +52,8 @@ def get_curated_pool() -> list[int]:
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
-            "SELECT id FROM movies WHERE vote_count >= %s AND popularity >= %s AND revenue > 0",
-            (CURATED_POOL_MIN_VOTES, CURATED_POOL_MIN_POPULARITY),
+            "SELECT id FROM movies WHERE vote_count >= %s AND revenue > 0",
+            (CURATED_POOL_MIN_VOTES,),
         )
         return [row["id"] for row in cur.fetchall()]
 
@@ -50,19 +61,22 @@ def get_curated_pool() -> list[int]:
 def get_curated_actor_pool(movie_pool: list[int] | None = None) -> list[int]:
     """
     Person IDs eligible as a daily-puzzle anchor: top-billed in several movies
-    from the curated movie pool. Only anchors need this stricter bar -- bridge
-    actors found while solving stay fully unrestricted (any billing order is a
-    valid connection, rewarding depth of knowledge rather than penalizing it).
+    from a stricter, higher-vote-count subset of the curated movie pool. Only
+    anchors need this stricter bar -- bridge actors found while solving stay
+    fully unrestricted (any billing order is a valid connection, rewarding
+    depth of knowledge rather than penalizing it), and bridge movies use the
+    full (broader) curated pool so real, well-known movies stay searchable.
     """
     pool = movie_pool if movie_pool is not None else get_curated_pool()
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
-            """SELECT person_id FROM movie_credits
-               WHERE movie_id = ANY(%s) AND billing_order <= %s
-               GROUP BY person_id
-               HAVING count(DISTINCT movie_id) >= %s""",
-            (pool, ACTOR_POOL_MIN_BILLING, ACTOR_POOL_MIN_MOVIES),
+            """SELECT mc.person_id FROM movie_credits mc
+               JOIN movies m ON m.id = mc.movie_id
+               WHERE mc.movie_id = ANY(%s) AND mc.billing_order <= %s AND m.vote_count >= %s
+               GROUP BY mc.person_id
+               HAVING count(DISTINCT mc.movie_id) >= %s""",
+            (pool, ACTOR_POOL_MIN_BILLING, ANCHOR_MOVIE_MIN_VOTES, ACTOR_POOL_MIN_MOVIES),
         )
         return [row["person_id"] for row in cur.fetchall()]
 
