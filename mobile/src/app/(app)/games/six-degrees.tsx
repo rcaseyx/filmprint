@@ -244,6 +244,7 @@ export default function SixDegreesScreen() {
     setActorQuery('')
     setMovieResults([])
     setActorResults([])
+    scrollRef.current?.scrollTo({ y: 0, animated: true })
     return true
   }
 
@@ -377,7 +378,6 @@ export default function SixDegreesScreen() {
               onChangeText={setMovieQuery}
               autoCapitalize="words"
               autoCorrect={false}
-              onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 150)}
             />
             {movieError && <Text style={s.errorText}>{movieError}</Text>}
             {movieResults.map(m => (
@@ -424,7 +424,6 @@ export default function SixDegreesScreen() {
               onChangeText={setActorQuery}
               autoCapitalize="words"
               autoCorrect={false}
-              onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 150)}
             />
             {actorError && <Text style={s.errorText}>{actorError}</Text>}
             {actorResults.map(a => (
@@ -553,8 +552,8 @@ const s = StyleSheet.create({
   playAgainBtn: { backgroundColor: Colors.brand, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
   playAgainText: { fontSize: 15, fontWeight: '700', color: Colors.background },
   scrollFlex: { flex: 1 },
-  scroll: { paddingHorizontal: Spacing.lg, paddingBottom: 100, gap: Spacing.lg },
-  solvedScroll: { paddingHorizontal: Spacing.lg, paddingBottom: 100, paddingTop: 40, gap: Spacing.lg },
+  scroll: { paddingHorizontal: Spacing.lg, paddingBottom: 32, gap: Spacing.lg },
+  solvedScroll: { paddingHorizontal: Spacing.lg, paddingBottom: 32, paddingTop: 40, gap: Spacing.lg },
   center: { alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
   heading: { fontSize: 24, fontWeight: '700', color: Colors.text },
   sub: { fontSize: 15, color: Colors.textMuted, textAlign: 'center' },
