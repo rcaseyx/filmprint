@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   View, Text, TextInput, Pressable, Image, ActivityIndicator, ScrollView,
-  StyleSheet, Animated, Dimensions,
+  StyleSheet, Animated, Dimensions, KeyboardAvoidingView, Platform,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
@@ -72,6 +72,7 @@ export default function SixDegreesScreen() {
   const [chain, setChain] = useState<Hop[]>([])
   const [guessPath, setGuessPath] = useState<{ person_id: number; movie_id: number; next_person_id: number }[]>([])
   const startTimeRef = useRef<number>(0)
+  const scrollRef = useRef<ScrollView>(null)
 
   const [movieQuery, setMovieQuery] = useState('')
   const [movieResults, setMovieResults] = useState<MovieSummary[]>([])
@@ -143,6 +144,20 @@ export default function SixDegreesScreen() {
       .catch(() => { if (!cancelled) setActorResults([]) })
     return () => { cancelled = true }
   }, [debouncedActorQuery, selectedMovie, actorQuery, visitedPersonIds])
+
+  // Results render below their input, so once they populate, push them up
+  // above the keyboard rather than leaving them hidden underneath it.
+  useEffect(() => {
+    if (movieResults.length === 0) return
+    const t = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50)
+    return () => clearTimeout(t)
+  }, [movieResults])
+
+  useEffect(() => {
+    if (actorResults.length === 0) return
+    const t = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 50)
+    return () => clearTimeout(t)
+  }, [actorResults])
 
   // Verifies next connects to currentPerson via movie, and if so records the hop
   // and advances (submitting the attempt if next is the target). Returns whether
@@ -290,8 +305,14 @@ export default function SixDegreesScreen() {
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={s.kav}>
       <BackBar router={router} />
-      <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        ref={scrollRef}
+        style={s.scrollFlex}
+        contentContainerStyle={s.scroll}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={s.matchupRow}>
           <BigHeadshot person={puzzle.start_person} />
           <View style={s.connectorBadge}>
@@ -327,6 +348,7 @@ export default function SixDegreesScreen() {
               onChangeText={setMovieQuery}
               autoCapitalize="words"
               autoCorrect={false}
+              onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 150)}
             />
             {movieError && <Text style={s.errorText}>{movieError}</Text>}
             {movieResults.map(m => (
@@ -373,6 +395,7 @@ export default function SixDegreesScreen() {
               onChangeText={setActorQuery}
               autoCapitalize="words"
               autoCorrect={false}
+              onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 150)}
             />
             {actorError && <Text style={s.errorText}>{actorError}</Text>}
             {actorResults.map(a => (
@@ -395,6 +418,7 @@ export default function SixDegreesScreen() {
 
         {(submitting || verifying) && <ActivityIndicator style={{ marginTop: Spacing.md }} color={Colors.textMuted} />}
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   )
 }
@@ -488,6 +512,8 @@ const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.background },
   backBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm },
   backText: { fontSize: 15, color: Colors.textSecondary },
+  kav: { flex: 1 },
+  scrollFlex: { flex: 1 },
   scroll: { paddingHorizontal: Spacing.lg, paddingBottom: 100, gap: Spacing.lg },
   solvedScroll: { paddingHorizontal: Spacing.lg, paddingBottom: 100, paddingTop: 40, gap: Spacing.lg },
   center: { alignItems: 'center', justifyContent: 'center', gap: Spacing.sm },
