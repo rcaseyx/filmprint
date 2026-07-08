@@ -6,13 +6,15 @@ from datetime import date, timedelta
 
 from .db import get_connection, get_daily_puzzle, get_recent_anchor_movie_ids, insert_daily_puzzle
 
-# Minimum vote_count AND popularity for a movie to be eligible as an anchor or
-# bridge in the daily puzzle graph. vote_count alone lets through movies that
-# accumulated ratings over decades without ever being broadly memorable (e.g.
-# Volcano (1997): vote_count 1663, popularity 4.1) -- popularity guards against
-# that, while vote_count still guards against flash-in-the-pan trending titles
-# with little lasting familiarity. Neither alone is a reliable recognizability
-# signal; combined they are.
+# Minimum vote_count, popularity, AND revenue for a movie to be eligible as an
+# anchor or bridge in the daily puzzle graph. Each guards against a different
+# failure mode seen in live puzzles: vote_count alone let through movies that
+# accumulated ratings over decades without staying memorable (Volcano (1997):
+# vote_count 1663, popularity 4.1); popularity alone let through fandom-driven
+# direct-to-video titles with no real theatrical release (Mortal Kombat
+# Legends: Scorpion's Revenge: vote_count 1477, popularity 21.7, revenue $0).
+# Requiring positive revenue filters out the latter -- a real release with
+# marketing behind it, not just enthusiast-community engagement on TMDB.
 CURATED_POOL_MIN_VOTES = 1000
 CURATED_POOL_MIN_POPULARITY = 8
 
@@ -29,7 +31,7 @@ def get_curated_pool() -> list[int]:
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
-            "SELECT id FROM movies WHERE vote_count >= %s AND popularity >= %s",
+            "SELECT id FROM movies WHERE vote_count >= %s AND popularity >= %s AND revenue > 0",
             (CURATED_POOL_MIN_VOTES, CURATED_POOL_MIN_POPULARITY),
         )
         return [row["id"] for row in cur.fetchall()]
