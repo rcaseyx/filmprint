@@ -88,7 +88,7 @@ from filmprint.db import (
     get_all_keyword_themes,
     get_daily_puzzle, upsert_puzzle_attempt, get_puzzle_attempt,
 )
-from filmprint.six_degrees import search_cast, search_filmography, validate_full_chain
+from filmprint.six_degrees import search_people, search_movies, is_credited_in, validate_step, validate_full_chain
 from filmprint.features import (
     build_feature_vector, taste_summary, build_keyword_vocab,
     build_affinity_scores, GENRES, DECADES, compute_axis_scores, TONE_AXES, SUBGENRE_AXES,
@@ -2768,23 +2768,35 @@ def six_degrees_today(current_user: dict = Depends(get_current_user)):
     }
 
 
-@app.get("/api/games/six-degrees/cast")
-def six_degrees_cast(movie_id: int, q: str = "", current_user: dict = Depends(get_current_user)):
+@app.get("/api/games/six-degrees/search-people")
+def six_degrees_search_people(q: str = "", current_user: dict = Depends(get_current_user)):
+    """Broad person-name search, not scoped to any movie -- a real guess is still required (see verify-actor)."""
     if len(q.strip()) < 2:
         return {"results": []}
-    return {"results": search_cast(movie_id, q)}
+    return {"results": search_people(q)}
 
 
-@app.get("/api/games/six-degrees/filmography")
-def six_degrees_filmography(
-    person_id: int, q: str = "", exclude: str = "", current_user: dict = Depends(get_current_user)
-):
+@app.get("/api/games/six-degrees/search-movies")
+def six_degrees_search_movies(q: str = "", exclude: str = "", current_user: dict = Depends(get_current_user)):
+    """Broad movie-title search, not scoped to any actor's filmography (see verify-connection)."""
     if len(q.strip()) < 2:
         return {"results": []}
     exclude_ids = {int(x) for x in exclude.split(",") if x.strip().isdigit()}
-    movie_ids = search_filmography(person_id, q, exclude_ids)
+    movie_ids = search_movies(q, exclude_ids)
     movies = get_movies_by_ids(movie_ids)
     return {"results": [_six_degrees_movie_summary(movies[mid]) for mid in movie_ids if mid in movies]}
+
+
+@app.get("/api/games/six-degrees/verify-actor")
+def six_degrees_verify_actor(movie_id: int, person_id: int, current_user: dict = Depends(get_current_user)):
+    return {"valid": is_credited_in(movie_id, person_id)}
+
+
+@app.get("/api/games/six-degrees/verify-connection")
+def six_degrees_verify_connection(
+    movie_id: int, person_id: int, next_movie_id: int, current_user: dict = Depends(get_current_user)
+):
+    return {"valid": validate_step(movie_id, person_id, next_movie_id)}
 
 
 class _SixDegreesGuessHop(BaseModel):

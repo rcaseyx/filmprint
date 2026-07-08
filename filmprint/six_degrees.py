@@ -159,25 +159,32 @@ def validate_step(movie_id: int, person_id: int, next_movie_id: int) -> bool:
         return cur.fetchone()["c"] == 2
 
 
-def search_cast(movie_id: int, query: str, limit: int = 20) -> list[dict]:
-    """Cast members of movie_id whose name matches query (case-insensitive substring)."""
+def search_people(query: str, limit: int = 20) -> list[dict]:
+    """
+    Broad, unfiltered person-name search across all credited cast -- NOT scoped
+    to any particular movie. Deliberately not restricted to "correct" answers:
+    scoping this to the current movie's cast would turn the dropdown itself
+    into the answer key (type any letter, only valid actors appear). Callers
+    must separately verify a selection is actually credited in the movie in
+    question (see is_credited_in) so a real guess is still required.
+    """
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
-            """SELECT DISTINCT person_id, person_name FROM movie_credits
-               WHERE movie_id = %s AND person_name ILIKE %s
-               ORDER BY person_name LIMIT %s""",
-            (movie_id, f"%{query.strip()}%", limit),
+            """SELECT person_id, person_name, count(*) as n FROM movie_credits
+               WHERE person_name ILIKE %s
+               GROUP BY person_id, person_name
+               ORDER BY n DESC, person_name LIMIT %s""",
+            (f"%{query.strip()}%", limit),
         )
         return [{"person_id": r["person_id"], "person_name": r["person_name"]} for r in cur.fetchall()]
 
 
-def search_filmography(
-    person_id: int, query: str, exclude_movie_ids: set[int] | None = None, limit: int = 20
-) -> list[int]:
+def search_movies(query: str, exclude_movie_ids: set[int] | None = None, limit: int = 20) -> list[int]:
     """
-    Movie IDs from the curated pool that person_id is credited in, title-matching
-    query, excluding exclude_movie_ids (e.g. already-visited movies in the chain).
+    Broad, unfiltered movie-title search across the curated pool -- NOT scoped
+    to any particular actor's filmography (same reasoning as search_people).
+    Excludes exclude_movie_ids (already-visited movies in the chain).
     """
     pool = get_curated_pool()
     exclude = exclude_movie_ids or set()
@@ -187,12 +194,22 @@ def search_filmography(
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
-            """SELECT m.id FROM movie_credits mc JOIN movies m ON m.id = mc.movie_id
-               WHERE mc.person_id = %s AND mc.movie_id = ANY(%s) AND m.title ILIKE %s
-               ORDER BY m.popularity DESC NULLS LAST LIMIT %s""",
-            (person_id, candidate_ids, f"%{query.strip()}%", limit),
+            """SELECT id FROM movies WHERE id = ANY(%s) AND title ILIKE %s
+               ORDER BY popularity DESC NULLS LAST LIMIT %s""",
+            (candidate_ids, f"%{query.strip()}%", limit),
         )
         return [r["id"] for r in cur.fetchall()]
+
+
+def is_credited_in(movie_id: int, person_id: int) -> bool:
+    """Check whether person_id is credited in movie_id at all."""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT 1 FROM movie_credits WHERE movie_id = %s AND person_id = %s LIMIT 1",
+            (movie_id, person_id),
+        )
+        return cur.fetchone() is not None
 
 
 def validate_full_chain(start_movie_id: int, end_movie_id: int, guess_hops: list[dict]) -> bool:

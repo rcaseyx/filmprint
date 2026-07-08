@@ -48,11 +48,14 @@ export default function SixDegreesScreen() {
   const [actorQuery, setActorQuery] = useState('')
   const [actorResults, setActorResults] = useState<PersonResult[]>([])
   const [selectedActor, setSelectedActor] = useState<PersonResult | null>(null)
+  const [actorError, setActorError] = useState<string | null>(null)
   const [movieQuery, setMovieQuery] = useState('')
   const [movieResults, setMovieResults] = useState<MovieSummary[]>([])
+  const [movieError, setMovieError] = useState<string | null>(null)
 
   const [solved, setSolved] = useState<{ degree_count: number } | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [verifying, setVerifying] = useState(false)
 
   const debouncedActorQuery = useDebounce(actorQuery, 300)
   const debouncedMovieQuery = useDebounce(movieQuery, 300)
@@ -79,6 +82,7 @@ export default function SixDegreesScreen() {
   // newly-current movie (e.g. searching the old actor's name against the new movie's cast).
   useEffect(() => {
     setActorResults([])
+    setActorError(null)
   }, [currentMovie?.id, selectedActor, actorQuery])
 
   useEffect(() => {
@@ -87,32 +91,64 @@ export default function SixDegreesScreen() {
     // (actorQuery already reset to '') the debounced value can still be a
     // leftover non-empty string — without the raw check this fires a real,
     // non-cancelled fetch that re-populates results for a query no longer shown.
-    if (!currentMovie || selectedActor || actorQuery.trim().length < 2 || debouncedActorQuery.trim().length < 2) return
+    if (selectedActor || actorQuery.trim().length < 2 || debouncedActorQuery.trim().length < 2) return
     let cancelled = false
-    apiFetch(`/api/games/six-degrees/cast?movie_id=${currentMovie.id}&q=${encodeURIComponent(debouncedActorQuery)}`)
+    apiFetch(`/api/games/six-degrees/search-people?q=${encodeURIComponent(debouncedActorQuery)}`)
       .then(r => r.json())
       .then(data => { if (!cancelled) setActorResults(data.results ?? []) })
       .catch(() => { if (!cancelled) setActorResults([]) })
     return () => { cancelled = true }
-  }, [debouncedActorQuery, currentMovie, selectedActor, actorQuery])
+  }, [debouncedActorQuery, selectedActor, actorQuery])
 
   useEffect(() => {
     setMovieResults([])
+    setMovieError(null)
   }, [selectedActor, movieQuery])
 
   useEffect(() => {
     if (!selectedActor || movieQuery.trim().length < 2 || debouncedMovieQuery.trim().length < 2) return
     let cancelled = false
     const exclude = visitedIds.join(',')
-    apiFetch(`/api/games/six-degrees/filmography?person_id=${selectedActor.person_id}&q=${encodeURIComponent(debouncedMovieQuery)}&exclude=${exclude}`)
+    apiFetch(`/api/games/six-degrees/search-movies?q=${encodeURIComponent(debouncedMovieQuery)}&exclude=${exclude}`)
       .then(r => r.json())
       .then(data => { if (!cancelled) setMovieResults(data.results ?? []) })
       .catch(() => { if (!cancelled) setMovieResults([]) })
     return () => { cancelled = true }
   }, [debouncedMovieQuery, selectedActor, visitedIds, movieQuery])
 
+  async function selectActor(a: PersonResult) {
+    if (!currentMovie || verifying) return
+    setVerifying(true)
+    try {
+      const res = await apiFetch(`/api/games/six-degrees/verify-actor?movie_id=${currentMovie.id}&person_id=${a.person_id}`)
+      const data = await res.json()
+      if (data.valid) {
+        setSelectedActor(a)
+      } else {
+        setActorError(`${a.person_name} wasn't in this movie — try again`)
+      }
+    } finally {
+      setVerifying(false)
+    }
+  }
+
   async function pickMovie(next: MovieSummary) {
-    if (!currentMovie || !selectedActor || !puzzle) return
+    if (!currentMovie || !selectedActor || !puzzle || verifying) return
+    setVerifying(true)
+    let valid = false
+    try {
+      const res = await apiFetch(
+        `/api/games/six-degrees/verify-connection?movie_id=${currentMovie.id}&person_id=${selectedActor.person_id}&next_movie_id=${next.id}`
+      )
+      valid = (await res.json()).valid
+    } finally {
+      setVerifying(false)
+    }
+    if (!valid) {
+      setMovieError(`${selectedActor.person_name} wasn't in ${next.title} — try again`)
+      return
+    }
+
     const hop = { movie_id: currentMovie.id, person_id: selectedActor.person_id, next_movie_id: next.id }
     const newGuessPath = [...guessPath, hop]
     const newChain = [...chain, { movie: next, person_name: selectedActor.person_name }]
@@ -215,8 +251,9 @@ export default function SixDegreesScreen() {
               autoCapitalize="words"
               autoCorrect={false}
             />
+            {actorError && <Text style={s.errorText}>{actorError}</Text>}
             {actorResults.map(a => (
-              <TouchableOpacity key={a.person_id} style={s.resultRow} onPress={() => setSelectedActor(a)}>
+              <TouchableOpacity key={a.person_id} style={s.resultRow} onPress={() => selectActor(a)} disabled={verifying}>
                 <Text style={s.resultText}>{a.person_name}</Text>
               </TouchableOpacity>
             ))}
@@ -238,15 +275,16 @@ export default function SixDegreesScreen() {
               autoCapitalize="words"
               autoCorrect={false}
             />
+            {movieError && <Text style={s.errorText}>{movieError}</Text>}
             {movieResults.map(m => (
-              <TouchableOpacity key={m.id} style={s.resultRow} onPress={() => pickMovie(m)} disabled={submitting}>
+              <TouchableOpacity key={m.id} style={s.resultRow} onPress={() => pickMovie(m)} disabled={submitting || verifying}>
                 <Text style={s.resultText}>{m.title}{m.year ? ` (${m.year})` : ''}</Text>
               </TouchableOpacity>
             ))}
           </View>
         )}
 
-        {submitting && <ActivityIndicator style={{ marginTop: Spacing.md }} color={Colors.textMuted} />}
+        {(submitting || verifying) && <ActivityIndicator style={{ marginTop: Spacing.md }} color={Colors.textMuted} />}
       </ScrollView>
     </SafeAreaView>
   )
@@ -297,6 +335,7 @@ const s = StyleSheet.create({
   stepLabel: { fontSize: 13, color: Colors.textMuted },
   selectedActorRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   changeLink: { fontSize: 13, color: Colors.brand },
+  errorText: { fontSize: 13, color: Colors.error },
   input: {
     backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
     borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
