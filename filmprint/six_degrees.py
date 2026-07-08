@@ -250,15 +250,16 @@ def search_people(query: str, exclude_person_ids: set[int] | None = None, limit:
     Excludes exclude_person_ids (already-visited actors in the chain).
     """
     exclude = exclude_person_ids or set()
+    q = query.strip()
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
             """SELECT person_id, person_name, max(profile_path) as profile_path, count(*) as n
                FROM movie_credits
-               WHERE person_name ILIKE %s AND NOT (person_id = ANY(%s))
+               WHERE (person_name ILIKE %s OR person_name ILIKE %s) AND NOT (person_id = ANY(%s))
                GROUP BY person_id, person_name
                ORDER BY n DESC, person_name LIMIT %s""",
-            (f"%{query.strip()}%", list(exclude), limit),
+            (f"{q}%", f"% {q}%", list(exclude), limit),
         )
         return [
             {"person_id": r["person_id"], "person_name": r["person_name"], "profile_path": r["profile_path"]}
@@ -277,12 +278,13 @@ def search_movies(query: str, exclude_movie_ids: set[int] | None = None, limit: 
     candidate_ids = [m for m in pool if m not in exclude]
     if not candidate_ids:
         return []
+    q = query.strip()
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
-            """SELECT id FROM movies WHERE id = ANY(%s) AND title ILIKE %s
+            """SELECT id FROM movies WHERE id = ANY(%s) AND (title ILIKE %s OR title ILIKE %s)
                ORDER BY popularity DESC NULLS LAST LIMIT %s""",
-            (candidate_ids, f"%{query.strip()}%", limit),
+            (candidate_ids, f"{q}%", f"% {q}%", limit),
         )
         return [r["id"] for r in cur.fetchall()]
 

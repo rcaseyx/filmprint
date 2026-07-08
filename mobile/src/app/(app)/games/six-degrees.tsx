@@ -323,7 +323,7 @@ export default function SixDegreesScreen() {
             </View>
           )}
           <View style={{ flex: 1 }}>
-            <Text style={s.turnLabel}>Currently playing as</Text>
+            <Text style={s.turnLabel}>Current actor</Text>
             <Text style={s.turnName}>{currentPerson?.person_name}</Text>
           </View>
         </View>
@@ -359,12 +359,24 @@ export default function SixDegreesScreen() {
           </View>
         ) : (
           <View style={s.inputWrap}>
-            <View style={s.selectedActorRow}>
-              <Text style={s.stepLabel}>Name another actor in {selectedMovie.title}</Text>
-              <Pressable onPress={() => { setSelectedMovie(null); setActorQuery(''); setActorResults([]) }}>
+            <FadeInUp style={s.selectedMovieCard}>
+              {selectedMovie.poster_path ? (
+                <Image source={{ uri: `${TMDB_POSTER_THUMB}${selectedMovie.poster_path}` }} style={s.selectedMoviePoster} />
+              ) : (
+                <View style={[s.selectedMoviePoster, s.selectedMoviePosterFallback]} />
+              )}
+              <View style={{ flex: 1 }}>
+                <Text style={s.turnLabel}>Selected movie</Text>
+                <Text style={s.selectedMovieTitle} numberOfLines={2}>
+                  {selectedMovie.title}{selectedMovie.year ? ` (${selectedMovie.year})` : ''}
+                </Text>
+              </View>
+              <Pressable onPress={() => { setSelectedMovie(null); setActorQuery(''); setActorResults([]) }} hitSlop={8}>
                 <Text style={s.changeLink}>change</Text>
               </Pressable>
-            </View>
+            </FadeInUp>
+
+            <Text style={s.stepLabel}>Name another actor in this movie</Text>
             <TextInput
               style={s.input}
               placeholder="Actor name"
@@ -499,10 +511,17 @@ const s = StyleSheet.create({
   turnLabel: { fontSize: 11, color: Colors.textFaint, textTransform: 'uppercase', letterSpacing: 0.6 },
   turnName: { fontSize: 17, fontWeight: '700', color: Colors.text },
 
-  inputWrap: { gap: Spacing.xs },
+  inputWrap: { gap: Spacing.sm },
   stepLabel: { fontSize: 13, color: Colors.textMuted },
-  selectedActorRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   changeLink: { fontSize: 13, color: Colors.brand },
+  selectedMovieCard: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,
+    borderRadius: 16, padding: Spacing.sm,
+  },
+  selectedMoviePoster: { width: 40, height: 60, borderRadius: 6, backgroundColor: Colors.background },
+  selectedMoviePosterFallback: { borderWidth: 1, borderColor: Colors.border },
+  selectedMovieTitle: { fontSize: 15, fontWeight: '700', color: Colors.text },
   errorText: { fontSize: 13, color: Colors.error },
   input: {
     backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.border,

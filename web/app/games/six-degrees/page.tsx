@@ -307,8 +307,24 @@ export default function SixDegreesPage() {
         </div>
       ) : (
         <div className="mt-3">
-          <div className="flex items-center justify-between">
-            <label className="text-sm text-neutral-500">Name another actor in {selectedMovie.title}</label>
+          <div className="flex items-center gap-3 rounded-xl border border-neutral-800 bg-neutral-900 p-3">
+            {selectedMovie.poster_path ? (
+              <Image
+                src={`${TMDB_IMG.replace("w185", "w92")}${selectedMovie.poster_path}`}
+                alt={selectedMovie.title}
+                width={40}
+                height={60}
+                className="rounded object-cover bg-neutral-800"
+              />
+            ) : (
+              <div className="w-10 h-[60px] rounded bg-neutral-800 border border-neutral-700" />
+            )}
+            <div className="flex-1">
+              <div className="text-xs text-neutral-500 uppercase tracking-wide">Selected movie</div>
+              <div className="text-sm font-semibold text-neutral-100">
+                {selectedMovie.title}{selectedMovie.year ? ` (${selectedMovie.year})` : ""}
+              </div>
+            </div>
             <button
               onClick={() => { setSelectedMovie(null); setActorQuery(""); setActorResults([]) }}
               className="text-sm text-brand hover:underline"
@@ -316,6 +332,8 @@ export default function SixDegreesPage() {
               change
             </button>
           </div>
+
+          <label className="text-sm text-neutral-500 mt-3 block">Name another actor in this movie</label>
           <input
             className="mt-1 w-full rounded-xl border border-neutral-800 bg-neutral-900 px-4 py-3 text-neutral-100 placeholder-neutral-600 focus:outline-none focus:border-neutral-600"
             placeholder="Actor name"
