@@ -34,10 +34,10 @@ function useKeyboardHeight() {
   useEffect(() => {
     if (Platform.OS !== 'ios') return
     const showSub = Keyboard.addListener('keyboardWillShow', e => {
-      Animated.timing(height, { toValue: e.endCoordinates.height, duration: e.duration || 250, useNativeDriver: false }).start()
+      Animated.timing(height, { toValue: e.endCoordinates.height, duration: e.duration || 250, useNativeDriver: true }).start()
     })
     const hideSub = Keyboard.addListener('keyboardWillHide', e => {
-      Animated.timing(height, { toValue: 0, duration: e.duration || 250, useNativeDriver: false }).start()
+      Animated.timing(height, { toValue: 0, duration: e.duration || 250, useNativeDriver: true }).start()
     })
     return () => { showSub.remove(); hideSub.remove() }
   }, [])
@@ -367,10 +367,19 @@ export default function SixDegreesScreen() {
         {chain.length > 0 && <ChainTimeline startPerson={puzzle.start_person} chain={chain} />}
       </ScrollView>
 
-      {/* Input area: fixed at the bottom, always reachable regardless of how
-          tall the history above it grows. Lifts with the keyboard via
-          keyboardHeight; at rest, pads enough to clear the NativeTabs bar. */}
-      <Animated.View style={[s.inputArea, { paddingBottom: Animated.add(keyboardHeight, insets.bottom + TAB_BAR_CLEARANCE) }]}>
+      {/* Input area: floats over the history (position: absolute), not a flex
+          sibling competing with it for space -- otherwise adding the keyboard's
+          height as padding just balloons this box and crushes history down to
+          nothing once results make it tall. Sits pinned to the screen bottom
+          at rest (padded to clear the NativeTabs bar) and slides up via
+          translateY when the keyboard opens, so its own content height never
+          affects how much room history gets. */}
+      <Animated.View
+        style={[
+          s.inputArea,
+          { paddingBottom: insets.bottom + TAB_BAR_CLEARANCE, transform: [{ translateY: Animated.multiply(keyboardHeight, -1) }] },
+        ]}
+      >
         <View style={s.turnCard}>
           {currentPerson?.profile_path ? (
             <Image source={{ uri: `${TMDB_PROFILE}${currentPerson.profile_path}` }} style={s.turnAvatar} />
@@ -574,8 +583,12 @@ const s = StyleSheet.create({
   playAgainBtn: { backgroundColor: Colors.brand, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
   playAgainText: { fontSize: 15, fontWeight: '700', color: Colors.background },
   historyScrollFlex: { flex: 1 },
-  historyScroll: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.lg, gap: Spacing.lg },
+  // Bottom padding here is a generous static estimate of the floating input
+  // panel's typical resting height, so scrolling history to its end doesn't
+  // leave the last chain entry tucked behind the panel.
+  historyScroll: { paddingHorizontal: Spacing.lg, paddingBottom: 320, gap: Spacing.lg },
   inputArea: {
+    position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 5,
     paddingHorizontal: Spacing.lg, paddingTop: Spacing.md, gap: Spacing.sm,
     backgroundColor: Colors.background, borderTopWidth: 1, borderTopColor: Colors.border,
   },
