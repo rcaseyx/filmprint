@@ -92,6 +92,7 @@ from filmprint.six_degrees import (
     search_people, search_movies, is_credited_in, share_movie, validate_full_chain, generate_puzzle,
 )
 from filmprint.trifecta import generate_grid, score_selection
+from filmprint.trivia import build_session, check_answer, warm_pool as warm_trivia_pool
 from filmprint.features import (
     build_feature_vector, taste_summary, build_keyword_vocab,
     build_affinity_scores, GENRES, DECADES, compute_axis_scores, TONE_AXES, SUBGENRE_AXES,
@@ -692,6 +693,20 @@ async def lifespan(app: FastAPI):
                     print(f"[prewarm] backfill_catalog_keywords failed: {e}", flush=True)
 
             _t.Thread(target=_run_backfill, daemon=True).start()
+
+            def _warm_trivia_pool():
+                # trivia.py's embedding-neighbor search loads the ~3,300-movie curated
+                # pool + vectors into a module-level cache on first use (~6-7s). Doing
+                # that here means the first real trivia session after a deploy doesn't
+                # pay this cost on top of its own per-movie question generation.
+                try:
+                    t = time.time()
+                    warm_trivia_pool()
+                    print(f"[prewarm] trivia pool ready in {time.time()-t:.1f}s", flush=True)
+                except Exception as e:
+                    print(f"[prewarm] trivia pool warm failed: {e}", flush=True)
+
+            _t.Thread(target=_warm_trivia_pool, daemon=True).start()
 
             users = [u for u in get_all_users_with_stats() if u.get("ratings_count", 0) > 0]
             print(f"[prewarm] starting — {len(users)} user(s) to warm", flush=True)
@@ -2847,6 +2862,23 @@ def trifecta_reveal(payload: _TrifectaRevealPayload, current_user: dict = Depend
         raise HTTPException(status_code=422, detail=str(e))
     best, is_new_best = update_trifecta_best_distance(current_user["user_id"], result["distance"])
     return {**result, "best_distance": best, "is_new_best": is_new_best}
+
+
+# --- games: trivia ---
+
+@app.get("/api/games/trivia/session")
+def trivia_session(count: int = 12, current_user: dict = Depends(get_current_user)):
+    return {"questions": build_session(current_user["user_id"], count)}
+
+
+class _TriviaAnswerPayload(BaseModel):
+    question_id: int
+    answer: str
+
+
+@app.post("/api/games/trivia/answer")
+def trivia_answer(payload: _TriviaAnswerPayload, current_user: dict = Depends(get_current_user)):
+    return check_answer(payload.question_id, payload.answer)
 
 
 # --- admin endpoints ---

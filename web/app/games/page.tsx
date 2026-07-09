@@ -40,6 +40,16 @@ export default async function GamesPage() {
           3 movies, 1 target: hit a combined Rotten Tomatoes score of 150.
         </p>
       </Link>
+
+      <Link
+        href="/games/trivia"
+        className="block mt-4 rounded-2xl border border-neutral-800 bg-neutral-900 p-5 hover:border-neutral-700 transition-colors"
+      >
+        <h2 className="text-lg font-semibold text-neutral-100">Trivia</h2>
+        <p className="text-sm text-neutral-500 mt-1">
+          The more you&rsquo;ve rated, the more personal it gets.
+        </p>
+      </Link>
     </div>
   )
 }

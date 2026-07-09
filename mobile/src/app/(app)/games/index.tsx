@@ -30,6 +30,15 @@ export default function GamesScreen() {
         <Text style={s.cardTitle}>Trifecta</Text>
         <Text style={s.cardDesc}>3 movies, 1 target: hit a combined Rotten Tomatoes score of 150.</Text>
       </TouchableOpacity>
+
+      <TouchableOpacity
+        style={s.card}
+        activeOpacity={0.7}
+        onPress={() => router.push('/games/trivia' as any)}
+      >
+        <Text style={s.cardTitle}>Trivia</Text>
+        <Text style={s.cardDesc}>The more you&rsquo;ve rated, the more personal it gets.</Text>
+      </TouchableOpacity>
     </SafeAreaView>
   )
 }

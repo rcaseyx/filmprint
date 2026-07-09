@@ -239,6 +239,22 @@ def init_db(seed_data: dict | None = None) -> None:
             completed_at    TIMESTAMPTZ,
             UNIQUE(user_id, puzzle_id)
         )""",
+        # Cache bank, not a per-user table -- a movie's questions are generated once
+        # (source='generated') and reused by every user who has rated it. OTDB rows
+        # (source='opentdb') share the same table with movie_id NULL, so both sources
+        # serve through identical session-assembly/answer-check code.
+        """CREATE TABLE IF NOT EXISTS trivia_questions (
+            id              BIGSERIAL PRIMARY KEY,
+            movie_id        BIGINT REFERENCES movies(id),
+            source          TEXT NOT NULL,
+            question_type   TEXT NOT NULL,
+            question_text   TEXT NOT NULL,
+            correct_answer  TEXT NOT NULL,
+            options         TEXT NOT NULL,
+            image_url       TEXT,
+            created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_trivia_questions_movie_id ON trivia_questions(movie_id)",
     ]
     with get_connection() as conn:
         cur = conn.cursor()
@@ -976,6 +992,27 @@ def get_all_movies_with_vectors() -> list[dict]:
     return movies
 
 
+def get_curated_pool_with_vectors() -> list[dict]:
+    """Same curated-pool bar as Co-Star/Trifecta (vote_count >= 1000 AND revenue > 0),
+    restricted to movies with a feature_vector -- the embedding-similarity search space
+    for trivia's distractor generation. Unlike get_all_movies_with_vectors() above, this
+    doesn't return the whole catalog (11,679 movies) -- just the ~3,300 well-known ones."""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT * FROM movies
+               WHERE feature_vector IS NOT NULL AND vote_count >= 1000 AND revenue > 0"""
+        )
+        rows = cur.fetchall()
+    movies = []
+    for row in rows:
+        m = dict(row)
+        m["feature_vector"] = json.loads(m["feature_vector"])
+        m["raw_tmdb"] = json.loads(m["raw_tmdb"]) if m["raw_tmdb"] else {}
+        movies.append(m)
+    return movies
+
+
 # --- six degrees ---
 
 def get_person_summary(person_id: int) -> dict | None:
@@ -1018,6 +1055,73 @@ def update_trifecta_best_distance(user_id: int, distance: int) -> tuple[int, boo
                 (distance, user_id),
             )
         return (distance if is_new_best else previous), is_new_best
+
+
+# --- trivia ---
+
+def _load_trivia_question(row) -> dict:
+    q = dict(row)
+    q["options"] = json.loads(q["options"])
+    return q
+
+
+def get_trivia_questions_for_movie(movie_id: int) -> list[dict]:
+    """Cache read -- only 'generated' (taste-graph) questions have a movie_id."""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT * FROM trivia_questions WHERE movie_id = %s AND source = 'generated'",
+            (movie_id,),
+        )
+        rows = cur.fetchall()
+    return [_load_trivia_question(r) for r in rows]
+
+
+def insert_trivia_questions(questions: list[dict]) -> None:
+    """Each question: {movie_id, source, question_type, question_text, correct_answer, options, image_url}.
+    movie_id/image_url may be omitted (NULL) for opentdb questions."""
+    if not questions:
+        return
+    with get_connection() as conn:
+        cur = conn.cursor()
+        psycopg2.extras.execute_values(cur, """
+            INSERT INTO trivia_questions (movie_id, source, question_type, question_text, correct_answer, options, image_url)
+            VALUES %s
+        """, [
+            (
+                q.get("movie_id"), q["source"], q["question_type"], q["question_text"],
+                q["correct_answer"], json.dumps(q["options"]), q.get("image_url"),
+            )
+            for q in questions
+        ])
+
+
+def get_existing_opentdb_question_texts() -> set[str]:
+    """Dedup check before the OTDB backfill script inserts -- lets it be re-run safely
+    to pick up newly-added OTDB questions without duplicating what's already cached."""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT question_text FROM trivia_questions WHERE source = 'opentdb'")
+        return {row["question_text"] for row in cur.fetchall()}
+
+
+def get_random_trivia_questions(source: str, limit: int) -> list[dict]:
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT * FROM trivia_questions WHERE source = %s ORDER BY RANDOM() LIMIT %s",
+            (source, limit),
+        )
+        rows = cur.fetchall()
+    return [_load_trivia_question(r) for r in rows]
+
+
+def get_trivia_question_by_id(question_id: int) -> dict | None:
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM trivia_questions WHERE id = %s", (question_id,))
+        row = cur.fetchone()
+    return _load_trivia_question(row) if row else None
 
 
 # --- user_ratings ---
