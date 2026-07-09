@@ -185,6 +185,10 @@ def init_db(seed_data: dict | None = None) -> None:
         # looked up by this stable per-app identifier instead.
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_sub TEXT UNIQUE",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS six_degrees_solved_count INTEGER NOT NULL DEFAULT 0",
+        # Nullable, unlike six_degrees_solved_count above -- 0 is a valid (perfect)
+        # Trifecta score, so it can't double as "no attempt yet" the way a counter's
+        # default of 0 can.
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS trifecta_best_distance INTEGER",
         """CREATE TABLE IF NOT EXISTS movie_credits (
             id            BIGSERIAL PRIMARY KEY,
             movie_id      BIGINT NOT NULL REFERENCES movies(id),
@@ -997,6 +1001,23 @@ def increment_six_degrees_solved_count(user_id: int) -> int:
             (user_id,),
         )
         return cur.fetchone()["six_degrees_solved_count"]
+
+
+def update_trifecta_best_distance(user_id: int, distance: int) -> tuple[int, bool]:
+    """Updates the user's best (smallest) Trifecta distance-from-150 if this attempt
+    beats it. Returns (best_distance, is_new_best). Reads the prior value first so a
+    tie (distance == existing best) isn't misreported as a new record."""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT trifecta_best_distance FROM users WHERE id = %s", (user_id,))
+        previous = cur.fetchone()["trifecta_best_distance"]
+        is_new_best = previous is None or distance < previous
+        if is_new_best:
+            cur.execute(
+                "UPDATE users SET trifecta_best_distance = %s WHERE id = %s",
+                (distance, user_id),
+            )
+        return (distance if is_new_best else previous), is_new_best
 
 
 # --- user_ratings ---

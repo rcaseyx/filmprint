@@ -86,11 +86,12 @@ from filmprint.db import (
     upsert_rating,
     get_all_movies_with_vectors,
     get_all_keyword_themes,
-    get_person_summary, increment_six_degrees_solved_count,
+    get_person_summary, increment_six_degrees_solved_count, update_trifecta_best_distance,
 )
 from filmprint.six_degrees import (
     search_people, search_movies, is_credited_in, share_movie, validate_full_chain, generate_puzzle,
 )
+from filmprint.trifecta import generate_grid, score_selection
 from filmprint.features import (
     build_feature_vector, taste_summary, build_keyword_vocab,
     build_affinity_scores, GENRES, DECADES, compute_axis_scores, TONE_AXES, SUBGENRE_AXES,
@@ -2824,6 +2825,28 @@ def six_degrees_submit_attempt(payload: _SixDegreesAttemptPayload, current_user:
         raise HTTPException(status_code=422, detail="Chain does not connect start to end via shared movies")
     solved_count = increment_six_degrees_solved_count(current_user["user_id"])
     return {"solved": True, "degree_count": len(guess_hops), "six_degrees_solved_count": solved_count}
+
+
+# --- games: trifecta ---
+
+@app.get("/api/games/trifecta/grid")
+def trifecta_grid(exclude: str = "", current_user: dict = Depends(get_current_user)):
+    exclude_ids = {int(x) for x in exclude.split(",") if x.strip().isdigit()}
+    return {"movies": generate_grid(exclude_ids)}
+
+
+class _TrifectaRevealPayload(BaseModel):
+    movie_ids: list[int]
+
+
+@app.post("/api/games/trifecta/reveal")
+def trifecta_reveal(payload: _TrifectaRevealPayload, current_user: dict = Depends(get_current_user)):
+    try:
+        result = score_selection(payload.movie_ids)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    best, is_new_best = update_trifecta_best_distance(current_user["user_id"], result["distance"])
+    return {**result, "best_distance": best, "is_new_best": is_new_best}
 
 
 # --- admin endpoints ---
