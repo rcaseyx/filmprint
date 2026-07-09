@@ -21,6 +21,15 @@ export default function GamesScreen() {
         <Text style={s.cardTitle}>Co-Star</Text>
         <Text style={s.cardDesc}>Connect two actors through shared movies, one hop at a time.</Text>
       </TouchableOpacity>
+
+      <TouchableOpacity
+        style={s.card}
+        activeOpacity={0.7}
+        onPress={() => router.push('/games/trifecta' as any)}
+      >
+        <Text style={s.cardTitle}>Trifecta</Text>
+        <Text style={s.cardDesc}>Pick 3 movies. Get their Rotten Tomatoes scores as close to 150 as possible.</Text>
+      </TouchableOpacity>
     </SafeAreaView>
   )
 }
