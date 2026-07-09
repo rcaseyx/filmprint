@@ -11,7 +11,10 @@ import random
 
 from filmprint.db import get_connection
 
-GRID_SIZE = 12
+# 24 rather than the original 12 -- the grid is scrollable, and a bigger pool
+# gives meaningfully more triples to reason about for hitting 150 (C(24,3) =
+# 2024 possible combinations vs. C(12,3) = 220 at the old size).
+GRID_SIZE = 24
 TARGET_SUM = 150
 
 # Same "real theatrical release, not a fandom-driven obscurity" bar used by

@@ -37,7 +37,7 @@ export default async function GamesPage() {
       >
         <h2 className="text-lg font-semibold text-neutral-100">Trifecta</h2>
         <p className="text-sm text-neutral-500 mt-1">
-          Pick 3 movies. Get their Rotten Tomatoes scores as close to 150 as possible.
+          3 movies, 1 target: hit a combined Rotten Tomatoes score of 150.
         </p>
       </Link>
     </div>

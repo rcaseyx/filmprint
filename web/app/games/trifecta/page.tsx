@@ -108,8 +108,6 @@ export default function TrifectaPage() {
     )
   }
 
-  const scoreById = new Map(result?.movies.map((m) => [m.id, m.rt_score]) ?? [])
-
   return (
     <div className="max-w-2xl mx-auto px-6 py-12">
       <div className="flex items-center justify-between">
@@ -125,13 +123,12 @@ export default function TrifectaPage() {
 
       <h1 className="text-xl font-semibold text-neutral-100 mt-6">Trifecta</h1>
       <p className="text-neutral-500 text-sm mt-1">
-        Pick 3 movies. Get their Rotten Tomatoes scores as close to 150 as possible.
+        3 movies, 1 target: hit a combined Rotten Tomatoes score of 150.
       </p>
 
       <div className="grid grid-cols-3 gap-3 mt-6">
         {grid.map((movie) => {
           const selected = selectedIds.includes(movie.id)
-          const score = scoreById.get(movie.id)
           return (
             <button
               key={movie.id}
@@ -154,32 +151,92 @@ export default function TrifectaPage() {
                   {movie.title}
                 </div>
               )}
-              {score != null && (
-                <div className="absolute inset-x-0 bottom-0 bg-black/80 text-center py-1">
-                  <span className="text-sm font-semibold text-neutral-100">{score}%</span>
-                </div>
-              )}
             </button>
           )
         })}
       </div>
 
-      {revealing && <p className="text-neutral-500 text-sm mt-4">Revealing…</p>}
-
-      {result && (
-        <div className="mt-6 rounded-xl border border-neutral-800 bg-neutral-900 p-4 text-center">
-          <p className="text-lg font-semibold text-neutral-100">
-            {result.total} <span className="text-neutral-500 font-normal">(target: 150)</span>
-          </p>
-          <p className="text-neutral-400 text-sm mt-1">
-            {result.distance === 0 ? "Exact match!" : `${result.distance} away`}
-          </p>
-          {result.is_new_best && (
-            <p className="text-brand text-sm font-semibold mt-2">New personal best!</p>
-          )}
-          <p className="text-neutral-500 text-xs mt-2">Personal best: {result.best_distance}</p>
+      {revealing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65">
+          <Spinner />
         </div>
       )}
+
+      {result && (
+        <RevealOverlay result={result} grid={grid} onNewGrid={() => loadGrid(lastRevealedIds)} />
+      )}
+    </div>
+  )
+}
+
+function Spinner() {
+  return (
+    <svg className="animate-spin h-8 w-8 text-brand" viewBox="0 0 24 24" fill="none">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+    </svg>
+  )
+}
+
+function RevealOverlay({ result, grid, onNewGrid }: { result: RevealResult; grid: GridMovie[]; onNewGrid: () => void }) {
+  const [visible, setVisible] = useState(false)
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setVisible(true))
+    return () => cancelAnimationFrame(raf)
+  }, [])
+
+  const posterById = new Map(grid.map((m) => [m.id, m.poster_path]))
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 px-6">
+      <div
+        className={`w-full max-w-sm rounded-2xl border border-neutral-800 bg-neutral-900 p-6 text-center transition-all duration-300 ${
+          visible ? "opacity-100 scale-100" : "opacity-0 scale-95"
+        }`}
+      >
+        <div className="flex justify-center gap-3">
+          {result.movies.map((m) => {
+            const posterPath = posterById.get(m.id)
+            return (
+              <div key={m.id} className="flex flex-col items-center gap-1.5">
+                {posterPath ? (
+                  <Image
+                    src={`${TMDB_IMG}${posterPath}`}
+                    alt={m.title}
+                    width={64}
+                    height={96}
+                    className="rounded-md object-cover bg-neutral-800"
+                  />
+                ) : (
+                  <div className="w-16 h-24 rounded-md bg-neutral-800" />
+                )}
+                <span className="text-sm font-semibold text-neutral-100">{m.rt_score}%</span>
+              </div>
+            )
+          })}
+        </div>
+        <p className="text-4xl font-extrabold text-neutral-100 mt-4">{result.total}</p>
+        <p className="text-sm text-neutral-500 mt-1">target: 150</p>
+        <p className="text-lg font-semibold text-neutral-300 mt-3">
+          {result.distance === 0 ? "Exact match! \u{1F3AF}" : `${result.distance} away`}
+        </p>
+        {result.is_new_best && (
+          <p className="text-brand text-sm font-semibold mt-3">New personal best!</p>
+        )}
+        <p className="text-neutral-500 text-xs mt-2">Personal best: {result.best_distance}</p>
+        <button
+          onClick={onNewGrid}
+          className="mt-6 rounded-xl bg-brand text-neutral-950 font-semibold py-3 px-8 hover:opacity-90 transition-opacity"
+        >
+          &#8635; New grid
+        </button>
+        <Link
+          href="/games"
+          className="block mt-3 text-sm text-neutral-500 hover:text-neutral-300 transition-colors"
+        >
+          &larr; Back to Games
+        </Link>
+      </div>
     </div>
   )
 }
