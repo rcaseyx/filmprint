@@ -4,7 +4,7 @@ import {
   StyleSheet, Animated, Dimensions, Keyboard, Platform, PanResponder,
 } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
-import { useRouter, useLocalSearchParams } from 'expo-router'
+import { useRouter } from 'expo-router'
 import { ChevronLeft, ArrowRight, Trophy, RefreshCw } from 'lucide-react-native'
 import { Colors, Spacing } from '@/constants/theme'
 import { Avatar } from '@/components/Avatar'
@@ -86,12 +86,10 @@ interface Hop {
   person: PersonResult
 }
 
-interface TodayResponse {
-  puzzle_id?: number
+interface PuzzleResponse {
   start_person: PersonSummary
   end_person: PersonSummary
   optimal_degree_count?: number
-  user_attempt?: { is_solved: boolean; degree_count: number | null; solve_time_ms: number | null } | null
 }
 
 function FadeInUp({ children, style }: { children: React.ReactNode; style?: object }) {
@@ -129,18 +127,15 @@ export default function SixDegreesScreen() {
     })
   ).current
 
-  const { practice } = useLocalSearchParams<{ practice?: string }>()
-  const isPractice = practice === '1'
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
-  const [puzzle, setPuzzle] = useState<TodayResponse | null>(null)
+  const [puzzle, setPuzzle] = useState<PuzzleResponse | null>(null)
 
   const [currentPerson, setCurrentPerson] = useState<PersonResult | null>(null)
   const [visitedMovieIds, setVisitedMovieIds] = useState<number[]>([])
   const [visitedPersonIds, setVisitedPersonIds] = useState<number[]>([])
   const [chain, setChain] = useState<Hop[]>([])
   const [guessPath, setGuessPath] = useState<{ person_id: number; movie_id: number; next_person_id: number }[]>([])
-  const startTimeRef = useRef<number>(0)
   const queryInputRef = useRef<TextInput>(null)
   const historyScrollRef = useRef<ScrollView>(null)
   const solvedScrollRef = useRef<ScrollView>(null)
@@ -153,7 +148,7 @@ export default function SixDegreesScreen() {
   const [actorResults, setActorResults] = useState<PersonResult[]>([])
   const [actorError, setActorError] = useState<string | null>(null)
 
-  const [solved, setSolved] = useState<{ degree_count: number } | null>(null)
+  const [solved, setSolved] = useState<{ degree_count: number; six_degrees_solved_count?: number } | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [verifying, setVerifying] = useState(false)
 
@@ -171,19 +166,16 @@ export default function SixDegreesScreen() {
     setMovieQuery(''); setMovieResults([]); setSelectedMovie(null); setMovieError(null)
     setActorQuery(''); setActorResults([]); setActorError(null)
     try {
-      const r = await apiFetch(isPractice ? '/api/games/six-degrees/practice' : '/api/games/six-degrees/today')
-      if (r.status === 404) { setNotFound(true); return }
-      const data: TodayResponse = await r.json()
+      const r = await apiFetch('/api/games/six-degrees/puzzle')
+      if (!r.ok) { setNotFound(true); return }
+      const data: PuzzleResponse = await r.json()
       setPuzzle(data)
-      if (!data.user_attempt?.is_solved) {
-        setCurrentPerson({
-          person_id: data.start_person.id,
-          person_name: data.start_person.name,
-          profile_path: data.start_person.profile_path,
-        })
-        setVisitedPersonIds([data.start_person.id])
-        startTimeRef.current = Date.now()
-      }
+      setCurrentPerson({
+        person_id: data.start_person.id,
+        person_name: data.start_person.name,
+        profile_path: data.start_person.profile_path,
+      })
+      setVisitedPersonIds([data.start_person.id])
     } catch {
       setNotFound(true)
     } finally {
@@ -191,7 +183,7 @@ export default function SixDegreesScreen() {
     }
   }
 
-  useEffect(() => { loadPuzzle() }, [isPractice])
+  useEffect(() => { loadPuzzle() }, [])
 
   // Context changes (a new current actor, or entering/leaving the movie step)
   // fully invalidate whatever's currently displayed.
@@ -253,12 +245,11 @@ export default function SixDegreesScreen() {
   // On longer chains the solved screen could otherwise render already
   // scrolled down (e.g. residual scroll-adjustment while the keyboard was
   // still closing) instead of showing the "Solved!" heading at the top.
-  const justSolved = solved != null || puzzle?.user_attempt?.is_solved
   useEffect(() => {
-    if (!justSolved) return
+    if (!solved) return
     Keyboard.dismiss()
     solvedScrollRef.current?.scrollTo({ y: 0, animated: false })
-  }, [justSolved])
+  }, [solved])
 
   // Verifies next connects to currentPerson via movie, and if so records the hop
   // and advances (submitting the attempt if next is the target). Returns whether
@@ -295,26 +286,17 @@ export default function SixDegreesScreen() {
       // "submitting" to the solved screen once we hear back.
       setSubmitting(true)
       try {
-        const res = isPractice
-          ? await apiFetch('/api/games/six-degrees/practice/attempt', {
-              method: 'POST',
-              body: JSON.stringify({
-                start_person_id: puzzle.start_person.id,
-                end_person_id: puzzle.end_person.id,
-                guess_path: newGuessPath,
-              }),
-            })
-          : await apiFetch('/api/games/six-degrees/attempt', {
-              method: 'POST',
-              body: JSON.stringify({
-                puzzle_id: puzzle.puzzle_id,
-                guess_path: newGuessPath,
-                solve_time_ms: Date.now() - startTimeRef.current,
-              }),
-            })
+        const res = await apiFetch('/api/games/six-degrees/puzzle/attempt', {
+          method: 'POST',
+          body: JSON.stringify({
+            start_person_id: puzzle.start_person.id,
+            end_person_id: puzzle.end_person.id,
+            guess_path: newGuessPath,
+          }),
+        })
         if (res.ok) {
           const data = await res.json()
-          setSolved({ degree_count: data.degree_count })
+          setSolved({ degree_count: data.degree_count, six_degrees_solved_count: data.six_degrees_solved_count })
         }
       } finally {
         setSubmitting(false)
@@ -379,15 +361,12 @@ export default function SixDegreesScreen() {
     return (
       <SafeAreaView style={s.safe} edges={['top']}>
         <BackBar router={router} />
-        <Text style={s.empty}>No puzzle today — check back soon.</Text>
+        <Text style={s.empty}>Couldn&rsquo;t load a puzzle — try refreshing.</Text>
       </SafeAreaView>
     )
   }
 
-  const alreadySolved = puzzle.user_attempt?.is_solved
-  const degreeCount = solved?.degree_count ?? puzzle.user_attempt?.degree_count
-
-  if (alreadySolved || solved) {
+  if (solved) {
     return (
       <SafeAreaView style={s.safe} edges={['top']}>
         <BackBar router={router} />
@@ -401,9 +380,12 @@ export default function SixDegreesScreen() {
               <Trophy size={30} color={Colors.background} strokeWidth={2} />
             </View>
             <Text style={s.heading}>Solved!</Text>
-            <Text style={s.sub}>{degreeCount} degree{degreeCount === 1 ? '' : 's'}</Text>
+            <Text style={s.sub}>{solved.degree_count} degree{solved.degree_count === 1 ? '' : 's'}</Text>
             {puzzle.optimal_degree_count != null && (
               <Text style={s.optimalText}>Shortest possible path: {puzzle.optimal_degree_count} degree{puzzle.optimal_degree_count === 1 ? '' : 's'}</Text>
+            )}
+            {solved.six_degrees_solved_count != null && (
+              <Text style={s.optimalText}>Puzzles solved: {solved.six_degrees_solved_count}</Text>
             )}
           </FadeInUp>
           {chain.length > 0 ? (
@@ -415,11 +397,9 @@ export default function SixDegreesScreen() {
               <SmallHeadshot person={puzzle.end_person} />
             </View>
           )}
-          {isPractice && (
-            <Pressable style={s.playAgainBtn} onPress={loadPuzzle}>
-              <Text style={s.playAgainText}>Play again</Text>
-            </Pressable>
-          )}
+          <Pressable style={s.playAgainBtn} onPress={loadPuzzle}>
+            <Text style={s.playAgainText}>Play again</Text>
+          </Pressable>
         </ScrollView>
       </SafeAreaView>
     )
@@ -444,11 +424,9 @@ export default function SixDegreesScreen() {
             <View style={s.connectorBadge}>
               <ArrowRight size={18} color={Colors.background} strokeWidth={2.5} />
             </View>
-            {isPractice && (
-              <Pressable style={s.refreshBtn} onPress={loadPuzzle} hitSlop={10}>
-                <RefreshCw size={20} color={Colors.textMuted} />
-              </Pressable>
-            )}
+            <Pressable style={s.refreshBtn} onPress={loadPuzzle} hitSlop={10}>
+              <RefreshCw size={20} color={Colors.textMuted} />
+            </Pressable>
           </View>
           <BigHeadshot person={puzzle.end_person} />
         </View>

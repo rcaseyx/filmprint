@@ -1,13 +1,12 @@
-"""Six-degrees daily puzzle: bipartite movie/actor graph and shortest-path generation."""
+"""Six-degrees puzzle: bipartite movie/actor graph and shortest-path generation."""
 
 import random
 from collections import deque
-from datetime import date, timedelta
 
-from .db import get_connection, get_daily_puzzle, get_recent_anchor_person_ids, insert_daily_puzzle
+from .db import get_connection
 
 # Minimum vote_count and revenue for a movie to be eligible as a bridge in the
-# daily puzzle graph. A popularity floor was tried here too, but TMDB's
+# puzzle graph. A popularity floor was tried here too, but TMDB's
 # "popularity" is a live trending metric that decays for essentially every
 # catalog title over time, not a fixed measure of fame -- it ended up
 # excluding ~2400 movies with solid vote counts and real revenue (Guardians of
@@ -48,12 +47,9 @@ ACTOR_POOL_MIN_MOVIES = 3
 # movie is trivially guessable in one look, not a puzzle.
 MIN_PUZZLE_DEGREES = 2
 
-# Days a person must "rest" before they can be reused as a daily anchor.
-ANCHOR_COOLDOWN_DAYS = 60
-
 
 def get_curated_pool() -> list[int]:
-    """Movie IDs eligible for the daily puzzle (anchors and bridges alike)."""
+    """Movie IDs eligible for a puzzle (anchors and bridges alike)."""
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
@@ -65,7 +61,7 @@ def get_curated_pool() -> list[int]:
 
 def get_curated_actor_pool(movie_pool: list[int] | None = None) -> list[int]:
     """
-    Person IDs eligible as a daily-puzzle anchor: top-billed in several movies
+    Person IDs eligible as a puzzle anchor: top-billed in several movies
     from a stricter, higher-vote-count subset of the curated movie pool. Only
     anchors need this stricter bar -- bridge actors found while solving stay
     fully unrestricted (any billing order is a valid connection, rewarding
@@ -206,7 +202,7 @@ def shortest_path_between_people(
     return path
 
 
-def generate_daily_puzzle(exclude_person_ids: set[int] | None = None, max_attempts: int = 500) -> dict:
+def generate_puzzle(exclude_person_ids: set[int] | None = None, max_attempts: int = 500) -> dict:
     """
     Pick a random start/end actor pair from the curated actor pool whose
     shortest path (through the curated movie pool's credit graph) is at least
@@ -233,29 +229,6 @@ def generate_daily_puzzle(exclude_person_ids: set[int] | None = None, max_attemp
             }
 
     raise RuntimeError(f"Could not find a valid puzzle pair after {max_attempts} attempts")
-
-
-def generate_and_store_tomorrows_puzzle() -> dict | None:
-    """
-    Generate and store tomorrow's daily puzzle, unless one already exists for
-    that date (idempotent — safe to call from a job that might run more than
-    once). Returns the inserted puzzle dict (with "id"), or None if skipped.
-    """
-    puzzle_date = date.today() + timedelta(days=1)
-    if get_daily_puzzle(puzzle_date):
-        return None
-
-    exclude = get_recent_anchor_person_ids(ANCHOR_COOLDOWN_DAYS)
-    puzzle = generate_daily_puzzle(exclude_person_ids=exclude)
-    puzzle["id"] = insert_daily_puzzle(
-        puzzle_date,
-        puzzle["start_person_id"],
-        puzzle["end_person_id"],
-        puzzle["solution_path"],
-        puzzle["degree_count"],
-    )
-    puzzle["puzzle_date"] = puzzle_date
-    return puzzle
 
 
 def search_people(query: str, exclude_person_ids: set[int] | None = None, limit: int = 6) -> list[dict]:

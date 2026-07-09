@@ -1,9 +1,8 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { useSearchParams } from "next/navigation"
 import { useSession } from "next-auth/react"
 import { authHeader } from "@/lib/api"
 import { useDebounce } from "@/lib/useDebounce"
@@ -36,28 +35,23 @@ interface Hop {
   person: PersonResult
 }
 
-interface TodayResponse {
-  puzzle_id?: number
+interface PuzzleResponse {
   start_person: PersonSummary
   end_person: PersonSummary
   optimal_degree_count?: number
-  user_attempt?: { is_solved: boolean; degree_count: number | null; solve_time_ms: number | null } | null
 }
 
 export default function SixDegreesPage() {
   const { data: session, status } = useSession()
-  const searchParams = useSearchParams()
-  const isPractice = searchParams.get("practice") === "1"
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
-  const [puzzle, setPuzzle] = useState<TodayResponse | null>(null)
+  const [puzzle, setPuzzle] = useState<PuzzleResponse | null>(null)
 
   const [currentPerson, setCurrentPerson] = useState<PersonResult | null>(null)
   const [visitedMovieIds, setVisitedMovieIds] = useState<number[]>([])
   const [visitedPersonIds, setVisitedPersonIds] = useState<number[]>([])
   const [chain, setChain] = useState<Hop[]>([])
   const [guessPath, setGuessPath] = useState<{ person_id: number; movie_id: number; next_person_id: number }[]>([])
-  const startTimeRef = useRef<number>(0)
 
   const [movieQuery, setMovieQuery] = useState("")
   const [movieResults, setMovieResults] = useState<MovieSummary[]>([])
@@ -67,7 +61,7 @@ export default function SixDegreesPage() {
   const [actorResults, setActorResults] = useState<PersonResult[]>([])
   const [actorError, setActorError] = useState<string | null>(null)
 
-  const [solved, setSolved] = useState<{ degree_count: number } | null>(null)
+  const [solved, setSolved] = useState<{ degree_count: number; six_degrees_solved_count?: number } | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [verifying, setVerifying] = useState(false)
 
@@ -86,21 +80,18 @@ export default function SixDegreesPage() {
     setActorQuery(""); setActorResults([]); setActorError(null)
     try {
       const res = await fetch(
-        `${API}/api/games/six-degrees/${isPractice ? "practice" : "today"}`,
+        `${API}/api/games/six-degrees/puzzle`,
         { headers: authHeader(session) }
       )
-      if (res.status === 404) { setNotFound(true); return }
-      const data: TodayResponse = await res.json()
+      if (!res.ok) { setNotFound(true); return }
+      const data: PuzzleResponse = await res.json()
       setPuzzle(data)
-      if (!data.user_attempt?.is_solved) {
-        setCurrentPerson({
-          person_id: data.start_person.id,
-          person_name: data.start_person.name,
-          profile_path: data.start_person.profile_path,
-        })
-        setVisitedPersonIds([data.start_person.id])
-        startTimeRef.current = Date.now()
-      }
+      setCurrentPerson({
+        person_id: data.start_person.id,
+        person_name: data.start_person.name,
+        profile_path: data.start_person.profile_path,
+      })
+      setVisitedPersonIds([data.start_person.id])
     } catch {
       setNotFound(true)
     } finally {
@@ -111,7 +102,7 @@ export default function SixDegreesPage() {
   useEffect(() => {
     if (status !== "authenticated") return
     loadPuzzle()
-  }, [status, session, isPractice])
+  }, [status, session])
 
   // Context changes (a new current actor, or entering/leaving the movie step)
   // fully invalidate whatever's currently displayed.
@@ -169,10 +160,9 @@ export default function SixDegreesPage() {
 
   // Make sure the "Solved!" heading is what's visible, not wherever the page
   // happened to be scrolled to from a long chain.
-  const justSolved = solved != null || puzzle?.user_attempt?.is_solved
   useEffect(() => {
-    if (justSolved) window.scrollTo(0, 0)
-  }, [justSolved])
+    if (solved) window.scrollTo(0, 0)
+  }, [solved])
 
   // Verifies next connects to currentPerson via movie, and if so records the hop
   // and advances (submitting the attempt if next is the target). Returns whether
@@ -210,28 +200,18 @@ export default function SixDegreesPage() {
       // "submitting" to the solved screen once we hear back.
       setSubmitting(true)
       try {
-        const res = isPractice
-          ? await fetch(`${API}/api/games/six-degrees/practice/attempt`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json", ...authHeader(session) },
-              body: JSON.stringify({
-                start_person_id: puzzle.start_person.id,
-                end_person_id: puzzle.end_person.id,
-                guess_path: newGuessPath,
-              }),
-            })
-          : await fetch(`${API}/api/games/six-degrees/attempt`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json", ...authHeader(session) },
-              body: JSON.stringify({
-                puzzle_id: puzzle.puzzle_id,
-                guess_path: newGuessPath,
-                solve_time_ms: Date.now() - startTimeRef.current,
-              }),
-            })
+        const res = await fetch(`${API}/api/games/six-degrees/puzzle/attempt`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeader(session) },
+          body: JSON.stringify({
+            start_person_id: puzzle.start_person.id,
+            end_person_id: puzzle.end_person.id,
+            guess_path: newGuessPath,
+          }),
+        })
         if (res.ok) {
           const data = await res.json()
-          setSolved({ degree_count: data.degree_count })
+          setSolved({ degree_count: data.degree_count, six_degrees_solved_count: data.six_degrees_solved_count })
         }
       } finally {
         setSubmitting(false)
@@ -294,26 +274,28 @@ export default function SixDegreesPage() {
     return (
       <div className="max-w-2xl mx-auto px-6 py-12">
         <BackLink />
-        <p className="text-neutral-500 mt-6">No puzzle today — check back soon.</p>
+        <p className="text-neutral-500 mt-6">Couldn&rsquo;t load a puzzle — try refreshing.</p>
       </div>
     )
   }
 
-  const alreadySolved = puzzle.user_attempt?.is_solved
-  const degreeCount = solved?.degree_count ?? puzzle.user_attempt?.degree_count
-
-  if (alreadySolved || solved) {
+  if (solved) {
     return (
       <div className="max-w-2xl mx-auto px-6 py-12">
         <BackLink />
         <div className="mt-8 text-center">
           <h1 className="text-xl font-semibold text-neutral-100">Solved!</h1>
           <p className="text-neutral-400 mt-2">
-            {degreeCount} degree{degreeCount === 1 ? "" : "s"}
+            {solved.degree_count} degree{solved.degree_count === 1 ? "" : "s"}
           </p>
           {puzzle.optimal_degree_count != null && (
             <p className="text-neutral-500 text-sm mt-1">
               Shortest possible path: {puzzle.optimal_degree_count} degree{puzzle.optimal_degree_count === 1 ? "" : "s"}
+            </p>
+          )}
+          {solved.six_degrees_solved_count != null && (
+            <p className="text-neutral-500 text-sm mt-1">
+              Puzzles solved: {solved.six_degrees_solved_count}
             </p>
           )}
         </div>
@@ -326,14 +308,12 @@ export default function SixDegreesPage() {
             <Headshot person={puzzle.end_person} />
           </div>
         )}
-        {isPractice && (
-          <button
-            onClick={loadPuzzle}
-            className="w-full mt-6 rounded-xl bg-brand text-neutral-950 font-semibold py-3 hover:opacity-90 transition-opacity"
-          >
-            Play again
-          </button>
-        )}
+        <button
+          onClick={loadPuzzle}
+          className="w-full mt-6 rounded-xl bg-brand text-neutral-950 font-semibold py-3 hover:opacity-90 transition-opacity"
+        >
+          Play again
+        </button>
       </div>
     )
   }
@@ -346,15 +326,13 @@ export default function SixDegreesPage() {
         <Headshot person={puzzle.start_person} />
         <div className="flex flex-col items-center gap-6">
           <span className="text-2xl text-neutral-600">&rarr;</span>
-          {isPractice && (
-            <button
-              onClick={loadPuzzle}
-              className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors whitespace-nowrap"
-              title="Get a different pair of anchors"
-            >
-              &#8635; New pair
-            </button>
-          )}
+          <button
+            onClick={loadPuzzle}
+            className="text-sm text-neutral-500 hover:text-neutral-300 transition-colors whitespace-nowrap"
+            title="Get a different pair of anchors"
+          >
+            &#8635; New pair
+          </button>
         </div>
         <Headshot person={puzzle.end_person} />
       </div>

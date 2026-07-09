@@ -86,10 +86,10 @@ from filmprint.db import (
     upsert_rating,
     get_all_movies_with_vectors,
     get_all_keyword_themes,
-    get_daily_puzzle, upsert_puzzle_attempt, get_puzzle_attempt, get_person_summary,
+    get_person_summary, increment_six_degrees_solved_count,
 )
 from filmprint.six_degrees import (
-    search_people, search_movies, is_credited_in, share_movie, validate_full_chain, generate_daily_puzzle,
+    search_people, search_movies, is_credited_in, share_movie, validate_full_chain, generate_puzzle,
 )
 from filmprint.features import (
     build_feature_vector, taste_summary, build_keyword_vocab,
@@ -2758,36 +2758,12 @@ def _six_degrees_person_summary(person: dict) -> dict:
     }
 
 
-@app.get("/api/games/six-degrees/today")
-def six_degrees_today(current_user: dict = Depends(get_current_user)):
-    puzzle = get_daily_puzzle(datetime.date.today())
-    if not puzzle:
-        raise HTTPException(status_code=404, detail="No puzzle generated for today")
-    start_person = get_person_summary(puzzle["start_person_id"])
-    end_person = get_person_summary(puzzle["end_person_id"])
-    attempt = get_puzzle_attempt(current_user["user_id"], puzzle["id"])
-    return {
-        "puzzle_id": puzzle["id"],
-        "puzzle_date": str(puzzle["puzzle_date"]),
-        "start_person": _six_degrees_person_summary(start_person),
-        "end_person": _six_degrees_person_summary(end_person),
-        "optimal_degree_count": puzzle["degree_count"],
-        "user_attempt": {
-            "is_solved": attempt["is_solved"],
-            "degree_count": len(attempt["guess_path"]) if attempt.get("guess_path") else None,
-            "solve_time_ms": attempt["solve_time_ms"],
-        } if attempt else None,
-    }
-
-
-@app.get("/api/games/six-degrees/practice")
-def six_degrees_practice(current_user: dict = Depends(get_current_user)):
-    """
-    A fresh, unlimited, unscored puzzle -- entirely separate from daily_puzzles/
-    user_puzzle_attempts, so replaying never touches (or requires clearing) a
-    user's real daily score.
-    """
-    puzzle = generate_daily_puzzle()
+@app.get("/api/games/six-degrees/puzzle")
+def six_degrees_puzzle(current_user: dict = Depends(get_current_user)):
+    """A fresh, unlimited puzzle. Nothing is persisted until a chain is solved,
+    at which point only users.six_degrees_solved_count is incremented -- no
+    per-puzzle score/leaderboard tracking."""
+    puzzle = generate_puzzle()
     start_person = get_person_summary(puzzle["start_person_id"])
     end_person = get_person_summary(puzzle["end_person_id"])
     return {
@@ -2836,41 +2812,18 @@ class _SixDegreesGuessHop(BaseModel):
 
 
 class _SixDegreesAttemptPayload(BaseModel):
-    puzzle_id: int
-    guess_path: list[_SixDegreesGuessHop]
-    solve_time_ms: int | None = None
-
-
-@app.post("/api/games/six-degrees/attempt")
-def six_degrees_submit_attempt(payload: _SixDegreesAttemptPayload, current_user: dict = Depends(get_current_user)):
-    user_id = current_user["user_id"]
-    puzzle = get_daily_puzzle(datetime.date.today())
-    if not puzzle or puzzle["id"] != payload.puzzle_id:
-        raise HTTPException(status_code=400, detail="Not today's puzzle")
-
-    guess_hops = [hop.model_dump() for hop in payload.guess_path]
-    if not validate_full_chain(puzzle["start_person_id"], puzzle["end_person_id"], guess_hops):
-        raise HTTPException(status_code=422, detail="Chain does not connect start to end via shared movies")
-
-    upsert_puzzle_attempt(user_id, puzzle["id"], guess_hops, True, payload.solve_time_ms)
-    return {"solved": True, "degree_count": len(guess_hops)}
-
-
-class _SixDegreesPracticeAttemptPayload(BaseModel):
     start_person_id: int
     end_person_id: int
     guess_path: list[_SixDegreesGuessHop]
 
 
-@app.post("/api/games/six-degrees/practice/attempt")
-def six_degrees_practice_attempt(
-    payload: _SixDegreesPracticeAttemptPayload, current_user: dict = Depends(get_current_user)
-):
-    """Validates a practice chain but never persists it -- practice has no score to track."""
+@app.post("/api/games/six-degrees/puzzle/attempt")
+def six_degrees_submit_attempt(payload: _SixDegreesAttemptPayload, current_user: dict = Depends(get_current_user)):
     guess_hops = [hop.model_dump() for hop in payload.guess_path]
     if not validate_full_chain(payload.start_person_id, payload.end_person_id, guess_hops):
         raise HTTPException(status_code=422, detail="Chain does not connect start to end via shared movies")
-    return {"solved": True, "degree_count": len(guess_hops)}
+    solved_count = increment_six_degrees_solved_count(current_user["user_id"])
+    return {"solved": True, "degree_count": len(guess_hops), "six_degrees_solved_count": solved_count}
 
 
 # --- admin endpoints ---
