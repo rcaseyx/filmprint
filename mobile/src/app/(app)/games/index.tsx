@@ -28,7 +28,7 @@ export default function GamesScreen() {
         onPress={() => router.push('/games/trifecta' as any)}
       >
         <Text style={s.cardTitle}>Trifecta</Text>
-        <Text style={s.cardDesc}>Pick 3 movies. Get their Rotten Tomatoes scores as close to 150 as possible.</Text>
+        <Text style={s.cardDesc}>3 movies, 1 target: hit a combined Rotten Tomatoes score of 150.</Text>
       </TouchableOpacity>
     </SafeAreaView>
   )
