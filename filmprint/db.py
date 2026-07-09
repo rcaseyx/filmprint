@@ -184,6 +184,7 @@ def init_db(seed_data: dict | None = None) -> None:
         # every sign-in after that has email=null, so returning users must be
         # looked up by this stable per-app identifier instead.
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS apple_sub TEXT UNIQUE",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS six_degrees_solved_count INTEGER NOT NULL DEFAULT 0",
         """CREATE TABLE IF NOT EXISTS movie_credits (
             id            BIGSERIAL PRIMARY KEY,
             movie_id      BIGINT NOT NULL REFERENCES movies(id),
@@ -973,35 +974,6 @@ def get_all_movies_with_vectors() -> list[dict]:
 
 # --- six degrees ---
 
-def get_recent_anchor_person_ids(cooldown_days: int) -> set[int]:
-    """Person IDs used as a start/end anchor within the last cooldown_days, to avoid repeats."""
-    with get_connection() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            """SELECT start_person_id, end_person_id FROM daily_puzzles
-               WHERE puzzle_date >= CURRENT_DATE - %s::int""",
-            (cooldown_days,),
-        )
-        ids: set[int] = set()
-        for row in cur.fetchall():
-            ids.add(row["start_person_id"])
-            ids.add(row["end_person_id"])
-        return ids
-
-
-def insert_daily_puzzle(
-    puzzle_date, start_person_id: int, end_person_id: int, solution_path: list[dict], degree_count: int
-) -> int:
-    with get_connection() as conn:
-        cur = conn.cursor()
-        cur.execute("""
-            INSERT INTO daily_puzzles (puzzle_date, start_person_id, end_person_id, solution_path, degree_count)
-            VALUES (%s, %s, %s, %s, %s)
-            RETURNING id
-        """, (puzzle_date, start_person_id, end_person_id, json.dumps(solution_path), degree_count))
-        return cur.fetchone()["id"]
-
-
 def get_person_summary(person_id: int) -> dict | None:
     """Representative name/photo for person_id -- there's no dedicated people table,
     so pull it from any one of their movie_credits rows (profile_path is stable per person)."""
@@ -1015,47 +987,16 @@ def get_person_summary(person_id: int) -> dict | None:
         return dict(row) if row else None
 
 
-def get_daily_puzzle(puzzle_date) -> dict | None:
-    with get_connection() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM daily_puzzles WHERE puzzle_date = %s", (puzzle_date,))
-        row = cur.fetchone()
-        if not row:
-            return None
-        puzzle = dict(row)
-        puzzle["solution_path"] = json.loads(puzzle["solution_path"])
-        return puzzle
-
-
-def get_puzzle_attempt(user_id: int, puzzle_id: int) -> dict | None:
+def increment_six_degrees_solved_count(user_id: int) -> int:
+    """Increments and returns the user's total six-degrees solved count."""
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
-            "SELECT * FROM user_puzzle_attempts WHERE user_id = %s AND puzzle_id = %s",
-            (user_id, puzzle_id),
+            "UPDATE users SET six_degrees_solved_count = six_degrees_solved_count + 1 "
+            "WHERE id = %s RETURNING six_degrees_solved_count",
+            (user_id,),
         )
-        row = cur.fetchone()
-        if not row:
-            return None
-        attempt = dict(row)
-        attempt["guess_path"] = json.loads(attempt["guess_path"]) if attempt.get("guess_path") else None
-        return attempt
-
-
-def upsert_puzzle_attempt(
-    user_id: int, puzzle_id: int, guess_path: list[dict], is_solved: bool, solve_time_ms: int | None
-) -> None:
-    with get_connection() as conn:
-        cur = conn.cursor()
-        cur.execute("""
-            INSERT INTO user_puzzle_attempts (user_id, puzzle_id, guess_path, is_solved, solve_time_ms, completed_at)
-            VALUES (%s, %s, %s, %s, %s, CASE WHEN %s THEN NOW() ELSE NULL END)
-            ON CONFLICT (user_id, puzzle_id) DO UPDATE SET
-                guess_path    = EXCLUDED.guess_path,
-                is_solved     = EXCLUDED.is_solved,
-                solve_time_ms = EXCLUDED.solve_time_ms,
-                completed_at  = EXCLUDED.completed_at
-        """, (user_id, puzzle_id, json.dumps(guess_path), is_solved, solve_time_ms, is_solved))
+        return cur.fetchone()["six_degrees_solved_count"]
 
 
 # --- user_ratings ---

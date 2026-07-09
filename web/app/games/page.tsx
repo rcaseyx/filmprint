@@ -19,7 +19,7 @@ export default async function GamesPage() {
   return (
     <div className="max-w-2xl mx-auto px-6 py-12">
       <h1 className="text-2xl font-semibold text-neutral-100 tracking-tight">Games</h1>
-      <p className="text-sm text-neutral-500 mt-1">Daily movie challenges</p>
+      <p className="text-sm text-neutral-500 mt-1">Movie challenges</p>
 
       <Link
         href="/games/six-degrees"
@@ -27,15 +27,8 @@ export default async function GamesPage() {
       >
         <h2 className="text-lg font-semibold text-neutral-100">Co-Star</h2>
         <p className="text-sm text-neutral-500 mt-1">
-          Connect today's two actors through shared movies, one hop at a time.
+          Connect two actors through shared movies, one hop at a time.
         </p>
-      </Link>
-
-      <Link
-        href="/games/six-degrees?practice=1"
-        className="inline-block mt-4 text-sm text-neutral-500 hover:text-neutral-300 transition-colors"
-      >
-        Just want to practice? &rarr;
       </Link>
     </div>
   )
