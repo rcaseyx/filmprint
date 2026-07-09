@@ -31,16 +31,24 @@ CURATED_POOL_MIN_VOTES = 1000
 # through reliable-but-not-famous character actors who rack up prominent
 # supporting roles across several blockbusters without ever headlining one
 # (e.g. Randall Duk Kim in Kung Fu Panda/John Wick 3/The Matrix Reloaded --
-# recognizable by photo, but nobody can place which movie). Also requiring
-# at least one lead-or-near-lead credit (billing <= 3) filters that out while
-# keeping prolific-but-secondary actors OUT and genuine stars IN. Validated
-# against real data (689 actors; weakest tier now names like Dan Aykroyd,
-# Tina Fey, Kate McKinnon, John Cleese, Alexander Skarsgård -- a clear step
-# up from the unfiltered top-10 tier), with healthy BFS connectivity (0/40
-# sampled pairs lacked a path).
+# recognizable by photo, but nobody can place which movie). Requiring a
+# single lead-or-near-lead credit (billing <= 3) filtered that case out but
+# let a subtler one through: an actor with exactly ONE genuine lead/co-lead
+# role plus two billing-10 ensemble credits riding a blockbuster's vote count
+# still qualified, even when nobody could place them in those other two
+# movies (e.g. Mekhi Phifer: real co-lead in 8 Mile, but billing 10 in both
+# Divergent and Insurgent) -- and a single lead credit doesn't reliably imply
+# durable personal fame even when the movie itself is huge (e.g. Talitha
+# Eliana Bateman: billing 1 in Annabelle: Creation, a $306M movie, but not a
+# widely recognized name/face on her own). Requiring TWO lead-or-near-lead
+# credits instead of one filters both cases while keeping genuine stars in.
+# Validated against real data: pool shrinks 735 -> 545 (-26%), survivors are
+# uniformly recognizable (Hanks, DiCaprio, Blanchett, Stallone tier), and BFS
+# connectivity stays healthy (0/60 sampled pairs lacked a path).
 ANCHOR_MOVIE_MIN_VOTES = 5500
 ACTOR_POOL_MIN_BILLING = 10
 ACTOR_POOL_MIN_LEAD_BILLING = 3
+ACTOR_POOL_MIN_LEAD_MOVIES = 2
 ACTOR_POOL_MIN_MOVIES = 3
 
 # Reject pairs whose shortest path is shorter than this -- a single shared
@@ -62,11 +70,14 @@ def get_curated_pool() -> list[int]:
 def get_curated_actor_pool(movie_pool: list[int] | None = None) -> list[int]:
     """
     Person IDs eligible as a puzzle anchor: top-billed in several movies
-    from a stricter, higher-vote-count subset of the curated movie pool. Only
-    anchors need this stricter bar -- bridge actors found while solving stay
-    fully unrestricted (any billing order is a valid connection, rewarding
-    depth of knowledge rather than penalizing it), and bridge movies use the
-    full (broader) curated pool so real, well-known movies stay searchable.
+    from a stricter, higher-vote-count subset of the curated movie pool, with
+    at least ACTOR_POOL_MIN_LEAD_MOVIES of those being a genuine lead/co-lead
+    credit (billing <= ACTOR_POOL_MIN_LEAD_BILLING) -- one lead credit isn't
+    enough (see the constants comment above). Only anchors need this stricter
+    bar -- bridge actors found while solving stay fully unrestricted (any
+    billing order is a valid connection, rewarding depth of knowledge rather
+    than penalizing it), and bridge movies use the full (broader) curated
+    pool so real, well-known movies stay searchable.
     """
     pool = movie_pool if movie_pool is not None else get_curated_pool()
     with get_connection() as conn:
@@ -76,8 +87,12 @@ def get_curated_actor_pool(movie_pool: list[int] | None = None) -> list[int]:
                JOIN movies m ON m.id = mc.movie_id
                WHERE mc.movie_id = ANY(%s) AND mc.billing_order <= %s AND m.vote_count >= %s
                GROUP BY mc.person_id
-               HAVING count(DISTINCT mc.movie_id) >= %s AND min(mc.billing_order) <= %s""",
-            (pool, ACTOR_POOL_MIN_BILLING, ANCHOR_MOVIE_MIN_VOTES, ACTOR_POOL_MIN_MOVIES, ACTOR_POOL_MIN_LEAD_BILLING),
+               HAVING count(DISTINCT mc.movie_id) >= %s
+                  AND count(DISTINCT mc.movie_id) FILTER (WHERE mc.billing_order <= %s) >= %s""",
+            (
+                pool, ACTOR_POOL_MIN_BILLING, ANCHOR_MOVIE_MIN_VOTES, ACTOR_POOL_MIN_MOVIES,
+                ACTOR_POOL_MIN_LEAD_BILLING, ACTOR_POOL_MIN_LEAD_MOVIES,
+            ),
         )
         return [row["person_id"] for row in cur.fetchall()]
 
