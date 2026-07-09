@@ -22,10 +22,15 @@ def _cache_path(key: str) -> Path:
     return CACHE_DIR / f"{key}.json"
 
 
-def _cached_get(cache_key: str, endpoint: str, params: dict = {}) -> dict:
-    """Fetch from cache if available, otherwise hit the API and cache the result."""
+def _cached_get(cache_key: str, endpoint: str, params: dict = {}, use_cache: bool = True) -> dict:
+    """Fetch from cache if available, otherwise hit the API and cache the result.
+
+    use_cache=False skips both the read and the write — needed for queries whose
+    results change over time (e.g. popularity-ranked discover pages), where a
+    stale cached page would silently hide newly-qualifying results forever.
+    """
     path = _cache_path(cache_key)
-    if path.exists():
+    if use_cache and path.exists():
         return json.loads(path.read_text())
 
     params = {**params, "api_key": os.environ["TMDB_API_KEY"]}
@@ -33,8 +38,9 @@ def _cached_get(cache_key: str, endpoint: str, params: dict = {}) -> dict:
     response.raise_for_status()
     data = response.json()
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data))
+    if use_cache:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data))
     return data
 
 
@@ -118,6 +124,28 @@ def discover_movies(
         params["vote_count.lte"] = vote_count_lte
     cache_key = "discover_" + "_".join(f"{k}-{v}" for k, v in sorted(params.items()))
     return _cached_get(cache_key, "/discover/movie", params).get("results", [])
+
+
+def discover_popular_movies(year: int, page: int = 1, vote_count_gte: int = 1000) -> list[dict]:
+    """Query TMDB Discover for well-known movies released in a given year.
+
+    Sorted by vote_count, not TMDB's `popularity` score — popularity is a
+    decaying live-trending metric (see the curated-pool rationale in
+    six_degrees.py) and would silently exclude real, widely-seen movies whose
+    current trending score happens to be low (e.g. This Is 40: vote_count
+    2356, popularity 2.65). vote_count is a stable, monotonic fame signal.
+
+    Uncached (see _cached_get) since results shift over time as vote counts
+    grow — a cached page would never surface movies that cross the bar later.
+    """
+    params: dict = {
+        "sort_by": "vote_count.desc",
+        "primary_release_year": year,
+        "vote_count.gte": vote_count_gte,
+        "page": page,
+    }
+    cache_key = f"discover_popular_{year}_{vote_count_gte}_p{page}"
+    return _cached_get(cache_key, "/discover/movie", params, use_cache=False).get("results", [])
 
 
 def enrich_movie(title: str, year: int | None = None) -> dict | None:

@@ -15,6 +15,7 @@ import os
 import sys
 import time
 import urllib.request
+from datetime import date
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -26,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from filmprint.db import init_db, close_db, get_ratings_count, get_users_with_letterboxd
 from filmprint.sync import sync_rss, sync_scrape
 from filmprint.six_degrees import generate_and_store_tomorrows_puzzle
+from filmprint.catalog import sweep_popular_movies
 
 logging.basicConfig(
     level=logging.INFO,
@@ -103,6 +105,9 @@ def main() -> None:
 
     _generate_six_degrees_puzzle()
 
+    if date.today().day == 1:
+        _backfill_recent_catalog()
+
     close_db()
     if succeeded == 0:
         sys.exit(1)
@@ -161,6 +166,18 @@ def _generate_six_degrees_puzzle() -> None:
             )
     except Exception:
         log.exception("Six-degrees puzzle generation failed")
+
+
+def _backfill_recent_catalog() -> None:
+    """Monthly sweep of the last few years so recent releases get picked up
+    once they cross the popularity/vote-count bar (new movies won't have
+    enough votes on day one). Gated to the 1st of the month by the caller."""
+    try:
+        year = date.today().year
+        stats = sweep_popular_movies(year - 2, year, per_year_limit=100)
+        log.info("Catalog backfill sweep: %s", stats)
+    except Exception:
+        log.exception("Catalog backfill sweep failed")
 
 
 if __name__ == "__main__":
