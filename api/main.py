@@ -92,7 +92,7 @@ from filmprint.six_degrees import (
     search_people, search_movies, is_credited_in, share_movie, validate_full_chain, generate_puzzle,
 )
 from filmprint.trifecta import generate_grid, score_selection
-from filmprint.trivia import build_session, check_answer, warm_pool as warm_trivia_pool
+from filmprint.trivia import build_session, check_answer, warm_pool as warm_trivia_pool, warm_user_movies as warm_trivia_user_movies
 from filmprint.features import (
     build_feature_vector, taste_summary, build_keyword_vocab,
     build_affinity_scores, GENRES, DECADES, compute_axis_scores, TONE_AXES, SUBGENRE_AXES,
@@ -711,7 +711,7 @@ async def lifespan(app: FastAPI):
             users = [u for u in get_all_users_with_stats() if u.get("ratings_count", 0) > 0]
             print(f"[prewarm] starting — {len(users)} user(s) to warm", flush=True)
             t0 = time.time()
-            counters = {"restored": 0, "rebuilt": 0, "failed": 0, "skipped": 0}
+            counters = {"restored": 0, "rebuilt": 0, "failed": 0, "skipped": 0, "trivia_movies": 0}
             counter_lock = _t.Lock()
 
             def _warm_one(user):
@@ -740,13 +740,23 @@ async def lifespan(app: FastAPI):
                     with counter_lock:
                         counters["failed"] += 1
 
+                # Separate try/except -- a trivia-warming hiccup shouldn't count against
+                # or block the rec/profile-cache warming above.
+                try:
+                    n = warm_trivia_user_movies(uid)
+                    with counter_lock:
+                        counters["trivia_movies"] += n
+                except Exception as e:
+                    print(f"[prewarm] trivia warm failed for user {uid} ({uname}): {e}", flush=True)
+
             with ThreadPoolExecutor(max_workers=min(len(users) or 1, 4)) as pool:
                 list(pool.map(_warm_one, users))
 
             print(
                 f"[prewarm] done in {time.time()-t0:.1f}s — "
                 f"{counters['restored']} restored, {counters['rebuilt']} rebuilt, "
-                f"{counters['skipped']} skipped (already in cache), {counters['failed']} failed",
+                f"{counters['skipped']} skipped (already in cache), {counters['failed']} failed, "
+                f"{counters['trivia_movies']} trivia question bank(s) generated",
                 flush=True,
             )
 

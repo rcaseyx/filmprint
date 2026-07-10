@@ -255,6 +255,17 @@ def init_db(seed_data: dict | None = None) -> None:
             created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )""",
         "CREATE INDEX IF NOT EXISTS idx_trivia_questions_movie_id ON trivia_questions(movie_id)",
+        # Only meaningful for source='opentdb' rows ('easy'/'medium'/'hard', straight
+        # from OTDB) -- taste-graph questions have no notion of difficulty, left NULL.
+        "ALTER TABLE trivia_questions ADD COLUMN IF NOT EXISTS difficulty TEXT",
+        # Guards against a real race: the startup prewarm loop processes multiple
+        # users concurrently, and if two of them share a not-yet-cached movie, both
+        # could see a cache miss and both generate+insert. Partial (source='generated'
+        # only -- opentdb rows have no movie_id and aren't meant to be deduped this
+        # way) so a losing insert becomes a harmless ON CONFLICT DO NOTHING instead of
+        # a duplicate row.
+        """CREATE UNIQUE INDEX IF NOT EXISTS idx_trivia_questions_movie_type_generated
+           ON trivia_questions(movie_id, question_type) WHERE source = 'generated'""",
     ]
     with get_connection() as conn:
         cur = conn.cursor()
@@ -1077,23 +1088,34 @@ def get_trivia_questions_for_movie(movie_id: int) -> list[dict]:
     return [_load_trivia_question(r) for r in rows]
 
 
-def insert_trivia_questions(questions: list[dict]) -> None:
-    """Each question: {movie_id, source, question_type, question_text, correct_answer, options, image_url}.
-    movie_id/image_url may be omitted (NULL) for opentdb questions."""
+def insert_trivia_questions(questions: list[dict]) -> list[dict]:
+    """Each question: {movie_id, source, question_type, question_text, correct_answer, options, image_url, difficulty}.
+    movie_id/image_url/difficulty may be omitted (NULL) -- difficulty only applies to opentdb questions.
+
+    Returns the rows actually inserted (with their DB-assigned ids, via RETURNING) --
+    saves callers a separate re-fetch just to learn the ids bulk insert doesn't
+    normally hand back. ON CONFLICT DO NOTHING (matching the partial unique index on
+    generated questions) means a row that lost a concurrent-generation race is simply
+    absent from the return value, not an error -- callers should treat a shorter
+    result than `questions` as "some of these were already cached by someone else"
+    and re-fetch from the cache if they need the authoritative full set."""
     if not questions:
-        return
+        return []
     with get_connection() as conn:
         cur = conn.cursor()
-        psycopg2.extras.execute_values(cur, """
-            INSERT INTO trivia_questions (movie_id, source, question_type, question_text, correct_answer, options, image_url)
+        rows = psycopg2.extras.execute_values(cur, """
+            INSERT INTO trivia_questions (movie_id, source, question_type, question_text, correct_answer, options, image_url, difficulty)
             VALUES %s
+            ON CONFLICT (movie_id, question_type) WHERE source = 'generated' DO NOTHING
+            RETURNING *
         """, [
             (
                 q.get("movie_id"), q["source"], q["question_type"], q["question_text"],
-                q["correct_answer"], json.dumps(q["options"]), q.get("image_url"),
+                q["correct_answer"], json.dumps(q["options"]), q.get("image_url"), q.get("difficulty"),
             )
             for q in questions
-        ])
+        ], fetch=True)
+    return [_load_trivia_question(r) for r in rows]
 
 
 def get_existing_opentdb_question_texts() -> set[str]:
@@ -1172,6 +1194,17 @@ def get_user_ratings(user_id: int) -> list[dict]:
         m["raw_tmdb"] = json.loads(m["raw_tmdb"]) if m["raw_tmdb"] else {}
         result.append(m)
     return result
+
+
+def get_user_rated_movie_ids(user_id: int) -> list[int]:
+    """Lean id-only version of get_user_ratings() -- for callers (trivia session
+    building) that only need which movies a user has rated, not full movie rows.
+    get_user_ratings() JSON-decodes feature_vector/raw_tmdb for every row, real
+    overhead for a heavy rater when all that's needed is a list of ids."""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT movie_id FROM user_ratings WHERE user_id = %s", (user_id,))
+        return [row["movie_id"] for row in cur.fetchall()]
 
 
 def get_ratings_count(user_id: int) -> int:

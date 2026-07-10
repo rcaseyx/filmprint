@@ -16,15 +16,19 @@ BASE_URL = "https://opentdb.com/api.php"
 FILM_CATEGORY = 11
 
 
-def fetch_film_questions(amount: int = 50) -> list[dict]:
-    """Returns up to `amount` questions as {question_text, correct_answer, options}.
-    Returns an empty list once OTDB has no more questions to give for this query
-    (response_code != 0) -- that's how the backfill script knows to stop."""
-    response = requests.get(
-        BASE_URL,
-        params={"amount": amount, "category": FILM_CATEGORY, "type": "multiple"},
-        timeout=10,
-    )
+def fetch_film_questions(amount: int = 50, difficulty: str | None = None) -> list[dict]:
+    """Returns up to `amount` questions as {question_text, correct_answer, options,
+    difficulty}. Returns an empty list once OTDB has no more questions to give for
+    this query (response_code != 0) -- that's how the backfill script knows to stop.
+
+    difficulty ('easy'/'medium'/'hard') is passed straight through to OTDB's own
+    query param when given -- filtering at the source rather than fetching everything
+    and discarding some of it after the fact, since OTDB's "easy" tier reads
+    noticeably weaker/less interesting than medium/hard for this game."""
+    params = {"amount": amount, "category": FILM_CATEGORY, "type": "multiple"}
+    if difficulty:
+        params["difficulty"] = difficulty
+    response = requests.get(BASE_URL, params=params, timeout=10)
     response.raise_for_status()
     data = response.json()
     if data.get("response_code") != 0:
@@ -37,5 +41,6 @@ def fetch_film_questions(amount: int = 50) -> list[dict]:
             "question_text": html.unescape(q["question"]),
             "correct_answer": html.unescape(q["correct_answer"]),
             "options": [html.unescape(o) for o in options],
+            "difficulty": q.get("difficulty"),
         })
     return questions
