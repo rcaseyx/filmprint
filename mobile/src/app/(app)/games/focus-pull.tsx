@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import {
-  View, Text, TextInput, Pressable, Image, Animated,
-  ActivityIndicator, ScrollView, StyleSheet,
+  View, Text, TextInput, Pressable, Animated,
+  ActivityIndicator, ScrollView, Keyboard, PanResponder, StyleSheet,
 } from 'react-native'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
@@ -9,6 +9,7 @@ import { ChevronLeft, RefreshCw } from 'lucide-react-native'
 import { Colors, Spacing } from '@/constants/theme'
 import { apiFetch } from '@/lib/api'
 import { useDebounce } from '@/lib/useDebounce'
+import { useKeyboardLift } from '@/lib/useKeyboardLift'
 
 const TMDB_POSTER = 'https://image.tmdb.org/t/p/w780'
 const TAB_BAR_CLEARANCE = 56
@@ -29,6 +30,15 @@ interface MovieResult {
 export default function FocusPullScreen() {
   const router = useRouter()
   const insets = useSafeAreaInsets()
+  const restBottomPadding = insets.bottom + TAB_BAR_CLEARANCE
+  const keyboardLift = useKeyboardLift(restBottomPadding)
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onPanResponderRelease: () => Keyboard.dismiss(),
+    })
+  ).current
+
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [round, setRound] = useState<Round | null>(null)
@@ -71,8 +81,12 @@ export default function FocusPullScreen() {
 
   useEffect(() => { loadRound() }, [])
 
+  // Only clears results here, NOT wrongGuess -- a wrong guess clears the
+  // query programmatically (to reset the field once the panel reopens), and
+  // that would immediately wipe the message right back out if this effect
+  // cleared it on every query change too. wrongGuess is cleared explicitly
+  // in the TextInput's onChangeText instead, which only fires on real typing.
   useEffect(() => {
-    setWrongGuess(null)
     if (query.trim().length < 2) setResults([])
   }, [query])
 
@@ -99,6 +113,7 @@ export default function FocusPullScreen() {
   async function submitGuess(movie: MovieResult) {
     if (guessing || result || !round) return
     setGuessing(true)
+    setWrongGuess(null)
     try {
       const res = await apiFetch('/api/games/focus-pull/guess', {
         method: 'POST',
@@ -107,9 +122,11 @@ export default function FocusPullScreen() {
       if (!res.ok) return
       const data = await res.json()
       if (data.correct) {
+        Keyboard.dismiss()
         animateToStage(round.stages.length - 1)
         setResult({ title: data.title, gaveUp: false })
       } else {
+        Keyboard.dismiss()
         setWrongGuess(`Not ${movie.title} — take another look`)
         setQuery('')
         setResults([])
@@ -127,6 +144,7 @@ export default function FocusPullScreen() {
       const res = await apiFetch('/api/games/focus-pull/reveal')
       if (!res.ok) return
       const data = await res.json()
+      Keyboard.dismiss()
       animateToStage(round.stages.length - 1)
       setResult({ title: data.title, gaveUp: true })
     } finally {
@@ -157,12 +175,16 @@ export default function FocusPullScreen() {
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
       <BackBar router={router} onRefresh={loadRound} />
-      <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + TAB_BAR_CLEARANCE }} keyboardShouldPersistTaps="handled">
+
+      {/* Poster: scrolls independently above the fixed input area below, so
+          it never competes for scroll position with it. Stays visible (and
+          the reveal renders right underneath it) instead of swapping to a
+          separate screen once solved. */}
+      <ScrollView style={s.contentFlex} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
         <View style={s.header}>
           <Text style={s.heading}>Focus Pull</Text>
           <Text style={s.sub}>Name the movie before the whole poster comes into focus.</Text>
         </View>
-
         <View style={s.posterFrame}>
           {round.poster_path ? (
             <Animated.Image
@@ -173,22 +195,52 @@ export default function FocusPullScreen() {
             <Text style={s.empty}>No poster</Text>
           )}
         </View>
+        {result && (
+          <View style={s.resultCard}>
+            <Text style={s.resultLabel}>{result.gaveUp ? 'It was:' : 'Got it!'}</Text>
+            <Text style={s.resultTitle}>{result.title}</Text>
+          </View>
+        )}
+      </ScrollView>
 
-        {!result && (
-          <View style={s.inputWrap}>
+      {/* Input area: floats over the content (position: absolute), not a flex
+          sibling competing with it for space -- same fixed-panel pattern as
+          Co-Star (six-degrees.tsx), including a nested ScrollView so a long
+          results list scrolls within its own bounded area instead of trying
+          (and failing) to grow the panel indefinitely. A wrong guess dismisses
+          the keyboard and clears the results list, so the panel drops back
+          to its small resting size (just the input box) instead of staying
+          tall and covering the poster. Once solved, this becomes a single
+          "Play again" bar in the same slot. */}
+      <Animated.View
+        style={[
+          s.inputArea,
+          { paddingBottom: restBottomPadding, transform: [{ translateY: keyboardLift }] },
+        ]}
+      >
+        {result ? (
+          <Pressable style={s.playAgainBtn} onPress={loadRound}>
+            <Text style={s.playAgainText}>Play again</Text>
+          </Pressable>
+        ) : (
+          <>
+            <View {...panResponder.panHandlers} style={s.handleWrap} hitSlop={8}>
+              <View style={s.handleBar} />
+            </View>
+
             <Text style={s.stepLabel}>What movie is this?</Text>
             <TextInput
               style={s.input}
               placeholder="Movie title"
               placeholderTextColor={Colors.textFaint}
               value={query}
-              onChangeText={setQuery}
+              onChangeText={(text) => { setQuery(text); setWrongGuess(null) }}
               autoCapitalize="words"
               autoCorrect={false}
               editable={!guessing}
             />
             {wrongGuess && <Text style={s.errorText}>{wrongGuess}</Text>}
-            <View>
+            <ScrollView style={s.resultsScroll} keyboardShouldPersistTaps="handled">
               {results.map(m => (
                 <Pressable
                   key={m.id}
@@ -199,25 +251,15 @@ export default function FocusPullScreen() {
                   <Text style={s.resultText}>{m.title}{m.year ? ` (${m.year})` : ''}</Text>
                 </Pressable>
               ))}
-            </View>
+            </ScrollView>
             {atFinalStage && (
               <Pressable onPress={giveUp} disabled={guessing} hitSlop={8}>
                 <Text style={s.giveUpText}>Give up &amp; reveal</Text>
               </Pressable>
             )}
-          </View>
+          </>
         )}
-
-        {result && (
-          <View style={s.resultWrap}>
-            <Text style={s.resultLabel}>{result.gaveUp ? 'It was:' : 'Got it!'}</Text>
-            <Text style={s.resultTitle}>{result.title}</Text>
-            <Pressable style={s.playAgainBtn} onPress={loadRound}>
-              <Text style={s.playAgainText}>Play again</Text>
-            </Pressable>
-          </View>
-        )}
-      </ScrollView>
+      </Animated.View>
     </SafeAreaView>
   )
 }
@@ -248,29 +290,40 @@ const s = StyleSheet.create({
   heading: { fontSize: 20, fontWeight: '700', color: Colors.text },
   sub: { fontSize: 13, color: Colors.textMuted, lineHeight: 18 },
   empty: { fontSize: 14, color: Colors.textMuted, textAlign: 'center', marginTop: 40 },
+  contentFlex: { flex: 1 },
+  // Bottom padding here reserves room for the floating input panel's typical
+  // resting height, matching the historyScroll pattern in six-degrees.tsx.
+  content: { paddingBottom: 320 },
   posterFrame: {
     width: 240, aspectRatio: 2 / 3, alignSelf: 'center', marginTop: Spacing.lg,
     borderRadius: 14, overflow: 'hidden', backgroundColor: Colors.card,
     borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center',
   },
   posterImg: { width: '100%', height: '100%' },
-  inputWrap: { paddingHorizontal: Spacing.lg, marginTop: Spacing.lg },
-  stepLabel: { fontSize: 13, color: Colors.textMuted, marginBottom: 6 },
+  inputArea: {
+    position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 5,
+    paddingHorizontal: Spacing.lg, paddingTop: Spacing.xs, gap: Spacing.sm,
+    backgroundColor: Colors.background, borderTopWidth: 1, borderTopColor: Colors.border,
+  },
+  handleWrap: { alignItems: 'center', paddingVertical: 10 },
+  handleBar: { width: 36, height: 5, borderRadius: 3, backgroundColor: Colors.border },
+  stepLabel: { fontSize: 13, color: Colors.textMuted },
   input: {
-    borderWidth: 1, borderColor: Colors.border, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12,
+    borderWidth: 1, borderColor: Colors.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12,
     fontSize: 15, color: Colors.text, backgroundColor: Colors.card,
   },
-  errorText: { fontSize: 13, color: '#f87171', marginTop: 6 },
-  resultRow: { paddingVertical: 10, paddingHorizontal: 4, borderRadius: 10 },
+  errorText: { fontSize: 13, color: Colors.error },
+  resultsScroll: { maxHeight: 220 },
+  resultRow: { paddingVertical: 8, paddingHorizontal: 10, borderRadius: 12 },
   resultRowPressed: { backgroundColor: Colors.card },
-  resultText: { fontSize: 15, color: Colors.text },
-  giveUpText: { fontSize: 13, color: Colors.textMuted, marginTop: 12 },
-  resultWrap: { alignItems: 'center', marginTop: Spacing.xl, paddingHorizontal: Spacing.lg },
+  resultText: { fontSize: 14, color: Colors.text },
+  giveUpText: { fontSize: 13, color: Colors.textMuted, paddingVertical: 6 },
+  resultCard: { alignItems: 'center', paddingHorizontal: Spacing.lg, paddingTop: Spacing.lg },
   resultLabel: { fontSize: 17, fontWeight: '600', color: Colors.text },
   resultTitle: { fontSize: 24, fontWeight: '800', color: Colors.brand, marginTop: 4, textAlign: 'center' },
   playAgainBtn: {
-    marginTop: Spacing.xl, width: '100%', backgroundColor: Colors.brand, borderRadius: 14,
-    paddingVertical: 14, alignItems: 'center',
+    width: '100%', backgroundColor: Colors.brand, borderRadius: 14,
+    paddingVertical: 14, alignItems: 'center', marginVertical: Spacing.sm,
   },
   playAgainText: { fontSize: 15, fontWeight: '700', color: Colors.background },
 })

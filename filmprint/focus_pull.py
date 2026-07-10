@@ -21,7 +21,9 @@ CURATED_POOL_MIN_VOTES = 1000
 
 # Reveal percentages after 0, 1, 2, 3, 4 wrong guesses -- the client drives
 # this off the round payload rather than hardcoding game balance itself.
-STAGE_REVEAL_PCTS = [14, 28, 46, 70, 100]
+# Starting stage raised from 14 -- real play testing found it too tight,
+# making the first guess pure guesswork rather than an actual first clue.
+STAGE_REVEAL_PCTS = [25, 44, 62, 81, 100]
 
 
 def _pool_rows() -> list[dict]:
@@ -64,17 +66,22 @@ def check_guess(correct_movie_id: int, guessed_movie_id: int) -> bool:
 def search_movies(query: str, limit: int = 6) -> list[dict]:
     """Broad title search scoped to the pool -- same prefix-or-word-boundary
     ILIKE idiom as six_degrees.search_movies. Not restricted to the current
-    round's answer (that would turn the dropdown into the answer key)."""
-    pool_ids = [m["id"] for m in _pool_rows()]
-    if not pool_ids:
-        return []
+    round's answer (that would turn the dropdown into the answer key).
+
+    Applies the pool filter directly in this query rather than reusing
+    _pool_rows() -- that helper also selects raw_tmdb (a multi-KB JSON blob)
+    for every one of the ~4000 pool movies just to get IDs, which made every
+    keystroke of a live search take 5-6s. This query never touches raw_tmdb.
+    """
     q = query.strip()
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
             """SELECT id, title, year FROM movies
-               WHERE id = ANY(%s) AND (title ILIKE %s OR title ILIKE %s)
+               WHERE vote_count >= %s AND revenue > 0
+               AND (raw_tmdb::jsonb)->>'poster_path' IS NOT NULL
+               AND (title ILIKE %s OR title ILIKE %s)
                ORDER BY popularity DESC NULLS LAST LIMIT %s""",
-            (pool_ids, f"{q}%", f"% {q}%", limit),
+            (CURATED_POOL_MIN_VOTES, f"{q}%", f"% {q}%", limit),
         )
         return [{"id": r["id"], "title": r["title"], "year": r["year"]} for r in cur.fetchall()]

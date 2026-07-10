@@ -11,11 +11,6 @@ import random
 
 from filmprint.db import get_connection
 
-# Same "real theatrical release, not a fandom-driven obscurity" bar used by
-# Co-Star's curated pool (filmprint/six_degrees.py) -- copied rather than
-# imported so each game's pool can be tuned independently.
-CURATED_POOL_MIN_VOTES = 1000
-
 # Looser than Co-Star's anchor bar (billing <= 3, since Co-Star needs a name
 # recognizable cold) but stricter than "any credited role" -- validated
 # against production: billing<=10 let in 3593 actors, including plenty of
@@ -23,6 +18,22 @@ CURATED_POOL_MIN_VOTES = 1000
 # billing<=6 (2404 actors) stays to genuine supporting-or-better roles while
 # keeping a healthy, varied pool.
 MIN_BILLING_ORDER = 6
+
+# billing<=6 alone still isn't enough to guarantee an ACTOR is recognizable,
+# only that their ROLE was substantial -- real example caught in review:
+# Celeste O'Connor qualified (Freaky billing 2, Madame Web billing 3,
+# Ghostbusters: Afterlife billing 5) despite not being a widely recognized
+# name/face, the same "prominent role in a big movie != personal fame"
+# failure mode Co-Star hit with Mekhi Phifer/Talitha Eliana Bateman. Reusing
+# Co-Star's exact validated fix here: a much higher vote_count floor
+# specifically for actor qualification (ANCHOR_MOVIE_MIN_VOTES in
+# six_degrees.py) -- at 5500 it drops Celeste O'Connor to 0 qualifying movies
+# (all 4 of her credits are below it) while the resulting pool (2404 -> 652)
+# is still uniformly recognizable (Keanu Reeves, Lupita Nyong'o, Rihanna,
+# Emilia Clarke tier) on a real sample. This also raises the prominence of
+# the shown posters as a side effect, since pick_round() only ever draws
+# from an actor's qualifying movie_ids.
+ACTOR_QUALIFYING_MIN_VOTES = 5500
 
 MIN_QUALIFYING_MOVIES = 3
 
@@ -53,7 +64,7 @@ def _qualifying_actors() -> list[dict]:
                  AND mc.billing_order <= %s
                GROUP BY mc.person_id
                HAVING count(DISTINCT mc.movie_id) >= %s""",
-            (CURATED_POOL_MIN_VOTES, MIN_BILLING_ORDER, MIN_QUALIFYING_MOVIES),
+            (ACTOR_QUALIFYING_MIN_VOTES, MIN_BILLING_ORDER, MIN_QUALIFYING_MOVIES),
         )
         return [
             {"person_id": r["person_id"], "person_name": r["person_name"], "movie_ids": r["movie_ids"]}
