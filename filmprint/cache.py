@@ -172,6 +172,14 @@ def make_caches() -> tuple["StateCache", "StateCache", "StateCache", "StateCache
     )
 
 
+def make_cache(prefix: str) -> "StateCache":
+    """Create a StateCache in a new namespace, reusing the shared Redis connection."""
+    global _shared_client
+    if _shared_client is None:
+        _shared_client = _connect()
+    return StateCache(_shared_client, prefix)
+
+
 def check_rate_limit(key: str, limit: int, window: int) -> bool:
     """Fixed-window rate limiter using the shared Redis client.
 

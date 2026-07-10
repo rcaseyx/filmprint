@@ -93,6 +93,14 @@ from filmprint.six_degrees import (
 )
 from filmprint.trifecta import generate_grid, score_selection
 from filmprint.trivia import build_session, check_answer, warm_pool as warm_trivia_pool, warm_user_movies as warm_trivia_user_movies
+from filmprint.focus_pull import (
+    pick_round as pick_focus_pull_round, check_guess as check_focus_pull_guess,
+    search_movies as search_focus_pull_movies,
+)
+from filmprint.common_thread import (
+    pick_round as pick_common_thread_round, check_guess as check_common_thread_guess,
+    search_actors as search_common_thread_actors,
+)
 from filmprint.features import (
     build_feature_vector, taste_summary, build_keyword_vocab,
     build_affinity_scores, GENRES, DECADES, compute_axis_scores, TONE_AXES, SUBGENRE_AXES,
@@ -122,8 +130,10 @@ _total_catalog_films: int = 0
 _idf_weights: dict[str, float] = {}
 
 # Per-user pipeline state — backed by Redis, falls back to in-memory dict if unavailable
-from filmprint.cache import make_caches as _make_caches, check_rate_limit
+from filmprint.cache import make_caches as _make_caches, make_cache as _make_cache, check_rate_limit
 _user_states, _user_profile_states, _profile_response_cache, _examples_response_cache = _make_caches()
+_focus_pull_state = _make_cache("focus_pull_round")
+_common_thread_state = _make_cache("common_thread_round")
 _public_profile_cache: dict[int, dict] = {}
 _public_examples_cache: dict[int, dict] = {}
 _rebuild_jobs: dict[int, str] = {}  # user_id → "running" | "done" | "error"
@@ -2889,6 +2899,101 @@ class _TriviaAnswerPayload(BaseModel):
 @app.post("/api/games/trivia/answer")
 def trivia_answer(payload: _TriviaAnswerPayload, current_user: dict = Depends(get_current_user)):
     return check_answer(payload.question_id, payload.answer)
+
+
+# --- games: focus pull ---
+
+@app.get("/api/games/focus-pull/round")
+def focus_pull_round(current_user: dict = Depends(get_current_user)):
+    try:
+        round_data = pick_focus_pull_round()
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    _focus_pull_state[current_user["user_id"]] = {"movie_id": round_data["movie_id"], "title": round_data["title"]}
+    return {k: v for k, v in round_data.items() if k not in ("movie_id", "title")}
+
+
+@app.get("/api/games/focus-pull/search-movies")
+def focus_pull_search_movies(q: str = "", current_user: dict = Depends(get_current_user)):
+    if len(q.strip()) < 2:
+        return {"results": []}
+    return {"results": search_focus_pull_movies(q)}
+
+
+class _FocusPullGuessPayload(BaseModel):
+    movie_id: int
+
+
+@app.post("/api/games/focus-pull/guess")
+def focus_pull_guess(payload: _FocusPullGuessPayload, current_user: dict = Depends(get_current_user)):
+    round_state = _focus_pull_state.get(current_user["user_id"])
+    if round_state is None:
+        raise HTTPException(status_code=422, detail="No active round")
+    if check_focus_pull_guess(round_state["movie_id"], payload.movie_id):
+        return {"correct": True, "movie_id": round_state["movie_id"], "title": round_state["title"]}
+    return {"correct": False}
+
+
+@app.get("/api/games/focus-pull/reveal")
+def focus_pull_reveal(current_user: dict = Depends(get_current_user)):
+    round_state = _focus_pull_state.get(current_user["user_id"])
+    if round_state is None:
+        raise HTTPException(status_code=422, detail="No active round")
+    return {"movie_id": round_state["movie_id"], "title": round_state["title"]}
+
+
+# --- games: common thread ---
+
+@app.get("/api/games/common-thread/round")
+def common_thread_round(current_user: dict = Depends(get_current_user)):
+    try:
+        round_data = pick_common_thread_round()
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    _common_thread_state[current_user["user_id"]] = {
+        "person_id": round_data["person_id"],
+        "person_name": round_data["person_name"],
+        "movies": round_data["movies"],
+    }
+    return {"posters": [m["poster_path"] for m in round_data["movies"]]}
+
+
+@app.get("/api/games/common-thread/search-actors")
+def common_thread_search_actors(q: str = "", current_user: dict = Depends(get_current_user)):
+    if len(q.strip()) < 2:
+        return {"results": []}
+    return {"results": search_common_thread_actors(q)}
+
+
+class _CommonThreadGuessPayload(BaseModel):
+    person_id: int
+
+
+@app.post("/api/games/common-thread/guess")
+def common_thread_guess(payload: _CommonThreadGuessPayload, current_user: dict = Depends(get_current_user)):
+    round_state = _common_thread_state.get(current_user["user_id"])
+    if round_state is None:
+        raise HTTPException(status_code=422, detail="No active round")
+    if check_common_thread_guess(round_state["person_id"], payload.person_id):
+        return {
+            "correct": True,
+            "person_id": round_state["person_id"],
+            "person_name": round_state["person_name"],
+            "movies": [{"id": m["id"], "title": m["title"]} for m in round_state["movies"]],
+        }
+    return {"correct": False}
+
+
+@app.get("/api/games/common-thread/reveal")
+def common_thread_reveal(current_user: dict = Depends(get_current_user)):
+    round_state = _common_thread_state.get(current_user["user_id"])
+    if round_state is None:
+        raise HTTPException(status_code=422, detail="No active round")
+    return {
+        "person_id": round_state["person_id"],
+        "person_name": round_state["person_name"],
+        "movies": [{"id": m["id"], "title": m["title"]} for m in round_state["movies"]],
+    }
 
 
 # --- admin endpoints ---
