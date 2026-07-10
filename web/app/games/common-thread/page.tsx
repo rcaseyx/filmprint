@@ -95,8 +95,6 @@ export default function CommonThreadPage() {
         setResult({ person_name: data.person_name, movies: data.movies, gaveUp: false })
       } else {
         setWrongGuess(`Not ${actor.person_name} — keep looking`)
-        setQuery("")
-        setResults([])
       }
     } finally {
       setGuessing(false)

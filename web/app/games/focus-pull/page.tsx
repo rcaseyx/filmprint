@@ -94,8 +94,6 @@ export default function FocusPullPage() {
         setResult({ title: data.title, gaveUp: false })
       } else {
         setWrongGuess(`Not ${movie.title} — take another look`)
-        setQuery("")
-        setResults([])
         setStageIndex((i) => Math.min(i + 1, (round?.stages.length ?? 1) - 1))
       }
     } finally {
