@@ -50,6 +50,26 @@ export default async function GamesPage() {
           The more you&rsquo;ve rated, the more personal it gets.
         </p>
       </Link>
+
+      <Link
+        href="/games/focus-pull"
+        className="block mt-4 rounded-2xl border border-neutral-800 bg-neutral-900 p-5 hover:border-neutral-700 transition-colors"
+      >
+        <h2 className="text-lg font-semibold text-neutral-100">Focus Pull</h2>
+        <p className="text-sm text-neutral-500 mt-1">
+          Name the movie before the poster comes fully into focus.
+        </p>
+      </Link>
+
+      <Link
+        href="/games/common-thread"
+        className="block mt-4 rounded-2xl border border-neutral-800 bg-neutral-900 p-5 hover:border-neutral-700 transition-colors"
+      >
+        <h2 className="text-lg font-semibold text-neutral-100">Common Thread</h2>
+        <p className="text-sm text-neutral-500 mt-1">
+          One actor connects these 3 movies. Name them.
+        </p>
+      </Link>
     </div>
   )
 }

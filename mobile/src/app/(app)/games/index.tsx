@@ -39,6 +39,24 @@ export default function GamesScreen() {
         <Text style={s.cardTitle}>Trivia</Text>
         <Text style={s.cardDesc}>The more you&rsquo;ve rated, the more personal it gets.</Text>
       </TouchableOpacity>
+
+      <TouchableOpacity
+        style={s.card}
+        activeOpacity={0.7}
+        onPress={() => router.push('/games/focus-pull' as any)}
+      >
+        <Text style={s.cardTitle}>Focus Pull</Text>
+        <Text style={s.cardDesc}>Name the movie before the poster comes fully into focus.</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={s.card}
+        activeOpacity={0.7}
+        onPress={() => router.push('/games/common-thread' as any)}
+      >
+        <Text style={s.cardTitle}>Common Thread</Text>
+        <Text style={s.cardDesc}>One actor connects these 3 movies. Name them.</Text>
+      </TouchableOpacity>
     </SafeAreaView>
   )
 }
