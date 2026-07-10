@@ -18,13 +18,14 @@ user's ratings support and backfills the rest from OTDB.
 import json
 import random
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 
 from filmprint.app import ensure_feature_vectors
 from filmprint.db import (
-    get_connection, get_movie, get_curated_pool_with_vectors, get_user_ratings,
+    get_connection, get_movie, get_curated_pool_with_vectors, get_user_rated_movie_ids,
     get_trivia_questions_for_movie, insert_trivia_questions,
     get_random_trivia_questions, get_trivia_question_by_id,
 )
@@ -292,11 +293,13 @@ def get_or_generate_question_bank(movie_id: int) -> list[dict]:
     ]
     if not questions:
         return []
-    insert_trivia_questions(questions)
-    # insert_trivia_questions() doesn't return DB-assigned ids -- re-fetch so the
-    # caller (and ultimately the frontend, via build_session) gets real ids to
-    # submit back through /trivia/answer, not the pre-insert in-memory dicts.
-    return get_trivia_questions_for_movie(movie_id)
+    inserted = insert_trivia_questions(questions)
+    if len(inserted) < len(questions):
+        # Some rows lost a concurrent-generation race (see the partial unique index
+        # on trivia_questions) -- re-fetch to get the authoritative cached set rather
+        # than returning a partial view missing whatever the other writer committed.
+        return get_trivia_questions_for_movie(movie_id)
+    return inserted
 
 
 def warm_pool() -> None:
@@ -306,19 +309,111 @@ def warm_pool() -> None:
     _load_pool()
 
 
+def warm_user_movies(user_id: int, max_movies: int = 50) -> int:
+    """Pre-generates question banks for up to max_movies of a user's rated movies that
+    aren't cached yet, so a live build_session() call for this user doesn't pay
+    first-time generation cost. Called from api/main.py's existing per-user startup
+    prewarm loop (the same one that warms rec/profile caches).
+
+    build_session() shuffles a user's *entire* rated list independently on every call,
+    so warming only a small slice of it barely moves the odds a live session actually
+    lands on an already-warmed movie (confirmed: warming 10/36 of a real user's rated
+    movies still left a subsequent build_session() call hitting mostly-cold movies).
+    50 fully covers half of real accounts here (5 of 10 users have fewer than 50
+    ratings) and meaningfully dents heavier ones -- capped rather than uncapped since this runs
+    once per deploy in a background thread with no live request waiting on it, so the
+    cost tradeoff is "a few extra minutes at startup," not user-facing latency.
+    Cross-user overlap on popular movies means later users in the loop increasingly
+    hit already-cached ones for free. Returns the number of movies actually generated
+    (cache misses)."""
+    rated_ids = get_user_rated_movie_ids(user_id)
+    random.shuffle(rated_ids)
+    processed = 0
+    for movie_id in rated_ids:
+        if get_trivia_questions_for_movie(movie_id):
+            continue  # already cached (by this user's earlier session or another user)
+        get_or_generate_question_bank(movie_id)
+        processed += 1
+        if processed >= max_movies:
+            break
+    return processed
+
+
+def _select_diverse(candidates: list[dict], target: int, max_per_type: int, max_per_movie: int) -> list[dict]:
+    """Greedily selects up to `target` questions from `candidates` (assumed already
+    shuffled), preferring type/movie variety -- relaxes the caps in stages if there
+    aren't enough distinct options to hit the target (e.g. a lightly-rated user
+    without enough different movies to draw from), so the target still gets filled
+    rather than returning a short session."""
+    selected: list[dict] = []
+    type_counts: dict[str, int] = {}
+    movie_counts: dict[int, int] = {}
+    remaining = list(candidates)
+
+    for type_cap, movie_cap in [
+        (max_per_type, max_per_movie),
+        (max_per_type + 1, max_per_movie + 1),  # +1, not *2 -- keep the worst case close to the cap
+        (len(candidates) + 1, len(candidates) + 1),  # unlimited fallback, only for genuinely sparse accounts
+    ]:
+        still_remaining = []
+        for q in remaining:
+            if len(selected) >= target:
+                still_remaining.append(q)
+                continue
+            t, m = q["question_type"], q.get("movie_id")
+            if type_counts.get(t, 0) < type_cap and (m is None or movie_counts.get(m, 0) < movie_cap):
+                selected.append(q)
+                type_counts[t] = type_counts.get(t, 0) + 1
+                if m is not None:
+                    movie_counts[m] = movie_counts.get(m, 0) + 1
+            else:
+                still_remaining.append(q)
+        remaining = still_remaining
+        if len(selected) >= target:
+            break
+
+    return selected[:target]
+
+
 def build_session(user_id: int, count: int = SESSION_SIZE_DEFAULT) -> list[dict]:
     """Half taste-graph (as many as the user's ratings support), half OTDB, no hard threshold."""
-    rated_ids = [r["id"] for r in get_user_ratings(user_id)]
+    rated_ids = get_user_rated_movie_ids(user_id)
     random.shuffle(rated_ids)
 
     taste_target = count // 2
-    taste: list[dict] = []
-    for movie_id in rated_ids:
-        taste.extend(get_or_generate_question_bank(movie_id))
-        if len(taste) >= taste_target * 2:  # oversample before trimming, for variety
-            break
-    random.shuffle(taste)
-    taste = taste[:taste_target]
+    # box_office in particular succeeds for nearly every movie (it only needs
+    # revenue > 0, which the curated pool already guarantees), while tagline/
+    # headshot fail more often (missing data) -- left unchecked, a session skews
+    # heavily toward whichever type has the highest generation success rate. Cap at
+    # 2 rather than 1 -- fully deduping to one-of-each-type/one-per-movie meant
+    # processing up to taste_target*3 distinct movies to guarantee it (~18 for a
+    # 12-question session), which measurably hurt session-build latency (8-27s in
+    # testing) for a variety guarantee stronger than what was actually needed: the
+    # complaint was one type/movie dominating a session, not zero repeats ever.
+    max_per_type = 2
+    max_per_movie = 2
+    # Capped by *distinct movies processed*, not raw candidate count -- a movie whose
+    # bank generated close to all 6 types can single-handedly satisfy a raw-count cap,
+    # starving the diversity pass of the movie variety it actually needs. taste_target
+    # alone (6 movies for a 12-question session) measured as too thin in practice --
+    # the selector fell back to its relaxed pass often enough that the cap didn't
+    # reliably hold. *2 is the middle ground between that and the fully-deduped
+    # version's ~18-movie cost.
+    # Each movie's generation (cache miss or not) is a handful of sequential DB round
+    # trips -- mostly I/O wait on Railway's Postgres proxy, not CPU -- so processing
+    # them concurrently rather than one at a time is a real wall-clock win on a
+    # cache-miss-heavy session. Same ThreadPoolExecutor pattern already used for the
+    # startup prewarm's per-user loop. The partial unique index + ON CONFLICT DO
+    # NOTHING on trivia_questions (see filmprint/db.py) makes this safe even if two
+    # of these movies somehow raced with another concurrent caller.
+    movie_ids_to_process = rated_ids[: taste_target * 2]
+    candidates: list[dict] = []
+    if movie_ids_to_process:
+        with ThreadPoolExecutor(max_workers=min(len(movie_ids_to_process), 4)) as pool:
+            for bank in pool.map(get_or_generate_question_bank, movie_ids_to_process):
+                candidates.extend(bank)
+    random.shuffle(candidates)
+    taste = _select_diverse(candidates, taste_target, max_per_type=max_per_type, max_per_movie=max_per_movie)
 
     otdb_target = count - len(taste)  # shortfall from a thin taste pool backfills from OTDB
     otdb = get_random_trivia_questions(source="opentdb", limit=otdb_target)
