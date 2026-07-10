@@ -14,10 +14,14 @@ import random
 
 from filmprint.db import get_connection
 
-# Same "real theatrical release, not a fandom-driven obscurity" bar used by
-# Co-Star's curated pool (filmprint/six_degrees.py) -- copied rather than
-# imported so each game's pool can be tuned independently.
-CURATED_POOL_MIN_VOTES = 1000
+# Stricter than Co-Star/Trifecta's shared 1000 floor -- Focus Pull's whole
+# challenge is recognizing a POSTER, unlike Co-Star/Trifecta where the movie
+# title is shown directly (via search) once you have a guess. A real gap
+# caught in review: "Batman: Assault on Arkham" (vote_count 1185) was drawn
+# during testing -- technically a real release, not a poster most players
+# would place. 5000 (1005 movies) trims that long tail while staying deep
+# enough for daily replay variety.
+CURATED_POOL_MIN_VOTES = 5000
 
 # Reveal percentages after 0, 1, 2, 3, 4 wrong guesses -- the client drives
 # this off the round payload rather than hardcoding game balance itself.
