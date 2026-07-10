@@ -1,9 +1,9 @@
 """Common Thread: 3 movie posters are shown; guess the actor common to all 3.
 
 Pure game logic only -- same convention as filmprint.focus_pull: the API
-layer (api/main.py) stores pick_round()'s person_id/person_name/movies
-server-side (per-user Redis cache) and strips them from what's returned to
-the client.
+layer (api/main.py) stores pick_round()'s person_id/person_name/
+common_actors/movies server-side (per-user Redis cache) and strips them from
+what's returned to the client.
 """
 
 import json
@@ -97,25 +97,93 @@ def _top_by_votes(movie_ids: list[int], top_n: int) -> list[int]:
         return [r["id"] for r in cur.fetchall()]
 
 
+def _dedupe_by_collection(movie_ids: list[int]) -> list[int]:
+    """Keep at most one movie per TMDB collection (franchise). Sequels almost
+    always share their entire main cast, which both makes the puzzle
+    trivially readable off the poster text (three Fifty Shades posters in a
+    row) and breaks the "one correct actor" assumption -- 11 actors turned
+    out to be common to a real 3-Fifty-Shades-movie draw, not just the two
+    leads. Input order is preserved, so the caller controls which entry of a
+    franchise survives (e.g. _top_by_votes already orders by prominence)."""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id, raw_tmdb FROM movies WHERE id = ANY(%s)", (movie_ids,))
+        rows = {r["id"]: r for r in cur.fetchall()}
+
+    seen_collections = set()
+    deduped = []
+    for mid in movie_ids:
+        raw = json.loads(rows[mid]["raw_tmdb"]) if rows[mid]["raw_tmdb"] else {}
+        collection = raw.get("belongs_to_collection")
+        collection_id = collection.get("id") if collection else None
+        if collection_id is not None and collection_id in seen_collections:
+            continue
+        if collection_id is not None:
+            seen_collections.add(collection_id)
+        deduped.append(mid)
+    return deduped
+
+
+def _common_actors(movie_ids: list[int]) -> list[dict]:
+    """All actors credited in every one of movie_ids, not just the one
+    originally used to find this triple -- see _dedupe_by_collection's
+    docstring for why relying on a single "correct" actor is unsafe."""
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """SELECT person_id, max(person_name) as person_name
+               FROM movie_credits WHERE movie_id = ANY(%s)
+               GROUP BY person_id HAVING count(DISTINCT movie_id) = %s""",
+            (movie_ids, len(movie_ids)),
+        )
+        return [{"person_id": r["person_id"], "person_name": r["person_name"]} for r in cur.fetchall()]
+
+
+# Some actors only qualify via a single trilogy (their sole 3+ credits above
+# ACTOR_QUALIFYING_MIN_VOTES are all one franchise -- Fifty Shades' own leads
+# are a real example), so _dedupe_by_collection can legitimately leave fewer
+# than 3 movies for that particular actor. Retry with a different actor
+# rather than failing the whole round; the pool (652 actors) is deep enough
+# that this resolves within a few attempts in practice.
+MAX_ACTOR_ATTEMPTS = 25
+
+
 def pick_round() -> dict:
     """Returns the full round including the answer: {person_id, person_name,
-    movies: [{id, title, poster_path}, x3]}. Caller must strip person_id/
-    person_name/id/title before sending to the client."""
+    common_actors, movies: [{id, title, poster_path}, x3]}. Caller must strip
+    person_id/person_name/common_actors/id/title before sending to the
+    client. common_actors is every actor credited in all 3 movies (not just
+    person_id) -- a guess matching any of them should count as correct."""
     actors = _qualifying_actors()
     if not actors:
         raise ValueError("No eligible actors in the pool")
 
-    actor = random.choice(actors)
-    prominent_ids = _top_by_votes(actor["movie_ids"], TOP_N_BY_VOTES)
+    random.shuffle(actors)
+    for actor in actors[:MAX_ACTOR_ATTEMPTS]:
+        prominent_ids = _dedupe_by_collection(_top_by_votes(actor["movie_ids"], TOP_N_BY_VOTES))
+        if len(prominent_ids) < MIN_QUALIFYING_MOVIES:
+            prominent_ids = _dedupe_by_collection(actor["movie_ids"])
+        if len(prominent_ids) >= MIN_QUALIFYING_MOVIES:
+            break
+    else:
+        raise ValueError("Could not find an actor with 3 movies from distinct franchises")
+
     movie_ids = random.sample(prominent_ids, MIN_QUALIFYING_MOVIES)
     movies = _movies_for(movie_ids)
     random.shuffle(movies)
 
-    return {"person_id": actor["person_id"], "person_name": actor["person_name"], "movies": movies}
+    return {
+        "person_id": actor["person_id"],
+        "person_name": actor["person_name"],
+        "common_actors": _common_actors(movie_ids),
+        "movies": movies,
+    }
 
 
-def check_guess(correct_person_id: int, guessed_person_id: int) -> bool:
-    return correct_person_id == guessed_person_id
+def check_guess(common_actors: list[dict], guessed_person_id: int) -> dict | None:
+    """Returns the matched {person_id, person_name} if guessed_person_id is
+    any actor common to all 3 shown movies, or None if it isn't."""
+    return next((a for a in common_actors if a["person_id"] == guessed_person_id), None)
 
 
 def search_actors(query: str, limit: int = 6) -> list[dict]:

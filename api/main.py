@@ -2953,6 +2953,7 @@ def common_thread_round(current_user: dict = Depends(get_current_user)):
     _common_thread_state[current_user["user_id"]] = {
         "person_id": round_data["person_id"],
         "person_name": round_data["person_name"],
+        "common_actors": round_data["common_actors"],
         "movies": round_data["movies"],
     }
     return {"posters": [m["poster_path"] for m in round_data["movies"]]}
@@ -2974,11 +2975,12 @@ def common_thread_guess(payload: _CommonThreadGuessPayload, current_user: dict =
     round_state = _common_thread_state.get(current_user["user_id"])
     if round_state is None:
         raise HTTPException(status_code=422, detail="No active round")
-    if check_common_thread_guess(round_state["person_id"], payload.person_id):
+    matched = check_common_thread_guess(round_state["common_actors"], payload.person_id)
+    if matched:
         return {
             "correct": True,
-            "person_id": round_state["person_id"],
-            "person_name": round_state["person_name"],
+            "person_id": matched["person_id"],
+            "person_name": matched["person_name"],
             "movies": [{"id": m["id"], "title": m["title"]} for m in round_state["movies"]],
         }
     return {"correct": False}
