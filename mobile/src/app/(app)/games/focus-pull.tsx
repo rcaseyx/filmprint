@@ -18,6 +18,12 @@ interface Round {
   stages: number[]
 }
 
+interface PosterLayer {
+  id: number
+  src: string
+  opacity: Animated.Value
+}
+
 interface MovieResult {
   id: number
   title: string
@@ -48,8 +54,11 @@ export default function FocusPullScreen() {
   const [results, setResults] = useState<MovieResult[]>([])
   const debouncedQuery = useDebounce(query, 300)
 
-  const [posterSrc, setPosterSrc] = useState<string | null>(null)
-  const opacity = useRef(new Animated.Value(0)).current
+  const [layers, setLayers] = useState<PosterLayer[]>([])
+  const nextLayerId = useRef(0)
+  const posterSrc = round?.poster_path
+    ? `${API_URL}/api/games/focus-pull/poster?path=${encodeURIComponent(round.poster_path)}&stage=${stageIndex}`
+    : null
 
   async function loadRound() {
     setLoading(true)
@@ -74,15 +83,17 @@ export default function FocusPullScreen() {
 
   useEffect(() => { loadRound() }, [])
 
+  // Crossfade between stages: each new posterSrc gets its own layer (with
+  // its own Animated.Value), stacked on top of the previous one and starting
+  // invisible until its image has actually decoded, then animating to
+  // opacity 1 -- so the old poster stays visible underneath the whole time
+  // instead of both fading through the frame's background color. Slicing to
+  // the last 2 keeps only the outgoing/incoming pair mounted.
   useEffect(() => {
-    if (!round?.poster_path) { setPosterSrc(null); return }
-    opacity.setValue(0)
-    setPosterSrc(`${API_URL}/api/games/focus-pull/poster?path=${encodeURIComponent(round.poster_path)}&stage=${stageIndex}`)
-  }, [round?.poster_path, stageIndex])
-
-  function handlePosterLoad() {
-    Animated.timing(opacity, { toValue: 1, duration: 500, useNativeDriver: true }).start()
-  }
+    if (!posterSrc) { setLayers([]); return }
+    const id = ++nextLayerId.current
+    setLayers((prev) => [...prev, { id, src: posterSrc, opacity: new Animated.Value(0) }].slice(-2))
+  }, [posterSrc])
 
   // Only clears results here, NOT wrongGuess -- a wrong guess clears the
   // query programmatically (to reset the field once the panel reopens), and
@@ -179,12 +190,17 @@ export default function FocusPullScreen() {
           <Text style={s.sub}>Name the movie before the whole poster comes into focus.</Text>
         </View>
         <View style={s.posterFrame}>
-          {posterSrc ? (
-            <Animated.Image
-              source={{ uri: posterSrc }}
-              style={[s.posterImg, { opacity }]}
-              onLoad={handlePosterLoad}
-            />
+          {layers.length ? (
+            layers.map((layer) => (
+              <Animated.Image
+                key={layer.id}
+                source={{ uri: layer.src }}
+                style={[s.posterImg, StyleSheet.absoluteFill, { opacity: layer.opacity }]}
+                onLoad={() =>
+                  Animated.timing(layer.opacity, { toValue: 1, duration: 500, useNativeDriver: true }).start()
+                }
+              />
+            ))
           ) : (
             <Text style={s.empty}>No poster</Text>
           )}
