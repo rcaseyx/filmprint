@@ -10,6 +10,7 @@ data/model.onnx
 *.db
 *.db.bak
 keyword_themes_backup.json
+scripts/trivia_question_prompt.md
 data/model.onnx.data
 data/tokenizer/
 venv/
