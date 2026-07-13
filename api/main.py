@@ -13,6 +13,7 @@ import json
 import math
 import os
 import random
+import re
 import shutil
 import tempfile
 import secrets
@@ -30,7 +31,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, Depends, FastAPI, Form, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from pydantic import BaseModel
 
 load_dotenv(override=True)
@@ -95,7 +96,7 @@ from filmprint.trifecta import generate_grid, score_selection
 from filmprint.trivia import build_session, check_answer, warm_pool as warm_trivia_pool, warm_user_movies as warm_trivia_user_movies
 from filmprint.focus_pull import (
     pick_round as pick_focus_pull_round, check_guess as check_focus_pull_guess,
-    search_movies as search_focus_pull_movies,
+    search_movies as search_focus_pull_movies, render_poster as render_focus_pull_poster,
 )
 from filmprint.common_thread import (
     pick_round as pick_common_thread_round, check_guess as check_common_thread_guess,
@@ -2911,6 +2912,29 @@ def focus_pull_round(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=422, detail=str(e))
     _focus_pull_state[current_user["user_id"]] = {"movie_id": round_data["movie_id"], "title": round_data["title"]}
     return {k: v for k, v in round_data.items() if k not in ("movie_id", "title")}
+
+
+_POSTER_PATH_RE = re.compile(r"^/[\w\-]+\.(jpg|jpeg|png)$")
+
+
+# Unauthenticated by design -- a plain <img src>/<Image uri> can't send an
+# Authorization header, and the raw poster was already visible to the client
+# unauthenticated (straight from TMDB) before this endpoint existed, so this
+# adds no new exposure. The path regex just guards against a malformed/bogus
+# value reaching Pillow, not against leaking the answer.
+@app.get("/api/games/focus-pull/poster")
+def focus_pull_poster(path: str, stage: int = 0):
+    if not _POSTER_PATH_RE.match(path):
+        raise HTTPException(status_code=422, detail="Invalid poster path")
+    try:
+        image_bytes = render_focus_pull_poster(path, stage)
+    except Exception:
+        raise HTTPException(status_code=502, detail="Could not load poster")
+    return Response(
+        content=image_bytes,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
 
 
 @app.get("/api/games/focus-pull/search-movies")

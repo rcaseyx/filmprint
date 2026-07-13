@@ -1,6 +1,6 @@
 import * as SecureStore from 'expo-secure-store'
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000'
+export const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000'
 export const TOKEN_KEY = 'filmprint.token'
 
 export interface Pick {

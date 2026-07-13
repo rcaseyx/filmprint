@@ -7,17 +7,14 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
 import { ChevronLeft, RefreshCw } from 'lucide-react-native'
 import { Colors, Spacing } from '@/constants/theme'
-import { apiFetch } from '@/lib/api'
+import { apiFetch, API_URL } from '@/lib/api'
 import { useDebounce } from '@/lib/useDebounce'
 import { useKeyboardLift } from '@/lib/useKeyboardLift'
 
-const TMDB_POSTER = 'https://image.tmdb.org/t/p/w780'
 const TAB_BAR_CLEARANCE = 56
 
 interface Round {
   poster_path: string | null
-  crop_x: number
-  crop_y: number
   stages: number[]
 }
 
@@ -51,11 +48,8 @@ export default function FocusPullScreen() {
   const [results, setResults] = useState<MovieResult[]>([])
   const debouncedQuery = useDebounce(query, 300)
 
-  // Mobile has no clip-path equivalent, so the reveal is a center-anchored
-  // zoom-out instead of web's arbitrary-focal-point iris reveal -- same game
-  // feel (less visible -> more visible per wrong guess), simpler transform math
-  // (RN always scales from center, no transform-origin support).
-  const scale = useRef(new Animated.Value(1)).current
+  const [posterSrc, setPosterSrc] = useState<string | null>(null)
+  const opacity = useRef(new Animated.Value(0)).current
 
   async function loadRound() {
     setLoading(true)
@@ -71,7 +65,6 @@ export default function FocusPullScreen() {
       if (!res.ok) { setError(true); return }
       const data: Round = await res.json()
       setRound(data)
-      scale.setValue(100 / data.stages[0])
     } catch {
       setError(true)
     } finally {
@@ -80,6 +73,16 @@ export default function FocusPullScreen() {
   }
 
   useEffect(() => { loadRound() }, [])
+
+  useEffect(() => {
+    if (!round?.poster_path) { setPosterSrc(null); return }
+    opacity.setValue(0)
+    setPosterSrc(`${API_URL}/api/games/focus-pull/poster?path=${encodeURIComponent(round.poster_path)}&stage=${stageIndex}`)
+  }, [round?.poster_path, stageIndex])
+
+  function handlePosterLoad() {
+    Animated.timing(opacity, { toValue: 1, duration: 500, useNativeDriver: true }).start()
+  }
 
   // Only clears results here, NOT wrongGuess -- a wrong guess clears the
   // query programmatically (to reset the field once the panel reopens), and
@@ -100,16 +103,6 @@ export default function FocusPullScreen() {
     return () => { cancelled = true }
   }, [debouncedQuery, result, query])
 
-  function animateToStage(index: number) {
-    if (!round) return
-    setStageIndex(index)
-    Animated.timing(scale, {
-      toValue: 100 / round.stages[index],
-      duration: 700,
-      useNativeDriver: true,
-    }).start()
-  }
-
   async function submitGuess(movie: MovieResult) {
     if (guessing || result || !round) return
     setGuessing(true)
@@ -123,14 +116,14 @@ export default function FocusPullScreen() {
       const data = await res.json()
       if (data.correct) {
         Keyboard.dismiss()
-        animateToStage(round.stages.length - 1)
+        setStageIndex(round.stages.length - 1)
         setResult({ title: data.title, gaveUp: false })
       } else {
         Keyboard.dismiss()
         setWrongGuess(`Not ${movie.title} — take another look`)
         setQuery('')
         setResults([])
-        animateToStage(Math.min(stageIndex + 1, round.stages.length - 1))
+        setStageIndex((i) => Math.min(i + 1, round.stages.length - 1))
       }
     } finally {
       setGuessing(false)
@@ -145,7 +138,7 @@ export default function FocusPullScreen() {
       if (!res.ok) return
       const data = await res.json()
       Keyboard.dismiss()
-      animateToStage(round.stages.length - 1)
+      setStageIndex(round.stages.length - 1)
       setResult({ title: data.title, gaveUp: true })
     } finally {
       setGuessing(false)
@@ -186,10 +179,11 @@ export default function FocusPullScreen() {
           <Text style={s.sub}>Name the movie before the whole poster comes into focus.</Text>
         </View>
         <View style={s.posterFrame}>
-          {round.poster_path ? (
+          {posterSrc ? (
             <Animated.Image
-              source={{ uri: `${TMDB_POSTER}${round.poster_path}` }}
-              style={[s.posterImg, { transform: [{ scale }] }]}
+              source={{ uri: posterSrc }}
+              style={[s.posterImg, { opacity }]}
+              onLoad={handlePosterLoad}
             />
           ) : (
             <Text style={s.empty}>No poster</Text>
