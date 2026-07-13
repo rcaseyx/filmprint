@@ -6,6 +6,7 @@ beautifulsoup4
 fastapi
 feedparser
 numpy
+Pillow
 python-dotenv
 python-multipart
 requests

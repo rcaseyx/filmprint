@@ -7,12 +7,9 @@ import { authHeader } from "@/lib/api"
 import { useDebounce } from "@/lib/useDebounce"
 
 const API = process.env.NEXT_PUBLIC_API_URL
-const TMDB_IMG = "https://image.tmdb.org/t/p/w780"
 
 interface Round {
   poster_path: string | null
-  crop_x: number
-  crop_y: number
   stages: number[]
 }
 
@@ -28,6 +25,7 @@ export default function FocusPullPage() {
   const [error, setError] = useState(false)
   const [round, setRound] = useState<Round | null>(null)
   const [stageIndex, setStageIndex] = useState(0)
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null)
   const [wrongGuess, setWrongGuess] = useState<string | null>(null)
   const [guessing, setGuessing] = useState(false)
   const [result, setResult] = useState<{ title: string; gaveUp: boolean } | null>(null)
@@ -41,6 +39,7 @@ export default function FocusPullPage() {
     setError(false)
     setRound(null)
     setStageIndex(0)
+    setLoadedSrc(null)
     setWrongGuess(null)
     setResult(null)
     setQuery("")
@@ -128,8 +127,10 @@ export default function FocusPullPage() {
     )
   }
 
-  const revealPct = round.stages[stageIndex]
   const atFinalStage = stageIndex >= round.stages.length - 1
+  const posterSrc = round.poster_path
+    ? `${API}/api/games/focus-pull/poster?path=${encodeURIComponent(round.poster_path)}&stage=${stageIndex}`
+    : null
 
   return (
     <div className="max-w-2xl mx-auto px-6 py-12">
@@ -149,12 +150,13 @@ export default function FocusPullPage() {
 
       <div className="mt-6 flex justify-center">
         <div className="relative w-64 aspect-[2/3] rounded-xl overflow-hidden bg-neutral-900 border border-neutral-800">
-          {round.poster_path ? (
+          {posterSrc ? (
             <img
-              src={`${TMDB_IMG}${round.poster_path}`}
+              src={posterSrc}
               alt="Mystery poster"
-              className="absolute inset-0 w-full h-full object-cover transition-[clip-path] duration-700 ease-out"
-              style={{ clipPath: `circle(${revealPct}% at ${round.crop_x}% ${round.crop_y}%)` }}
+              className="absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ease-out"
+              style={{ opacity: loadedSrc === posterSrc ? 1 : 0 }}
+              onLoad={() => setLoadedSrc(posterSrc)}
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-neutral-600 text-sm">No poster</div>
