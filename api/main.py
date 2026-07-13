@@ -91,16 +91,17 @@ from filmprint.db import (
 )
 from filmprint.six_degrees import (
     search_people, search_movies, is_credited_in, share_movie, validate_full_chain, generate_puzzle,
+    warm_pool as warm_six_degrees_pool,
 )
-from filmprint.trifecta import generate_grid, score_selection
-from filmprint.trivia import build_session, check_answer, warm_pool as warm_trivia_pool, warm_user_movies as warm_trivia_user_movies
+from filmprint.trifecta import generate_grid, score_selection, warm_pool as warm_trifecta_pool
+from filmprint.trivia import build_session, check_answer
 from filmprint.focus_pull import (
     pick_round as pick_focus_pull_round, check_guess as check_focus_pull_guess,
     search_movies as search_focus_pull_movies, render_poster as render_focus_pull_poster,
 )
 from filmprint.common_thread import (
     pick_round as pick_common_thread_round, check_guess as check_common_thread_guess,
-    search_actors as search_common_thread_actors,
+    search_actors as search_common_thread_actors, warm_pool as warm_common_thread_pool,
 )
 from filmprint.features import (
     build_feature_vector, taste_summary, build_keyword_vocab,
@@ -705,24 +706,51 @@ async def lifespan(app: FastAPI):
 
             _t.Thread(target=_run_backfill, daemon=True).start()
 
-            def _warm_trivia_pool():
-                # trivia.py's embedding-neighbor search loads the ~3,300-movie curated
-                # pool + vectors into a module-level cache on first use (~6-7s). Doing
-                # that here means the first real trivia session after a deploy doesn't
-                # pay this cost on top of its own per-movie question generation.
+            def _warm_six_degrees_pool():
+                # generate_puzzle()/search_movies() used to rebuild the movie/actor
+                # pool + full credit graph from scratch (a movie_credits scan over
+                # ~3,900 pool movies) on every single request. Same warm-on-deploy
+                # pattern as the other games' pool caches below.
                 try:
                     t = time.time()
-                    warm_trivia_pool()
-                    print(f"[prewarm] trivia pool ready in {time.time()-t:.1f}s", flush=True)
+                    warm_six_degrees_pool()
+                    print(f"[prewarm] six degrees graph ready in {time.time()-t:.1f}s", flush=True)
                 except Exception as e:
-                    print(f"[prewarm] trivia pool warm failed: {e}", flush=True)
+                    print(f"[prewarm] six degrees graph warm failed: {e}", flush=True)
 
-            _t.Thread(target=_warm_trivia_pool, daemon=True).start()
+            _t.Thread(target=_warm_six_degrees_pool, daemon=True).start()
+
+            def _warm_common_thread_pool():
+                # pick_round()'s qualifying-actor aggregation (a movie_credits scan
+                # over the curated pool, ~0.5s locally) used to rerun on every single
+                # "New round" click. Same warm-on-deploy pattern as the pools above.
+                try:
+                    t = time.time()
+                    warm_common_thread_pool()
+                    print(f"[prewarm] common thread pool ready in {time.time()-t:.1f}s", flush=True)
+                except Exception as e:
+                    print(f"[prewarm] common thread pool warm failed: {e}", flush=True)
+
+            _t.Thread(target=_warm_common_thread_pool, daemon=True).start()
+
+            def _warm_trifecta_pool():
+                # generate_grid() used to fetch raw_tmdb (a multi-KB blob) for the
+                # ENTIRE ~3,200-movie pool on every single request just to resample
+                # from it (~4.6s locally). Same warm-on-deploy pattern as the pools
+                # above.
+                try:
+                    t = time.time()
+                    warm_trifecta_pool()
+                    print(f"[prewarm] trifecta pool ready in {time.time()-t:.1f}s", flush=True)
+                except Exception as e:
+                    print(f"[prewarm] trifecta pool warm failed: {e}", flush=True)
+
+            _t.Thread(target=_warm_trifecta_pool, daemon=True).start()
 
             users = [u for u in get_all_users_with_stats() if u.get("ratings_count", 0) > 0]
             print(f"[prewarm] starting — {len(users)} user(s) to warm", flush=True)
             t0 = time.time()
-            counters = {"restored": 0, "rebuilt": 0, "failed": 0, "skipped": 0, "trivia_movies": 0}
+            counters = {"restored": 0, "rebuilt": 0, "failed": 0, "skipped": 0}
             counter_lock = _t.Lock()
 
             def _warm_one(user):
@@ -751,23 +779,13 @@ async def lifespan(app: FastAPI):
                     with counter_lock:
                         counters["failed"] += 1
 
-                # Separate try/except -- a trivia-warming hiccup shouldn't count against
-                # or block the rec/profile-cache warming above.
-                try:
-                    n = warm_trivia_user_movies(uid)
-                    with counter_lock:
-                        counters["trivia_movies"] += n
-                except Exception as e:
-                    print(f"[prewarm] trivia warm failed for user {uid} ({uname}): {e}", flush=True)
-
             with ThreadPoolExecutor(max_workers=min(len(users) or 1, 4)) as pool:
                 list(pool.map(_warm_one, users))
 
             print(
                 f"[prewarm] done in {time.time()-t0:.1f}s — "
                 f"{counters['restored']} restored, {counters['rebuilt']} rebuilt, "
-                f"{counters['skipped']} skipped (already in cache), {counters['failed']} failed, "
-                f"{counters['trivia_movies']} trivia question bank(s) generated",
+                f"{counters['skipped']} skipped (already in cache), {counters['failed']} failed",
                 flush=True,
             )
 
@@ -2830,8 +2848,18 @@ def six_degrees_search_movies(q: str = "", exclude: str = "", current_user: dict
     return {"results": [_six_degrees_movie_summary(movies[mid]) for mid in movie_ids if mid in movies]}
 
 
+def _check_six_degrees_verify_rate_limit(user_id: int) -> None:
+    # A real solve calls these a handful of times per hop while a player tries
+    # different guesses -- 30/min per user comfortably covers that, but throttles
+    # a scripted client trying to binary-search a whole solution path via these
+    # otherwise-unrestricted (movie_id, person_id) oracle endpoints.
+    if not check_rate_limit(f"ratelimit:six-degrees-verify:{user_id}", limit=30, window=60):
+        raise HTTPException(status_code=429, detail="Too many requests — try again in a minute")
+
+
 @app.get("/api/games/six-degrees/verify-actor")
 def six_degrees_verify_actor(movie_id: int, person_id: int, current_user: dict = Depends(get_current_user)):
+    _check_six_degrees_verify_rate_limit(current_user["user_id"])
     return {"valid": is_credited_in(movie_id, person_id)}
 
 
@@ -2839,6 +2867,7 @@ def six_degrees_verify_actor(movie_id: int, person_id: int, current_user: dict =
 def six_degrees_verify_shared_movie(
     movie_id: int, person_id: int, next_person_id: int, current_user: dict = Depends(get_current_user)
 ):
+    _check_six_degrees_verify_rate_limit(current_user["user_id"])
     return {"valid": share_movie(movie_id, person_id, next_person_id)}
 
 
@@ -2888,7 +2917,7 @@ def trifecta_reveal(payload: _TrifectaRevealPayload, current_user: dict = Depend
 # --- games: trivia ---
 
 @app.get("/api/games/trivia/session")
-def trivia_session(count: int = 12, current_user: dict = Depends(get_current_user)):
+def trivia_session(count: int = 10, current_user: dict = Depends(get_current_user)):
     return {"questions": build_session(current_user["user_id"], count)}
 
 
