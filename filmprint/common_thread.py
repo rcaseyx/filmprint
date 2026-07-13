@@ -48,6 +48,17 @@ MIN_QUALIFYING_MOVIES = 3
 # (bitten twice on this elsewhere in the app).
 TOP_N_BY_VOTES = 8
 
+# Fallback window when an actor's top-8-by-votes collapses below 3 movies
+# after franchise dedup. Previously fell back to the actor's ENTIRE qualifying
+# filmography (could be dozens of movies), silently reintroducing the exact
+# "obscure sequel as likely as the famous role" problem TOP_N_BY_VOTES was
+# built to prevent for franchise-heavy actors. 20 stays ranked by vote_count
+# (unlike the unbounded fallback) and gives real room past the top 8 without
+# reaching into an actor's deep-bench catalog -- if even the top 20 doesn't
+# clear 3 distinct-franchise movies, pick_round() correctly moves on to a
+# different actor instead.
+FALLBACK_TOP_N_BY_VOTES = 20
+
 
 def _qualifying_actors() -> list[dict]:
     """Actors credited (billing <= MIN_BILLING_ORDER) in >= 3 curated,
@@ -70,6 +81,27 @@ def _qualifying_actors() -> list[dict]:
             {"person_id": r["person_id"], "person_name": r["person_name"], "movie_ids": r["movie_ids"]}
             for r in cur.fetchall()
         ]
+
+
+_actors_cache: list[dict] | None = None
+
+
+def _load_qualifying_actors() -> list[dict]:
+    """Module-level cache of _qualifying_actors(), built once per process --
+    same pattern as six_degrees/trivia's pool caches. Measured at ~0.5s per
+    call locally (likely worse over Railway's Postgres proxy); pick_round()
+    used to pay this on every single "New round" click."""
+    global _actors_cache
+    if _actors_cache is None:
+        _actors_cache = _qualifying_actors()
+    return _actors_cache
+
+
+def warm_pool() -> None:
+    """Loads the qualifying-actor pool eagerly rather than on the first real
+    request -- called from api/main.py's startup prewarm, same pattern as
+    six_degrees/trivia's warm_pool(), so no live round request pays this cost."""
+    _load_qualifying_actors()
 
 
 def _movies_for(movie_ids: list[int]) -> list[dict]:
@@ -154,15 +186,19 @@ def pick_round() -> dict:
     person_id/person_name/common_actors/id/title before sending to the
     client. common_actors is every actor credited in all 3 movies (not just
     person_id) -- a guess matching any of them should count as correct."""
-    actors = _qualifying_actors()
+    actors = list(_load_qualifying_actors())
     if not actors:
         raise ValueError("No eligible actors in the pool")
 
+    # Copied above before shuffling -- _load_qualifying_actors() returns the
+    # same shared cached list on every call, and shuffling it in place would
+    # race with any other concurrent pick_round() call shuffling that same
+    # underlying object.
     random.shuffle(actors)
     for actor in actors[:MAX_ACTOR_ATTEMPTS]:
         prominent_ids = _dedupe_by_collection(_top_by_votes(actor["movie_ids"], TOP_N_BY_VOTES))
         if len(prominent_ids) < MIN_QUALIFYING_MOVIES:
-            prominent_ids = _dedupe_by_collection(actor["movie_ids"])
+            prominent_ids = _dedupe_by_collection(_top_by_votes(actor["movie_ids"], FALLBACK_TOP_N_BY_VOTES))
         if len(prominent_ids) >= MIN_QUALIFYING_MOVIES:
             break
     else:

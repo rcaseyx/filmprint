@@ -55,6 +55,14 @@ ACTOR_POOL_MIN_MOVIES = 3
 # movie is trivially guessable in one look, not a puzzle.
 MIN_PUZZLE_DEGREES = 2
 
+# Reject pairs whose shortest path is longer than this. Sampled 3000 random
+# pairs from the actual actor pool: 10.0% landed at 1 degree (below the floor
+# above), 88.7% at 2, 1.4% at 3, and zero beyond 3 -- this pool is dense enough
+# that a "grueling 5-6 hop" puzzle essentially never occurs today. Ceiling is a
+# guardrail against that changing later (e.g. a looser actor-pool bar
+# introducing sparser connectivity), not a fix for an observed problem.
+MAX_PUZZLE_DEGREES = 3
+
 
 def get_curated_pool() -> list[int]:
     """Movie IDs eligible for a puzzle (anchors and bridges alike)."""
@@ -95,6 +103,31 @@ def get_curated_actor_pool(movie_pool: list[int] | None = None) -> list[int]:
             ),
         )
         return [row["person_id"] for row in cur.fetchall()]
+
+
+_graph_cache: tuple[list[int], list[int], dict[int, set[int]], dict[int, set[int]]] | None = None
+
+
+def _load_graph() -> tuple[list[int], list[int], dict[int, set[int]], dict[int, set[int]]]:
+    """Module-level cache of (movie_pool, actor_pool, movie_to_people, person_to_movies),
+    built once per process -- same pattern as trivia's _load_pool(). generate_puzzle()
+    and search_movies() used to rebuild this from scratch (a full movie_credits scan
+    over ~3900 pool movies) on every single request; the underlying data only changes
+    on a catalog sync, so there's no reason to pay that cost live."""
+    global _graph_cache
+    if _graph_cache is None:
+        movie_pool = get_curated_pool()
+        actor_pool = get_curated_actor_pool(movie_pool)
+        movie_to_people, person_to_movies = build_credit_graph(movie_pool)
+        _graph_cache = (movie_pool, actor_pool, movie_to_people, person_to_movies)
+    return _graph_cache
+
+
+def warm_pool() -> None:
+    """Loads the movie/actor pool + credit graph eagerly rather than on the first real
+    request -- called from api/main.py's startup prewarm, same pattern as trivia's
+    warm_pool(), so no live puzzle/search request ever pays this cost."""
+    _load_graph()
 
 
 def build_credit_graph(pool_movie_ids: list[int]) -> tuple[dict[int, set[int]], dict[int, set[int]]]:
@@ -224,18 +257,15 @@ def generate_puzzle(exclude_person_ids: set[int] | None = None, max_attempts: in
     MIN_PUZZLE_DEGREES, and return the puzzle details. Raises RuntimeError if
     no valid pair is found within max_attempts.
     """
-    movie_pool = get_curated_pool()
-    actor_pool = get_curated_actor_pool(movie_pool)
+    _, actor_pool, movie_to_people, person_to_movies = _load_graph()
     eligible = [p for p in actor_pool if p not in (exclude_person_ids or set())]
     if len(eligible) < 2:
         eligible = actor_pool
 
-    movie_to_people, person_to_movies = build_credit_graph(movie_pool)
-
     for _ in range(max_attempts):
         start_id, end_id = random.sample(eligible, 2)
         path = shortest_path_between_people(person_to_movies, movie_to_people, start_id, end_id)
-        if path and len(path) >= MIN_PUZZLE_DEGREES:
+        if path and MIN_PUZZLE_DEGREES <= len(path) <= MAX_PUZZLE_DEGREES:
             return {
                 "start_person_id": start_id,
                 "end_person_id": end_id,
@@ -280,7 +310,7 @@ def search_movies(query: str, exclude_movie_ids: set[int] | None = None, limit: 
     to any particular actor's filmography (same reasoning as search_people).
     Excludes exclude_movie_ids (already-visited movies in the chain).
     """
-    pool = get_curated_pool()
+    pool, _, _, _ = _load_graph()
     exclude = exclude_movie_ids or set()
     candidate_ids = [m for m in pool if m not in exclude]
     if not candidate_ids:
@@ -290,7 +320,7 @@ def search_movies(query: str, exclude_movie_ids: set[int] | None = None, limit: 
         cur = conn.cursor()
         cur.execute(
             """SELECT id FROM movies WHERE id = ANY(%s) AND (title ILIKE %s OR title ILIKE %s)
-               ORDER BY popularity DESC NULLS LAST LIMIT %s""",
+               ORDER BY vote_count DESC NULLS LAST LIMIT %s""",
             (candidate_ids, f"{q}%", f"% {q}%", limit),
         )
         return [r["id"] for r in cur.fetchall()]
