@@ -94,7 +94,7 @@ from filmprint.six_degrees import (
     warm_pool as warm_six_degrees_pool,
 )
 from filmprint.trifecta import generate_grid, score_selection, warm_pool as warm_trifecta_pool
-from filmprint.trivia import build_session, check_answer, warm_pool as warm_trivia_pool, warm_user_movies as warm_trivia_user_movies
+from filmprint.trivia import build_session, check_answer
 from filmprint.focus_pull import (
     pick_round as pick_focus_pull_round, check_guess as check_focus_pull_guess,
     search_movies as search_focus_pull_movies, render_poster as render_focus_pull_poster,
@@ -706,25 +706,11 @@ async def lifespan(app: FastAPI):
 
             _t.Thread(target=_run_backfill, daemon=True).start()
 
-            def _warm_trivia_pool():
-                # trivia.py's embedding-neighbor search loads the ~3,300-movie curated
-                # pool + vectors into a module-level cache on first use (~6-7s). Doing
-                # that here means the first real trivia session after a deploy doesn't
-                # pay this cost on top of its own per-movie question generation.
-                try:
-                    t = time.time()
-                    warm_trivia_pool()
-                    print(f"[prewarm] trivia pool ready in {time.time()-t:.1f}s", flush=True)
-                except Exception as e:
-                    print(f"[prewarm] trivia pool warm failed: {e}", flush=True)
-
-            _t.Thread(target=_warm_trivia_pool, daemon=True).start()
-
             def _warm_six_degrees_pool():
                 # generate_puzzle()/search_movies() used to rebuild the movie/actor
                 # pool + full credit graph from scratch (a movie_credits scan over
                 # ~3,900 pool movies) on every single request. Same warm-on-deploy
-                # pattern as trivia's pool above.
+                # pattern as the other games' pool caches below.
                 try:
                     t = time.time()
                     warm_six_degrees_pool()
@@ -764,7 +750,7 @@ async def lifespan(app: FastAPI):
             users = [u for u in get_all_users_with_stats() if u.get("ratings_count", 0) > 0]
             print(f"[prewarm] starting — {len(users)} user(s) to warm", flush=True)
             t0 = time.time()
-            counters = {"restored": 0, "rebuilt": 0, "failed": 0, "skipped": 0, "trivia_movies": 0}
+            counters = {"restored": 0, "rebuilt": 0, "failed": 0, "skipped": 0}
             counter_lock = _t.Lock()
 
             def _warm_one(user):
@@ -793,23 +779,13 @@ async def lifespan(app: FastAPI):
                     with counter_lock:
                         counters["failed"] += 1
 
-                # Separate try/except -- a trivia-warming hiccup shouldn't count against
-                # or block the rec/profile-cache warming above.
-                try:
-                    n = warm_trivia_user_movies(uid)
-                    with counter_lock:
-                        counters["trivia_movies"] += n
-                except Exception as e:
-                    print(f"[prewarm] trivia warm failed for user {uid} ({uname}): {e}", flush=True)
-
             with ThreadPoolExecutor(max_workers=min(len(users) or 1, 4)) as pool:
                 list(pool.map(_warm_one, users))
 
             print(
                 f"[prewarm] done in {time.time()-t0:.1f}s — "
                 f"{counters['restored']} restored, {counters['rebuilt']} rebuilt, "
-                f"{counters['skipped']} skipped (already in cache), {counters['failed']} failed, "
-                f"{counters['trivia_movies']} trivia question bank(s) generated",
+                f"{counters['skipped']} skipped (already in cache), {counters['failed']} failed",
                 flush=True,
             )
 
@@ -2941,7 +2917,7 @@ def trifecta_reveal(payload: _TrifectaRevealPayload, current_user: dict = Depend
 # --- games: trivia ---
 
 @app.get("/api/games/trivia/session")
-def trivia_session(count: int = 12, current_user: dict = Depends(get_current_user)):
+def trivia_session(count: int = 10, current_user: dict = Depends(get_current_user)):
     return {"questions": build_session(current_user["user_id"], count)}
 
 

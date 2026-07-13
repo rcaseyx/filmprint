@@ -26,7 +26,7 @@ load_dotenv(override=True)
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from filmprint.db import init_db, close_db, get_existing_opentdb_question_texts, insert_trivia_questions
+from filmprint.db import init_db, close_db, get_existing_question_texts, insert_trivia_questions
 from filmprint.opentdb import fetch_film_questions
 
 logging.basicConfig(
@@ -50,7 +50,7 @@ _DIFFICULTIES = ["medium", "hard"]
 
 def main() -> None:
     init_db()
-    existing_texts = get_existing_opentdb_question_texts()
+    existing_texts = get_existing_question_texts("opentdb")
     log.info("Starting Open Trivia DB backfill (%d questions already cached)", len(existing_texts))
 
     total_fetched = 0

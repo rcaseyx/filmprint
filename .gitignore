@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .DS_Store
 data/*.csv
+data/*.jsonl
 data/cache/
 data/*.db
 data/*.db.bak

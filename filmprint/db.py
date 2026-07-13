@@ -255,17 +255,29 @@ def init_db(seed_data: dict | None = None) -> None:
             created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )""",
         "CREATE INDEX IF NOT EXISTS idx_trivia_questions_movie_id ON trivia_questions(movie_id)",
-        # Only meaningful for source='opentdb' rows ('easy'/'medium'/'hard', straight
-        # from OTDB) -- taste-graph questions have no notion of difficulty, left NULL.
+        # 'claude' and 'opentdb' rows both set this ('easy'/'medium'/'hard'); no
+        # other source exists anymore (the earlier per-user taste-graph generator,
+        # source='generated', which never set difficulty, was removed and its rows
+        # deleted -- see project memory).
         "ALTER TABLE trivia_questions ADD COLUMN IF NOT EXISTS difficulty TEXT",
-        # Guards against a real race: the startup prewarm loop processes multiple
-        # users concurrently, and if two of them share a not-yet-cached movie, both
-        # could see a cache miss and both generate+insert. Partial (source='generated'
-        # only -- opentdb rows have no movie_id and aren't meant to be deduped this
-        # way) so a losing insert becomes a harmless ON CONFLICT DO NOTHING instead of
-        # a duplicate row.
+        # Vestigial: only ever guarded against a concurrent-generation race for the
+        # now-removed source='generated' rows. Harmless to leave -- it matches zero
+        # rows now that nothing inserts that source -- but not worth a DROP INDEX
+        # migration for a no-op.
         """CREATE UNIQUE INDEX IF NOT EXISTS idx_trivia_questions_movie_type_generated
            ON trivia_questions(movie_id, question_type) WHERE source = 'generated'""",
+        # Per-user "already seen" tracking so build_session() can exclude questions
+        # a user has already been shown, instead of only excluding what they've
+        # specifically answered. Just (user_id, question_id) pairs -- a few thousand
+        # small ints per heavy user at most, fetched fresh per request, nothing held
+        # in process memory (not the same class of thing as the old taste-graph pool
+        # cache that caused the memory-balloon investigation).
+        """CREATE TABLE IF NOT EXISTS user_trivia_seen (
+            user_id     BIGINT NOT NULL REFERENCES users(id),
+            question_id BIGINT NOT NULL REFERENCES trivia_questions(id),
+            seen_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (user_id, question_id)
+        )""",
     ]
     with get_connection() as conn:
         cur = conn.cursor()
@@ -1003,27 +1015,6 @@ def get_all_movies_with_vectors() -> list[dict]:
     return movies
 
 
-def get_curated_pool_with_vectors() -> list[dict]:
-    """Same curated-pool bar as Co-Star/Trifecta (vote_count >= 1000 AND revenue > 0),
-    restricted to movies with a feature_vector -- the embedding-similarity search space
-    for trivia's distractor generation. Unlike get_all_movies_with_vectors() above, this
-    doesn't return the whole catalog (11,679 movies) -- just the ~3,300 well-known ones."""
-    with get_connection() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            """SELECT * FROM movies
-               WHERE feature_vector IS NOT NULL AND vote_count >= 1000 AND revenue > 0"""
-        )
-        rows = cur.fetchall()
-    movies = []
-    for row in rows:
-        m = dict(row)
-        m["feature_vector"] = json.loads(m["feature_vector"])
-        m["raw_tmdb"] = json.loads(m["raw_tmdb"]) if m["raw_tmdb"] else {}
-        movies.append(m)
-    return movies
-
-
 # --- six degrees ---
 
 def get_person_summary(person_id: int) -> dict | None:
@@ -1076,21 +1067,10 @@ def _load_trivia_question(row) -> dict:
     return q
 
 
-def get_trivia_questions_for_movie(movie_id: int) -> list[dict]:
-    """Cache read -- only 'generated' (taste-graph) questions have a movie_id."""
-    with get_connection() as conn:
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT * FROM trivia_questions WHERE movie_id = %s AND source = 'generated'",
-            (movie_id,),
-        )
-        rows = cur.fetchall()
-    return [_load_trivia_question(r) for r in rows]
-
-
 def insert_trivia_questions(questions: list[dict]) -> list[dict]:
     """Each question: {movie_id, source, question_type, question_text, correct_answer, options, image_url, difficulty}.
-    movie_id/image_url/difficulty may be omitted (NULL) -- difficulty only applies to opentdb questions.
+    movie_id/image_url/difficulty may be omitted (NULL) -- movie_id only applies to
+    'claude' questions, difficulty to 'claude'/'opentdb' questions.
 
     Returns the rows actually inserted (with their DB-assigned ids, via RETURNING) --
     saves callers a separate re-fetch just to learn the ids bulk insert doesn't
@@ -1118,24 +1098,43 @@ def insert_trivia_questions(questions: list[dict]) -> list[dict]:
     return [_load_trivia_question(r) for r in rows]
 
 
-def get_existing_opentdb_question_texts() -> set[str]:
-    """Dedup check before the OTDB backfill script inserts -- lets it be re-run safely
-    to pick up newly-added OTDB questions without duplicating what's already cached."""
+def get_existing_question_texts(source: str) -> set[str]:
+    """Dedup check before a backfill/import script inserts -- lets it be re-run
+    safely without duplicating what's already cached for that source."""
     with get_connection() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT question_text FROM trivia_questions WHERE source = 'opentdb'")
+        cur.execute("SELECT question_text FROM trivia_questions WHERE source = %s", (source,))
         return {row["question_text"] for row in cur.fetchall()}
 
 
-def get_random_trivia_questions(source: str, limit: int) -> list[dict]:
+def get_random_trivia_questions(source: str, limit: int, exclude_ids: set[int] | None = None) -> list[dict]:
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
-            "SELECT * FROM trivia_questions WHERE source = %s ORDER BY RANDOM() LIMIT %s",
-            (source, limit),
+            "SELECT * FROM trivia_questions WHERE source = %s AND NOT (id = ANY(%s)) ORDER BY RANDOM() LIMIT %s",
+            (source, list(exclude_ids or []), limit),
         )
         rows = cur.fetchall()
     return [_load_trivia_question(r) for r in rows]
+
+
+def get_user_seen_trivia_question_ids(user_id: int) -> set[int]:
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT question_id FROM user_trivia_seen WHERE user_id = %s", (user_id,))
+        return {row["question_id"] for row in cur.fetchall()}
+
+
+def mark_trivia_questions_seen(user_id: int, question_ids: list[int]) -> None:
+    if not question_ids:
+        return
+    with get_connection() as conn:
+        cur = conn.cursor()
+        psycopg2.extras.execute_values(
+            cur,
+            "INSERT INTO user_trivia_seen (user_id, question_id) VALUES %s ON CONFLICT DO NOTHING",
+            [(user_id, qid) for qid in question_ids],
+        )
 
 
 def get_trivia_question_by_id(question_id: int) -> dict | None:
@@ -1194,17 +1193,6 @@ def get_user_ratings(user_id: int) -> list[dict]:
         m["raw_tmdb"] = json.loads(m["raw_tmdb"]) if m["raw_tmdb"] else {}
         result.append(m)
     return result
-
-
-def get_user_rated_movie_ids(user_id: int) -> list[int]:
-    """Lean id-only version of get_user_ratings() -- for callers (trivia session
-    building) that only need which movies a user has rated, not full movie rows.
-    get_user_ratings() JSON-decodes feature_vector/raw_tmdb for every row, real
-    overhead for a heavy rater when all that's needed is a list of ids."""
-    with get_connection() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT movie_id FROM user_ratings WHERE user_id = %s", (user_id,))
-        return [row["movie_id"] for row in cur.fetchall()]
 
 
 def get_ratings_count(user_id: int) -> int:
