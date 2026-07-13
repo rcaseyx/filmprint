@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import { useSession } from "next-auth/react"
 import { authHeader } from "@/lib/api"
@@ -11,6 +11,12 @@ const API = process.env.NEXT_PUBLIC_API_URL
 interface Round {
   poster_path: string | null
   stages: number[]
+}
+
+interface PosterLayer {
+  id: number
+  src: string
+  loaded: boolean
 }
 
 interface MovieResult {
@@ -25,7 +31,8 @@ export default function FocusPullPage() {
   const [error, setError] = useState(false)
   const [round, setRound] = useState<Round | null>(null)
   const [stageIndex, setStageIndex] = useState(0)
-  const [loadedSrc, setLoadedSrc] = useState<string | null>(null)
+  const [layers, setLayers] = useState<PosterLayer[]>([])
+  const nextLayerId = useRef(0)
   const [wrongGuess, setWrongGuess] = useState<string | null>(null)
   const [guessing, setGuessing] = useState(false)
   const [result, setResult] = useState<{ title: string; gaveUp: boolean } | null>(null)
@@ -34,12 +41,28 @@ export default function FocusPullPage() {
   const [results, setResults] = useState<MovieResult[]>([])
   const debouncedQuery = useDebounce(query, 300)
 
+  const posterSrc = round?.poster_path
+    ? `${API}/api/games/focus-pull/poster?path=${encodeURIComponent(round.poster_path)}&stage=${stageIndex}`
+    : null
+
+  // Crossfade between stages: each new posterSrc gets its own layer, stacked
+  // on top of the previous one and starting invisible until its image has
+  // actually decoded, then fading to opacity 1 to reveal the sharper stage
+  // -- so the old poster stays visible underneath the whole time instead of
+  // both fading through a shared blank background. Slicing to the last 2
+  // keeps only the outgoing/incoming pair mounted, not an ever-growing stack.
+  useEffect(() => {
+    if (!posterSrc) { setLayers([]); return }
+    const id = ++nextLayerId.current
+    setLayers((prev) => [...prev, { id, src: posterSrc, loaded: false }].slice(-2))
+  }, [posterSrc])
+
   async function loadRound() {
     setLoading(true)
     setError(false)
     setRound(null)
     setStageIndex(0)
-    setLoadedSrc(null)
+    setLayers([])
     setWrongGuess(null)
     setResult(null)
     setQuery("")
@@ -128,9 +151,6 @@ export default function FocusPullPage() {
   }
 
   const atFinalStage = stageIndex >= round.stages.length - 1
-  const posterSrc = round.poster_path
-    ? `${API}/api/games/focus-pull/poster?path=${encodeURIComponent(round.poster_path)}&stage=${stageIndex}`
-    : null
 
   return (
     <div className="max-w-2xl mx-auto px-6 py-12">
@@ -150,14 +170,19 @@ export default function FocusPullPage() {
 
       <div className="mt-6 flex justify-center">
         <div className="relative w-64 aspect-[2/3] rounded-xl overflow-hidden bg-neutral-900 border border-neutral-800">
-          {posterSrc ? (
-            <img
-              src={posterSrc}
-              alt="Mystery poster"
-              className="absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ease-out"
-              style={{ opacity: loadedSrc === posterSrc ? 1 : 0 }}
-              onLoad={() => setLoadedSrc(posterSrc)}
-            />
+          {layers.length ? (
+            layers.map((layer) => (
+              <img
+                key={layer.id}
+                src={layer.src}
+                alt="Mystery poster"
+                className="absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ease-out"
+                style={{ opacity: layer.loaded ? 1 : 0 }}
+                onLoad={() =>
+                  setLayers((prev) => prev.map((l) => (l.id === layer.id ? { ...l, loaded: true } : l)))
+                }
+              />
+            ))
           ) : (
             <div className="w-full h-full flex items-center justify-center text-neutral-600 text-sm">No poster</div>
           )}
