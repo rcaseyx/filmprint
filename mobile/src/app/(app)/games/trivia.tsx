@@ -18,6 +18,7 @@ interface Question {
   question_text: string
   options: string[]
   image_url: string | null
+  movie_title: string | null
 }
 
 interface AnswerResult {
@@ -136,7 +137,9 @@ export default function TriviaScreen() {
           </View>
         )}
 
-        <Text style={s.question}>{q.question_text}</Text>
+        {q.movie_title && <Text style={s.movieTitle}>{q.movie_title}</Text>}
+
+        <Text style={[s.question, q.movie_title && s.questionWithMovieTitle]}>{q.question_text}</Text>
 
         <View style={s.options}>
           {q.options.map(opt => {
@@ -190,7 +193,9 @@ const s = StyleSheet.create({
   heading: { fontSize: 20, fontWeight: '700', color: Colors.text, paddingHorizontal: Spacing.lg, marginTop: Spacing.xs },
   imageWrap: { alignItems: 'center', marginTop: Spacing.lg },
   image: { width: 120, height: 180, borderRadius: 12, backgroundColor: Colors.card },
+  movieTitle: { fontSize: 14, fontWeight: '600', color: Colors.brand, paddingHorizontal: Spacing.lg, marginTop: Spacing.lg },
   question: { fontSize: 17, color: Colors.text, paddingHorizontal: Spacing.lg, marginTop: Spacing.lg, lineHeight: 24 },
+  questionWithMovieTitle: { marginTop: Spacing.xs },
   options: { paddingHorizontal: Spacing.lg, marginTop: Spacing.lg, gap: Spacing.sm },
   option: {
     borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.card,

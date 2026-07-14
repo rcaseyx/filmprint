@@ -1,6 +1,46 @@
 """Shared fixtures for filmprint tests."""
 
+import os
+from urllib.parse import urlparse
+
 import pytest
+
+
+def require_disposable_test_database() -> None:
+    """Refuse to proceed unless DATABASE_URL clearly points at a disposable test
+    database. Call this as the first line of any fixture/test that runs
+    destructive statements (TRUNCATE, DROP, DELETE without a WHERE, etc.).
+
+    On 2026-07-14, tests/test_db.py's autouse `isolated_db` fixture ran
+    `TRUNCATE ... CASCADE` against the live production database because
+    DATABASE_URL was sourced from `.env`, which points at production -- there
+    was no separate test database configured at all. That wiped movies, users,
+    ratings, watchlists, keyword themes, and trivia content in production with
+    no viable recent backup. See /Users/rcaseyx/projects/filmprint-data-recovery-plan.md.
+
+    The check: the database host or database name must contain "test" or "ci"
+    (case-insensitive). Production is a plain Railway Postgres proxy host with
+    dbname "railway" -- it will never match this by accident. A real test
+    database must be named to make its purpose unambiguous, not merely assumed
+    from context.
+    """
+    url = os.environ.get("DATABASE_URL", "")
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    dbname = (parsed.path or "").lstrip("/").lower()
+    if not url or not any("test" in s or "ci" in s for s in (host, dbname)):
+        pytest.fail(
+            "\n\nRefusing to run: DATABASE_URL does not look like a disposable "
+            "test database (expected 'test' or 'ci' in the host or database "
+            f"name; got host={host!r} dbname={dbname!r}).\n"
+            "This check exists because a destructive TRUNCATE ... CASCADE fixture "
+            "wiped the filmprint production database on 2026-07-14 when tests ran "
+            "against the production DATABASE_URL. Point DATABASE_URL at a disposable "
+            "test Postgres instance before running this test file. See "
+            "/Users/rcaseyx/projects/filmprint-data-recovery-plan.md for the incident "
+            "and recovery plan.\n",
+            pytrace=False,
+        )
 
 
 def make_movie(

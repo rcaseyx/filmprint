@@ -16,6 +16,7 @@ interface Question {
   question_text: string
   options: string[]
   image_url: string | null
+  movie_title: string | null
 }
 
 interface AnswerResult {
@@ -144,7 +145,11 @@ export default function TriviaPage() {
         </div>
       )}
 
-      <p className="text-lg text-neutral-100 mt-6">{q.question_text}</p>
+      {q.movie_title && (
+        <p className="text-sm font-medium text-brand mt-6">{q.movie_title}</p>
+      )}
+
+      <p className={`text-lg text-neutral-100 ${q.movie_title ? "mt-1" : "mt-6"}`}>{q.question_text}</p>
 
       <div className="grid grid-cols-1 gap-3 mt-6">
         {q.options.map((opt) => {

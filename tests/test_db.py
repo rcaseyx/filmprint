@@ -12,7 +12,7 @@ from filmprint.db import (
     upsert_watchlist_entry,
     get_or_create_user_by_email,
 )
-from tests.conftest import make_movie
+from tests.conftest import make_movie, require_disposable_test_database
 
 
 def get_or_create_user(username: str) -> int:
@@ -23,6 +23,7 @@ def get_or_create_user(username: str) -> int:
 @pytest.fixture(autouse=True)
 def isolated_db():
     """Ensure schema exists and wipe all rows between tests."""
+    require_disposable_test_database()
     init_db()
     with get_connection() as conn:
         cur = conn.cursor()
