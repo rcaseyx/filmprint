@@ -12,9 +12,10 @@ too easy/obvious after a couple of rounds; see project memory for history.
 """
 
 import random
+import re
 
 from filmprint.db import (
-    get_random_trivia_questions, get_trivia_question_by_id,
+    get_movies_by_ids, get_random_trivia_questions, get_trivia_question_by_id,
     get_user_seen_trivia_question_ids, mark_trivia_questions_seen,
 )
 
@@ -22,6 +23,38 @@ SESSION_SIZE_DEFAULT = 10
 # Mostly Claude-authored (the richer, hand-written pool) with a small OTDB
 # slice for variety/breadth beyond the 250-movie Claude set.
 CLAUDE_TARGET = 8
+
+
+def _title_reveals_answer(correct_answer: str, movie_title: str) -> bool:
+    """True if showing movie_title alongside the question would give away
+    correct_answer -- either it's a straight "guess the movie" question (the
+    title IS the answer) or a fill-in-the-blank whose blank is a fragment
+    lifted straight from the title (e.g. correct_answer='Django' for the
+    movie 'Django Unchained', or 'Azkaban' for 'Harry Potter and the
+    Prisoner of Azkaban'). Word-boundary match rather than plain substring so
+    short answers don't false-positive on titles that merely contain the same
+    letters (e.g. 'man' shouldn't match inside 'Kingsman')."""
+    answer_norm = correct_answer.strip().lower()
+    title_norm = movie_title.strip().lower()
+    if answer_norm == title_norm:
+        return True
+    return re.search(rf"\b{re.escape(answer_norm)}\b", title_norm) is not None
+
+
+def _attach_movie_context(session: list[dict]) -> None:
+    """Claude questions always carry a real movie_id (unlike OTDB rows, whose
+    movie_id is NULL) but many never name the movie anywhere in question_text
+    -- unanswerable without it. Attach movie_title in place so the UI can show
+    it, except where doing so would leak the answer (see
+    _title_reveals_answer). Mutates each question dict in session."""
+    movie_ids = {q["movie_id"] for q in session if q.get("movie_id")}
+    if not movie_ids:
+        return
+    movies = get_movies_by_ids(list(movie_ids))
+    for q in session:
+        movie = movies.get(q.get("movie_id"))
+        if movie and not _title_reveals_answer(q["correct_answer"], movie["title"]):
+            q["movie_title"] = movie["title"]
 
 
 def build_session(user_id: int, count: int = SESSION_SIZE_DEFAULT) -> list[dict]:
@@ -52,6 +85,8 @@ def build_session(user_id: int, count: int = SESSION_SIZE_DEFAULT) -> list[dict]
         session += backfill
 
     mark_trivia_questions_seen(user_id, [q["id"] for q in session])
+
+    _attach_movie_context(session)
 
     random.shuffle(session)
     # Never trust the client with the answer -- same principle as Co-Star's
