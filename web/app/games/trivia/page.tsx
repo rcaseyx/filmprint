@@ -137,7 +137,7 @@ export default function TriviaPage() {
         <div className="flex justify-center mt-6">
           <Image
             src={`${TMDB_IMG}${q.image_url}`}
-            alt="Mystery actor"
+            alt="Movie poster"
             width={120}
             height={180}
             className="rounded-xl object-cover bg-neutral-800"

@@ -1107,12 +1107,16 @@ def get_existing_question_texts(source: str) -> set[str]:
         return {row["question_text"] for row in cur.fetchall()}
 
 
-def get_random_trivia_questions(source: str, limit: int, exclude_ids: set[int] | None = None) -> list[dict]:
+def get_random_trivia_questions(
+    source: str, limit: int, exclude_ids: set[int] | None = None,
+    exclude_difficulties: set[str] | None = None,
+) -> list[dict]:
     with get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
-            "SELECT * FROM trivia_questions WHERE source = %s AND NOT (id = ANY(%s)) ORDER BY RANDOM() LIMIT %s",
-            (source, list(exclude_ids or []), limit),
+            """SELECT * FROM trivia_questions WHERE source = %s AND NOT (id = ANY(%s))
+               AND NOT (COALESCE(difficulty, '') = ANY(%s)) ORDER BY RANDOM() LIMIT %s""",
+            (source, list(exclude_ids or []), list(exclude_difficulties or []), limit),
         )
         rows = cur.fetchall()
     return [_load_trivia_question(r) for r in rows]

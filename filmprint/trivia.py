@@ -24,6 +24,13 @@ SESSION_SIZE_DEFAULT = 10
 # slice for variety/breadth beyond the 250-movie Claude set.
 CLAUDE_TARGET = 8
 
+# OTDB's 'easy' tier was never imported at all (see backfill_trivia_questions.py --
+# found "noticeably weaker" in a past playtest). Claude's own 3/4/3 easy/medium/hard
+# split per movie didn't get the same filter at import time, and real play showed
+# why: the easy tier trivializes the round. Excluded at serve time rather than
+# deleted so the rows stay available if a future difficulty-select mode wants them.
+EXCLUDE_DIFFICULTIES = {"easy"}
+
 
 def _title_reveals_answer(correct_answer: str, movie_title: str) -> bool:
     """True if showing movie_title alongside the question would give away
@@ -44,9 +51,11 @@ def _title_reveals_answer(correct_answer: str, movie_title: str) -> bool:
 def _attach_movie_context(session: list[dict]) -> None:
     """Claude questions always carry a real movie_id (unlike OTDB rows, whose
     movie_id is NULL) but many never name the movie anywhere in question_text
-    -- unanswerable without it. Attach movie_title in place so the UI can show
-    it, except where doing so would leak the answer (see
-    _title_reveals_answer). Mutates each question dict in session."""
+    -- unanswerable without it. Attach movie_title AND the poster (reusing the
+    existing image_url field/frontend rendering path, previously only ever
+    NULL for every source -- no web/mobile change needed), except where doing
+    so would leak the answer (see _title_reveals_answer). Mutates each
+    question dict in session."""
     movie_ids = {q["movie_id"] for q in session if q.get("movie_id")}
     if not movie_ids:
         return
@@ -55,6 +64,7 @@ def _attach_movie_context(session: list[dict]) -> None:
         movie = movies.get(q.get("movie_id"))
         if movie and not _title_reveals_answer(q["correct_answer"], movie["title"]):
             q["movie_title"] = movie["title"]
+            q["image_url"] = movie["raw_tmdb"].get("poster_path")
 
 
 def build_session(user_id: int, count: int = SESSION_SIZE_DEFAULT) -> list[dict]:
@@ -64,7 +74,9 @@ def build_session(user_id: int, count: int = SESSION_SIZE_DEFAULT) -> list[dict]
     question selection itself isn't personalized/taste-based."""
     seen = get_user_seen_trivia_question_ids(user_id)
 
-    claude = get_random_trivia_questions(source="claude", limit=CLAUDE_TARGET, exclude_ids=seen)
+    claude = get_random_trivia_questions(
+        source="claude", limit=CLAUDE_TARGET, exclude_ids=seen, exclude_difficulties=EXCLUDE_DIFFICULTIES,
+    )
     otdb_target = count - len(claude)  # shortfall backfills from OTDB
     otdb = get_random_trivia_questions(source="opentdb", limit=otdb_target, exclude_ids=seen)
 
@@ -76,7 +88,9 @@ def build_session(user_id: int, count: int = SESSION_SIZE_DEFAULT) -> list[dict]
         # question within itself.
         already_picked = {q["id"] for q in session}
         remaining = count - len(session)
-        backfill = get_random_trivia_questions(source="claude", limit=remaining, exclude_ids=already_picked)
+        backfill = get_random_trivia_questions(
+            source="claude", limit=remaining, exclude_ids=already_picked, exclude_difficulties=EXCLUDE_DIFFICULTIES,
+        )
         if len(backfill) < remaining:
             already_picked |= {q["id"] for q in backfill}
             backfill += get_random_trivia_questions(
@@ -87,6 +101,12 @@ def build_session(user_id: int, count: int = SESSION_SIZE_DEFAULT) -> list[dict]
     mark_trivia_questions_seen(user_id, [q["id"] for q in session])
 
     _attach_movie_context(session)
+
+    # options is stored in a fixed order (correct_answer first, from how the
+    # source data was authored/imported) -- shuffle per-question so the UI
+    # doesn't make the correct answer visually findable by position alone.
+    for q in session:
+        random.shuffle(q["options"])
 
     random.shuffle(session)
     # Never trust the client with the answer -- same principle as Co-Star's
