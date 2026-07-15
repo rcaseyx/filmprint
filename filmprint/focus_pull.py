@@ -33,20 +33,21 @@ TMDB_IMG_BASE = "https://image.tmdb.org/t/p/w780"
 # enough for daily replay variety.
 CURATED_POOL_MIN_VOTES = 5000
 
-# Pixel-grid width (in blocks) after 0, 1, 2, 3, 4 wrong guesses -- the client
-# drives progression off the round payload rather than hardcoding game
-# balance itself. 0 means "no pixelation, full resolution". Starting stage
-# went 3 -> 10 -> 6: 3 was a solid color block (pure guesswork), 10 turned
-# out too easy on first render (still recognizable at a glance), 6 is the
-# current middle ground -- a real clue (rough shapes/color blocking) without
-# giving away the poster immediately.
-STAGE_PIXEL_BLOCKS = [6, 16, 24, 36, 0]
+# Pixel-grid width (in blocks) after 0, 1, 2, ..., N wrong guesses -- the
+# client drives progression off the round payload (stages.length) rather
+# than hardcoding game balance itself, so this list's length is free to
+# change without touching web/mobile. 0 means "no pixelation, full
+# resolution". Went through several rounds of tuning (starting stage alone:
+# 3 -> 10 -> 6 -> 8) before landing here; this curve is hand-tuned by Ryan
+# against real play rather than derived from a formula, so treat these
+# numbers as the source of truth and don't "smooth" them algorithmically.
+STAGE_PIXEL_BLOCKS = [6, 8, 10, 16, 22, 36, 0]
 
 # In-process cache of rendered stage images, keyed by (poster_path, stage).
-# Bounded to a few hundred entries -- the curated pool is ~1000 posters x 5
-# stages, but only a small slice is in daily rotation at once. Resets on
-# deploy; that's fine, re-rendering is cheap and the client also gets a
-# long-lived Cache-Control header per image.
+# Bounded to a few hundred entries -- the curated pool is ~1000 posters x
+# len(STAGE_PIXEL_BLOCKS) stages, but only a small slice is in daily rotation
+# at once. Resets on deploy; that's fine, re-rendering is cheap and the
+# client also gets a long-lived Cache-Control header per image.
 _render_cache: dict[tuple[str, int], bytes] = {}
 _RENDER_CACHE_MAX = 500
 
