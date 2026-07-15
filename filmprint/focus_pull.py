@@ -36,9 +36,11 @@ CURATED_POOL_MIN_VOTES = 5000
 # Pixel-grid width (in blocks) after 0, 1, 2, 3, 4 wrong guesses -- the client
 # drives progression off the round payload rather than hardcoding game
 # balance itself. 0 means "no pixelation, full resolution". Starting stage
-# raised from 3 to 10 -- the original schedule opened at a solid color block,
-# pure guesswork rather than an actual first clue.
-STAGE_PIXEL_BLOCKS = [10, 16, 24, 36, 0]
+# went 3 -> 10 -> 6: 3 was a solid color block (pure guesswork), 10 turned
+# out too easy on first render (still recognizable at a glance), 6 is the
+# current middle ground -- a real clue (rough shapes/color blocking) without
+# giving away the poster immediately.
+STAGE_PIXEL_BLOCKS = [6, 16, 24, 36, 0]
 
 # In-process cache of rendered stage images, keyed by (poster_path, stage).
 # Bounded to a few hundred entries -- the curated pool is ~1000 posters x 5
