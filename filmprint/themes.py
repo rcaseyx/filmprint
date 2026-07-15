@@ -96,6 +96,141 @@ _NOISE_KEYWORDS: frozenset[str] = frozenset({
     "muggle", "bourne", "valak", "casshan", "pandorum",
     # Generic visual/structural descriptors that don't describe a film subgenre
     "rousing", "twisted", "silhouette", "trio", "chapter", "monolith", "dyr",
+    # Scattered rare/foreign-language keywords that embedded near each other
+    # spuriously (not by shared meaning) during the 2026-07-14 post-incident
+    # recluster, forming incoherent "junk drawer" clusters under misleading
+    # labels like "Godzilla" and "Samurai" -- see theme-cleanup session notes.
+    "andaman", "begnadigung", "bodega", "commodus", "dachau", "dakar", "danchi",
+    "geronimo", "gondola", "kigali", "korengal", "kowloon", "kugel", "kurort",
+    "llama", "meerjungfrau", "mogadishu", "moqukito", "rangoon", "rhumba",
+    "sheik", "sisyphus", "sombra", "somnambulist", "sonderkommando", "tonto",
+    "totem", "toupee", "wayuu", "ying",
+    "angkor wat", "chakri dynasty", "indochine", "karakoram", "kasei culture",
+    "kon-tiki", "moai", "nakota",
+    # More spurious wordplay/embedding matches found reviewing the next batch
+    # of large clusters in the same session (e.g. "kindertransport" matched on
+    # "sport", "west point"/"west side story" matched on "west").
+    "kindertransport",
+    "east end", "eastern block", "eastern front", "key west", "pacific northwest",
+    "west end", "west point", "west side story", "western front",
+    "flamingo", "mondbasis", "perónism", "buchenwald", "nollywood", "coaction",
+    "trabant", "griffith observatory", "vorarlberg", "plasticine", "mugging",
+    # Third batch: more spurious wordplay matches, plus the entire former
+    # "Pedophile" theme -- dropped rather than relabeled or partially
+    # relocated. Sensitive-content keywords with no appropriate existing
+    # theme to surface as a browsable subgenre axis.
+    "operation market garden", "boston garden", "mona lisa (la gioconda)",
+    "tunesia", "ian fleming", "milf", "kink", "tiktok", "small person",
+    "caligula", "favelas", "invierno", "messe", "waffen ss", "pablo escobar",
+    "sexual predator", "pedophilia", "pedophile", "online predator", "pelz",
+    "cuck", "pseudo-hermaphrodite", "sex offender", "perversion", "paedophilia",
+    "zoophilia", "cuckold", "child molester", "pervert", "sexual perversion",
+    "peyote", "pedophile priest", "perverted", "paraphilia",
+    # Fourth batch: more spurious matches, one antisemitic-conspiracy-adjacent
+    # term dropped on Ryan's call, unrelated ethnicities/words pulled out of
+    # the Italian American -> Immigrant Heritage rename, and the "Poacher"
+    # junk-drawer cluster (kept poacher/poachers/poaching only).
+    "pedicab", "butterfly effect", "terracotta army", "irishcgm", "afternoon",
+    "morning", "millinery", "reeperbahn", "driving range", "handjob", "lancelot",
+    "vaudeville company", "golda meir", "pesto", "syringe", "tramp", "bell maker",
+    "bell ringer", "bell ringing", "mail carrier", "jewish supremacy",
+    "mariachi", "silat", "quarentine", "payola",
+    "kammer", "moustache", "pflegen", "ping pong", "pogrom", "pompeii", "poncho",
+    "pooh", "prater", "prawn", "pyre", "pyrokinesis", "sweeper", "terry pratchett",
+    # Fifth batch: the "Ghoulish" junk-drawer cluster (kept ghoul/ghoulish/
+    # ghoulish humor/jhorror only) plus a few more spurious matches with no
+    # better-fitting existing theme found.
+    "beowulf", "coprophagia", "fouke", "gadfly", "gdr", "glbt issues", "gluttony",
+    "gucci", "gwangju", "igloo", "kabukicho",
+    "caucasian", "montenegro", "palmen", "bern", "chemtrail", "bon bon",
+    # Sixth batch: the "Shounen" junk-drawer cluster (kept shounen/shoujo
+    # only), plus more spurious matches. Includes two entries that turned out
+    # to be movie titles in Persian script ("City of Bones", "Fantastic
+    # Beasts and Where to Find Them") mistakenly stored as keywords, not
+    # actual subgenre descriptors.
+    "hijinks", "neukölln", "sagen", "sasquatch", "schloss schönbrunn", "theremin",
+    "trestle", "urn",
+    "catcher in the rye", "sundance kid",
+    "hearse", "speakeasy",
+    "swiss", "switzerland", "ukraine", "world cup",
+    "ابزار های مرگبار : شهر استخوان‌ ها", "جانوران شگفت‌انگیز و زیستگاه آنها",
+    "manicurist",
+    "mambo", "megaslasher", "teetotaler",
+    "zydeco",
+    "ares", "rapa nui", "raptor", "rapunzel", "manson",
+    "chalkboard",
+    "cabana", "cabriolet", "taxidermist", "taxidermy",
+    "twinkie",
+    "trojan war",
+    "catfishing", "red herring",
+    "gutsy",
+    "gay bears",
+    "armenia", "azerbaijan",
+    # Autonomous pass (Ryan asked for this to be done independently after
+    # six interactive batches, with results/uncertain items reported back
+    # rather than each one confirmed live): 271 auto-clusters in the 10-14
+    # keyword range reviewed. Same junk-drawer-splitting and existing-theme-
+    # lookup approach as the interactive batches above. See
+    # /Users/rcaseyx/projects/filmprint-data-recovery-plan.md for the full
+    # report of what was applied vs. flagged for review.
+    "fantastic beasts and where to find them", "sultan", "bushi", "bush whacker", "blackboard",
+    "casbah", "gin", "craigslist", "unamir", "tongue in cheek",
+    "pin-up", "cajun", "baboon", "beelzebub", "bell",
+    "chime", "cutie honey", "flagellation", "conman", "garbageman",
+    "marksman", "middleman", "muscleman", "parson", "postulant",
+    "puma", "strongman", "tradesman", "balzac", "iwo jima",
+    "nezha", "y2k", "y2k aesthetics", "yacomo", "yak",
+    "yogi", "zainichi", "cactus", "camel", "magpies",
+    "pinocchio", "tangerine", "forger", "revier", "scepter",
+    "slug", "neorealism", "jim bowie", "guarda pretoriana", "blade runner",
+    "pineal gland", "king louis xiii", "louis xiv", "joan of arc", "anne frank",
+    "black widow", "failed tv pilot", "blow job", "hashtag", "glory hole",
+    "peep hole", "seductress", "death personified", "defibrillation", "deserter",
+    "centipede", "faun", "fiend", "huguenot", "lindisfarne",
+    "triade", "asmr", "bustier", "cape cod", "globe trotter",
+    "hatter", "saviour", "cauldron", "cenozoic", "plaster",
+    "sanatorium", "biggering", "lasso", "marginalization", "minidisc",
+    "ressurection", "buster keaton", "mongrel", "hat shopping", "sex pistols",
+    "chopsticks", "panhandle", "pinochle", "golden fleece", "mooning",
+    "montmartre", "plains", "boys club", "health club", "bay of pigs",
+    "peeping tom", "psychadelic image", "wetting pants", "death of a salesman", "cryptid",
+    "stockade", "emoji", "marksmanship", "taser", "cornetto trilogy",
+    "olympus", "electric power station", "international space station (iss)", "jehovah's witness", "gymnastics",
+    "archenemy", "pole dancer", "corsican", "gta", "trawler",
+    "otherworldly visitations", "starship", "starships", "armistice day", "d-day",
+    "semi-erect penis", "الزهايمر", "grudge", "gruesome", "grumpy man",
+    "catskills", "port arthur", "red baron", "the red baron", "manhattan project",
+    "boomerang", "lollipop", "moulin rouge", "opal", "popcorn",
+    "sprung", "starlet", "borzoi", "bosque", "buccaneer",
+    "buoy", "burking", "national lampoon's", "nunavut", "nunchaku",
+    "banana republic", "mattress", "straitjacket", "yacht rock", "septuplets",
+    "sweaty", "unity", "arrowverse", "earl", "the bowery",
+    "cosplay", "chicken pox", "chipmunk", "cougar", "cumbia",
+    "huey long", "matador (bullfighter)", "pangolin", "peregrine", "woodchipper",
+    "darkspore", "his dark materials", "rudeness", "sensationalism", "mistrust",
+    "rouge", "spitting", "temp agency", "ghostbuster", "ghostbusters",
+    "skid row", "f word", "dangerous liaison", "bouncer", "bratr",
+    "lodger", "philanderer", "racketeer", "racketeers", "spanking",
+    "spotter", "squatter", "jekyll and hyde", "fawn", "advertising agency",
+    "advertising expert", "sensei", "coneheads", "pinhead", "tin man",
+    "warhead", "dog sled", "sled dogs", "sleigh", "succubus",
+    "southern sasquatch", "southie", "slow", "fasting", "intuition",
+    "riveting", "new ager",
+    # Resolved from the 21-item flagged/uncertain list after the autonomous
+    # pass above -- each one given an explicit decision by Ryan rather than
+    # assumed. Several themes (Rape, Schoolgirl) were dropped entirely per
+    # his direction, not just trimmed.
+    "cam girl", "nymphette", "underage girlfriend", "girl", "hot girl",
+    "it girl", "popular girl", "salesgirl", "schoolboy", "schoolgirl",
+    "schoolgirl uniform", "shopgirl", "showgirl", "showgirls", "tween girl",
+    "white collar", "yellowface", "chinese tong", "feng shen yanyi", "people's republic of china",
+    "抗美援朝", "cartoon turtle", "charlatan", "meerkat", "research turtles",
+    "sea turtle", "tomahawk", "tortoise", "turtle", "zorro",
+    "date rape", "gang rape", "lynching", "marital rape", "prison rape",
+    "rape", "rape and murder", "rape and revenge", "rape kit", "rape revenge",
+    "slit throat", "teenage rape", "caste violence", "non violent", "albania",
+    "chivalry", "bp", "gi joe", "hewitt", "sex party",
+    "khartoum, sudan",
 })
 
 # Themes excluded from the subgenre radar — character archetypes, standalone
