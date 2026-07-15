@@ -129,28 +129,26 @@ export default function FocusPullScreen() {
         Keyboard.dismiss()
         setStageIndex(round.stages.length - 1)
         setResult({ title: data.title, gaveUp: false })
-      } else {
-        Keyboard.dismiss()
-        setWrongGuess(`Not ${movie.title} — take another look`)
-        setQuery('')
-        setResults([])
-        setStageIndex((i) => Math.min(i + 1, round.stages.length - 1))
+        return
       }
-    } finally {
-      setGuessing(false)
-    }
-  }
-
-  async function giveUp() {
-    if (guessing || result || !round) return
-    setGuessing(true)
-    try {
-      const res = await apiFetch('/api/games/focus-pull/reveal')
-      if (!res.ok) return
-      const data = await res.json()
       Keyboard.dismiss()
-      setStageIndex(round.stages.length - 1)
-      setResult({ title: data.title, gaveUp: true })
+      setQuery('')
+      setResults([])
+      const lastIndex = round.stages.length - 1
+      const nextIndex = Math.min(stageIndex + 1, lastIndex)
+      setStageIndex(nextIndex)
+      if (nextIndex >= lastIndex) {
+        // Poster is fully revealed (0 pixel blocks) -- no point letting
+        // guesses continue against the real, un-pixelated image. Auto-reveal
+        // the same way "Give up" used to.
+        const revealRes = await apiFetch('/api/games/focus-pull/reveal')
+        if (revealRes.ok) {
+          const revealData = await revealRes.json()
+          setResult({ title: revealData.title, gaveUp: true })
+        }
+      } else {
+        setWrongGuess(`Not ${movie.title} — take another look`)
+      }
     } finally {
       setGuessing(false)
     }
@@ -173,8 +171,6 @@ export default function FocusPullScreen() {
       </SafeAreaView>
     )
   }
-
-  const atFinalStage = stageIndex >= round.stages.length - 1
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
@@ -262,11 +258,6 @@ export default function FocusPullScreen() {
                 </Pressable>
               ))}
             </ScrollView>
-            {atFinalStage && (
-              <Pressable onPress={giveUp} disabled={guessing} hitSlop={8}>
-                <Text style={s.giveUpText}>Give up &amp; reveal</Text>
-              </Pressable>
-            )}
           </>
         )}
       </Animated.View>
@@ -327,7 +318,6 @@ const s = StyleSheet.create({
   resultRow: { paddingVertical: 8, paddingHorizontal: 10, borderRadius: 12 },
   resultRowPressed: { backgroundColor: Colors.card },
   resultText: { fontSize: 14, color: Colors.text },
-  giveUpText: { fontSize: 13, color: Colors.textMuted, paddingVertical: 6 },
   resultCard: { alignItems: 'center', paddingHorizontal: Spacing.lg, paddingTop: Spacing.lg },
   resultLabel: { fontSize: 17, fontWeight: '600', color: Colors.text },
   resultTitle: { fontSize: 24, fontWeight: '800', color: Colors.brand, marginTop: 4, textAlign: 'center' },

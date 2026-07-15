@@ -114,24 +114,23 @@ export default function FocusPullPage() {
       if (data.correct) {
         setStageIndex((round?.stages.length ?? 1) - 1)
         setResult({ title: data.title, gaveUp: false })
+        return
+      }
+      const lastIndex = (round?.stages.length ?? 1) - 1
+      const nextIndex = Math.min(stageIndex + 1, lastIndex)
+      setStageIndex(nextIndex)
+      if (nextIndex >= lastIndex) {
+        // Poster is fully revealed (0 pixel blocks) -- no point letting
+        // guesses continue against the real, un-pixelated image. Auto-reveal
+        // the same way "Give up" does instead of leaving the input open.
+        const revealRes = await fetch(`${API}/api/games/focus-pull/reveal`, { headers: authHeader(session) })
+        if (revealRes.ok) {
+          const revealData = await revealRes.json()
+          setResult({ title: revealData.title, gaveUp: true })
+        }
       } else {
         setWrongGuess(`Not ${movie.title} — take another look`)
-        setStageIndex((i) => Math.min(i + 1, (round?.stages.length ?? 1) - 1))
       }
-    } finally {
-      setGuessing(false)
-    }
-  }
-
-  async function giveUp() {
-    if (guessing || result) return
-    setGuessing(true)
-    try {
-      const res = await fetch(`${API}/api/games/focus-pull/reveal`, { headers: authHeader(session) })
-      if (!res.ok) return
-      const data = await res.json()
-      setStageIndex((round?.stages.length ?? 1) - 1)
-      setResult({ title: data.title, gaveUp: true })
     } finally {
       setGuessing(false)
     }
@@ -149,8 +148,6 @@ export default function FocusPullPage() {
       </div>
     )
   }
-
-  const atFinalStage = stageIndex >= round.stages.length - 1
 
   return (
     <div className="max-w-2xl mx-auto px-6 py-12">
@@ -212,15 +209,6 @@ export default function FocusPullPage() {
               </button>
             ))}
           </div>
-          {atFinalStage && (
-            <button
-              onClick={giveUp}
-              disabled={guessing}
-              className="mt-3 text-sm text-neutral-500 hover:text-neutral-300 transition-colors disabled:opacity-50"
-            >
-              Give up &amp; reveal
-            </button>
-          )}
         </div>
       )}
 
