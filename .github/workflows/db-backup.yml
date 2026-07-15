@@ -1,0 +1,72 @@
+name: Database backup
+
+# Railway's Postgres backup/PITR features require a plan tier we're not on.
+# This is the DIY replacement: a daily pg_dump uploaded to a Railway Bucket
+# (S3-compatible object storage, available on any plan), with old backups
+# pruned to the most recent 14. Written after the 2026-07-14 incident where
+# a destructive test fixture wiped production with no usable backup to
+# restore from -- see /Users/rcaseyx/projects/filmprint-data-recovery-plan.md.
+
+on:
+  schedule:
+    - cron: '0 9 * * *' # 5am ET (UTC-4 in summer, UTC-5 in winter) -- offset from the 2am deploy job
+  workflow_dispatch:      # manual trigger for testing / on-demand backups
+
+env:
+  RETAIN_COUNT: 14
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Install postgresql-client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Dump database
+        env:
+          DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+        run: |
+          TIMESTAMP=$(date -u +%Y%m%d-%H%M%S)
+          echo "DUMP_FILE=filmprint-${TIMESTAMP}.dump" >> "$GITHUB_ENV"
+          pg_dump --format=custom --file="filmprint-${TIMESTAMP}.dump" "$DATABASE_URL"
+          ls -lh "filmprint-${TIMESTAMP}.dump"
+
+      - name: Upload to Railway Bucket
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_S3_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          ENDPOINT: ${{ secrets.BACKUP_S3_ENDPOINT }}
+          BUCKET: ${{ secrets.BACKUP_S3_BUCKET_NAME }}
+        run: |
+          aws s3 cp "$DUMP_FILE" "s3://${BUCKET}/backups/${DUMP_FILE}" --endpoint-url "$ENDPOINT"
+
+      - name: Prune backups beyond retention count
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_S3_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          ENDPOINT: ${{ secrets.BACKUP_S3_ENDPOINT }}
+          BUCKET: ${{ secrets.BACKUP_S3_BUCKET_NAME }}
+        run: |
+          KEYS=$(aws s3api list-objects-v2 \
+            --endpoint-url "$ENDPOINT" \
+            --bucket "$BUCKET" \
+            --prefix "backups/" \
+            --query 'sort_by(Contents, &LastModified)[].Key' \
+            --output text)
+
+          COUNT=$(echo "$KEYS" | wc -w)
+          echo "Found $COUNT backups, retaining $RETAIN_COUNT"
+
+          TO_DELETE_COUNT=$((COUNT - RETAIN_COUNT))
+          if [ "$TO_DELETE_COUNT" -gt 0 ]; then
+            echo "$KEYS" | tr '\t' '\n' | head -n "$TO_DELETE_COUNT" | while read -r KEY; do
+              [ -z "$KEY" ] && continue
+              echo "Deleting old backup: $KEY"
+              aws s3 rm "s3://${BUCKET}/${KEY}" --endpoint-url "$ENDPOINT"
+            done
+          else
+            echo "Nothing to prune"
+          fi
