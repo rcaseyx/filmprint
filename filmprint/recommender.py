@@ -22,6 +22,8 @@ def rank_watchlist(
     clusters: list[np.ndarray] | None = None,
     idf: dict[str, float] | None = None,
     popularity_penalty: float = 0.0,
+    watchlist_ids: set | None = None,
+    watchlist_penalty: float = 0.0,
 ) -> list[tuple[dict, float]]:
     """
     Score each candidate against the taste profile.
@@ -35,6 +37,11 @@ def rank_watchlist(
     When popularity_penalty > 0, candidates with TMDB popularity above
     _POP_PENALTY_THRESHOLD are down-ranked using a log-scale ramp so
     lesser-known films with competitive taste scores surface higher.
+
+    When watchlist_penalty > 0, candidates already in watchlist_ids are
+    down-weighted by a flat multiplier (unlike popularity, watchlist
+    membership is binary, so there's no ramp) — the user already knows
+    about these, so a comparable *new* discovery should usually outrank them.
     """
     if not candidates:
         return []
@@ -64,6 +71,12 @@ def rank_watchlist(
                 score *= 1.0 - popularity_penalty * min(ramp, 1.0)
             adjusted.append(score)
         score_list = adjusted
+
+    if watchlist_penalty > 0 and watchlist_ids:
+        score_list = [
+            score * (1.0 - watchlist_penalty) if candidate["id"] in watchlist_ids else score
+            for score, candidate in zip(score_list, candidates)
+        ]
 
     return sorted(zip(candidates, score_list), key=lambda x: x[1], reverse=True)
 
