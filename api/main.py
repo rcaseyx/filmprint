@@ -126,6 +126,12 @@ DATA_DIR = Path(__file__).parent.parent / "data"
 # Gives under-reviewed films breathing room without changing the floor's derivation.
 FLOOR_TOLERANCE = 0.5
 
+# Score multiplier penalty for candidates already on the user's watchlist —
+# they already know about these, so a comparable new discovery should usually
+# outrank them. Not zeroed out entirely: a watchlist film can still surface if
+# nothing else comes close.
+WATCHLIST_PENALTY = 0.6
+
 # Catalog-wide keyword film counts for TF-IDF vocab scoring — loaded once at startup
 _catalog_keyword_counts: dict[str, int] = {}
 _total_catalog_films: int = 0
@@ -379,7 +385,7 @@ def _rebuild_state(user_id: int, username: str, skip_ai: bool = False) -> None:
     prime_score_cache([iid for iid in imdb_ids if iid])
 
     t1 = time.time()
-    ranked = rank_watchlist(profile_vec, all_candidates, keyword_vocab, affinity, user_subgenre_axes, clusters=clusters, idf=_idf_weights)
+    ranked = rank_watchlist(profile_vec, all_candidates, keyword_vocab, affinity, user_subgenre_axes, clusters=clusters, idf=_idf_weights, watchlist_ids=watchlist_ids, watchlist_penalty=WATCHLIST_PENALTY)
     print(f"[rebuild_state] ranked {len(ranked)} candidates in {time.time()-t1:.1f}s", flush=True)
 
     summary = taste_summary(profile_vec, keyword_vocab, user_subgenre_axes)
@@ -2004,7 +2010,7 @@ def get_recommendations(mood: MoodContext, current_user: dict = Depends(get_curr
     if cluster is not None:
         all_candidates = [m for m, _ in ranked]
         t_rw = time.time()
-        ranked = rank_watchlist(cluster, all_candidates, keyword_vocab, affinity, user_subgenre_axes, idf=_idf_weights)
+        ranked = rank_watchlist(cluster, all_candidates, keyword_vocab, affinity, user_subgenre_axes, idf=_idf_weights, watchlist_ids=watchlist_ids, watchlist_penalty=WATCHLIST_PENALTY)
         print(f"[rec] user {user_id}: cluster rank_watchlist in {time.time()-t_rw:.1f}s", flush=True)
         active_summary = taste_summary(cluster, keyword_vocab, user_subgenre_axes)
     else:
@@ -2014,12 +2020,12 @@ def get_recommendations(mood: MoodContext, current_user: dict = Depends(get_curr
     if mood.tone or mood.pacing or mood.familiarity:
         all_candidates = [m for m, _ in ranked]
         t_rw = time.time()
-        ranked = rank_watchlist(active_vec, all_candidates, keyword_vocab, affinity, user_subgenre_axes, idf=_idf_weights)
+        ranked = rank_watchlist(active_vec, all_candidates, keyword_vocab, affinity, user_subgenre_axes, idf=_idf_weights, watchlist_ids=watchlist_ids, watchlist_penalty=WATCHLIST_PENALTY)
         print(f"[rec] user {user_id}: mood rank_watchlist in {time.time()-t_rw:.1f}s", flush=True)
     if mood.niche:
         all_candidates = [m for m, _ in ranked]
         t_rw = time.time()
-        ranked = rank_watchlist(active_vec, all_candidates, keyword_vocab, affinity, user_subgenre_axes, idf=_idf_weights, popularity_penalty=0.4)
+        ranked = rank_watchlist(active_vec, all_candidates, keyword_vocab, affinity, user_subgenre_axes, idf=_idf_weights, popularity_penalty=0.4, watchlist_ids=watchlist_ids, watchlist_penalty=WATCHLIST_PENALTY)
         print(f"[rec] user {user_id}: niche rank_watchlist in {time.time()-t_rw:.1f}s", flush=True)
     t1 = time.time()
 
@@ -2737,18 +2743,19 @@ def get_public_recommendations(username: str, mood: MoodContext, request: Reques
     affinity = state["affinity"]
     profile_vec = state["profile_vec"]
     user_subgenre_axes = state.get("user_subgenre_axes") or {}
+    watchlist_ids = state.get("watchlist_ids", set())
 
     cluster = _select_cluster(mood, state)
     active_vec = cluster if cluster is not None else profile_vec
     if cluster is not None:
-        ranked = rank_watchlist(cluster, [m for m, _ in ranked], keyword_vocab, affinity, user_subgenre_axes, idf=_idf_weights)
+        ranked = rank_watchlist(cluster, [m for m, _ in ranked], keyword_vocab, affinity, user_subgenre_axes, idf=_idf_weights, watchlist_ids=watchlist_ids, watchlist_penalty=WATCHLIST_PENALTY)
         active_summary = taste_summary(cluster, keyword_vocab, user_subgenre_axes)
     else:
         active_summary = state["summary"]
 
     active_vec = _apply_mood_to_vector(active_vec, mood, keyword_vocab, user_subgenre_axes, idf=_idf_weights)
     if mood.tone or mood.pacing or mood.familiarity:
-        ranked = rank_watchlist(active_vec, [m for m, _ in ranked], keyword_vocab, affinity, user_subgenre_axes, idf=_idf_weights)
+        ranked = rank_watchlist(active_vec, [m for m, _ in ranked], keyword_vocab, affinity, user_subgenre_axes, idf=_idf_weights, watchlist_ids=watchlist_ids, watchlist_penalty=WATCHLIST_PENALTY)
 
     if mood.required_genres:
         existing_ids = {m["id"] for m, _ in ranked}
