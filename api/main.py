@@ -885,6 +885,35 @@ class MoodContext(BaseModel):
 
 # --- helpers ---
 
+# The mood selector always sends tone+pacing together as one of these four
+# quadrants (see web/components/MoodSelector.tsx, mobile picks/index.tsx) — so
+# each quadrant gets its own hand-picked keyword set instead of being composed
+# from independent tone/pacing lists. Composing from TONE_AXES["Cerebral"] for
+# "slow" and TONE_AXES["Intense"] for "fast" looked tone-neutral but wasn't:
+# Cerebral skews heady/psychological-thriller (wrong for Cozy — surfaced
+# Sorcerer, a dread-laden slow-burn, as a top "cozy" pick) and Intense skews
+# violent/aggressive (same failure mode for Playful). Both fought the light
+# tone they were paired with.
+_MOOD_QUADRANT_KEYWORDS: dict[tuple[str, str], list[str]] = {
+    ("light", "slow"): [  # Cozy — feel-good & easygoing
+        "wholesome", "heartwarming", "family", "friendship", "coming of age",
+        "small town", "christmas", "nostalgia", "slice of life", "uplifting",
+    ],
+    ("dark", "slow"): [  # Moody — atmospheric & introspective
+        "melancholy", "wistful", "longing", "grieving", "despair",
+        "dreams", "philosophical", "slow burn", "loneliness",
+    ],
+    ("light", "fast"): [  # Playful — fun & lighthearted
+        "hilarious", "amused", "excited", "joyful", "playful",
+        "heist", "chase", "road trip", "treasure hunt", "adventure", "caper",
+    ],
+    ("dark", "fast"): [  # Intense — gripping & high-stakes
+        "suspenseful", "intense", "aggressive", "survival", "shootout",
+        "revenge", "action hero", "battle", "dread", "ominous",
+    ],
+}
+# Fallback for tone or pacing sent without its usual pairing — defensive only,
+# since every current UI sends both together as one of the quadrants above.
 _MOOD_TONE_KEYWORDS: dict[str, list[str]] = {
     "dark": TONE_AXES["Dark"],
     "light": TONE_AXES["Warm"],
@@ -909,15 +938,19 @@ def _apply_mood_to_vector(
 ) -> "np.ndarray":
     """Blend a mood direction into a profile vector before ranking.
 
-    Constructs a synthetic 'ideal mood film' using the relevant tone-axis
-    keywords, builds its feature vector, then blends it in so ranking
-    actually reflects tone/pacing/familiarity — not just the Claude prompt.
+    Constructs a synthetic 'ideal mood film' using the relevant mood-quadrant
+    keywords, builds its feature vector, then blends it in so ranking actually
+    reflects tone/pacing/familiarity — not just the Claude prompt.
     """
     synthetic_kws: set[str] = set()
-    if mood.tone:
-        synthetic_kws.update(_MOOD_TONE_KEYWORDS.get(mood.tone, []))
-    if mood.pacing:
-        synthetic_kws.update(_MOOD_PACING_KEYWORDS.get(mood.pacing, []))
+    quadrant = _MOOD_QUADRANT_KEYWORDS.get((mood.tone, mood.pacing)) if mood.tone and mood.pacing else None
+    if quadrant is not None:
+        synthetic_kws.update(quadrant)
+    else:
+        if mood.tone:
+            synthetic_kws.update(_MOOD_TONE_KEYWORDS.get(mood.tone, []))
+        if mood.pacing:
+            synthetic_kws.update(_MOOD_PACING_KEYWORDS.get(mood.pacing, []))
     if mood.familiarity:
         synthetic_kws.update(_MOOD_FAMILIARITY_KEYWORDS.get(mood.familiarity, []))
     if not synthetic_kws:
