@@ -2,11 +2,14 @@
 
 import pytest
 from filmprint.db import (
+    delete_user,
     get_connection,
     get_seen_movie_ids,
     get_user_ratings,
     init_db,
+    insert_trivia_questions,
     is_profile_stale,
+    mark_trivia_questions_seen,
     upsert_movie,
     upsert_rating,
     upsert_watchlist_entry,
@@ -155,3 +158,44 @@ def test_is_profile_stale_version_mismatch():
     user_id = get_or_create_user("testuser")
     save_taste_profile(user_id, [0.1], ratings_count=0, version="1.0")
     assert is_profile_stale(user_id, current_version="2.0") is True
+
+
+# --- delete_user ---
+
+def test_delete_user_with_puzzle_and_trivia_history():
+    """A user who played Six Degrees or Trivia has rows in user_puzzle_attempts /
+    user_trivia_seen. Both reference users(id) without ON DELETE CASCADE, so
+    delete_user must clear them itself or the final DELETE FROM users hits a
+    foreign-key violation (the App Store test account cleanup bug)."""
+    movie = make_movie(tmdb_id=1)
+    upsert_movie(_tmdb_data(movie))
+    user_id = get_or_create_user("testuser")
+
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO daily_puzzles (puzzle_date, solution_path, degree_count, start_person_id, end_person_id)
+               VALUES ('2026-01-01', '[]', 0, 1, 2) RETURNING id""",
+        )
+        puzzle_id = cur.fetchone()["id"]
+        cur.execute(
+            "INSERT INTO user_puzzle_attempts (user_id, puzzle_id, is_solved) VALUES (%s, %s, true)",
+            (user_id, puzzle_id),
+        )
+
+    [question] = insert_trivia_questions([{
+        "movie_id": 1, "source": "claude", "question_type": "movie",
+        "question_text": "Q?", "correct_answer": "A", "options": ["A", "B"],
+    }])
+    mark_trivia_questions_seen(user_id, [question["id"]])
+
+    delete_user(user_id)
+
+    with get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) as n FROM users WHERE id = %s", (user_id,))
+        assert cur.fetchone()["n"] == 0
+        cur.execute("SELECT COUNT(*) as n FROM user_puzzle_attempts WHERE user_id = %s", (user_id,))
+        assert cur.fetchone()["n"] == 0
+        cur.execute("SELECT COUNT(*) as n FROM user_trivia_seen WHERE user_id = %s", (user_id,))
+        assert cur.fetchone()["n"] == 0

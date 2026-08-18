@@ -429,7 +429,7 @@ def get_all_users_with_stats() -> list[dict]:
 def delete_user(user_id: int) -> None:
     with get_connection() as conn:
         cur = conn.cursor()
-        for table in ("recommendations", "user_ratings", "user_watchlist", "user_watched", "taste_profile"):
+        for table in ("recommendations", "user_ratings", "user_watchlist", "user_watched", "taste_profile", "user_puzzle_attempts", "user_trivia_seen"):
             cur.execute(f"DELETE FROM {table} WHERE user_id = %s", (user_id,))
         cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
 
